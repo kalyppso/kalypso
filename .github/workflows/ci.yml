@@ -62,10 +62,39 @@ jobs:
       - name: Generated TypeScript bindings are committed
         run: git diff --exit-code -- src/bindings
 
+  # Compile the core on the other desktop platforms on every PR, so
+  # platform-specific code (sockets vs named pipes, keychains) can't break main.
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Lint
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test (no container engine on these runners)
+        working-directory: src-tauri
+        run: cargo test
+
   bundle:
     name: Bundle (${{ matrix.os }})
     if: github.event_name != 'pull_request'
-    needs: [frontend, core]
+    needs: [frontend, core, check]
     strategy:
       fail-fast: false
       matrix:

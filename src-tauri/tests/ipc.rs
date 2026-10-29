@@ -1,5 +1,11 @@
 //! Drives the real command handlers through Tauri's IPC layer with the exact
 //! JSON the frontend sends (src/backend.ts), so argument names and shapes stay in sync.
+//!
+//! Not built on Windows: tauri-build embeds the Common Controls v6 manifest only
+//! into the app binary, so a separate test binary that boots the Tauri runtime
+//! exits with STATUS_ENTRYPOINT_NOT_FOUND. The IPC contract is the same on every
+//! platform and is covered on Linux and macOS.
+#![cfg(not(windows))]
 
 use kalypso_lib::{ipc::AppState, register, sandbox::Runtime, store::Db, vault::Vault};
 use serde_json::{json, Value};

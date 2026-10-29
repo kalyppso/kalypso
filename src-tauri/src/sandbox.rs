@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::path::PathBuf;
 
 use bollard::container::{
@@ -55,26 +56,13 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// Find a reachable engine: `DOCKER_HOST` first, then the usual places Docker,
+    /// Podman, OrbStack and Colima put their sockets (named pipes on Windows).
     pub async fn detect() -> Self {
-        let mut candidates: Vec<(PathBuf, &str)> = Vec::new();
-        if let Ok(host) = std::env::var("DOCKER_HOST") {
-            if let Some(path) = host.strip_prefix("unix://") {
-                candidates.push((path.into(), if path.contains("podman") { "podman" } else { "docker" }));
-            }
-        }
-        candidates.push(("/var/run/docker.sock".into(), "docker"));
-        if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-            candidates.push((PathBuf::from(dir).join("podman/podman.sock"), "podman"));
-        }
-        candidates.push(("/run/podman/podman.sock".into(), "podman"));
-
-        for (path, kind) in candidates {
-            if !path.exists() {
-                continue;
-            }
-            let Ok(docker) = Docker::connect_with_unix(&path.to_string_lossy(), 120, bollard::API_DEFAULT_VERSION) else { continue };
+        for (endpoint, kind) in candidates() {
+            let Some(docker) = connect(&endpoint) else { continue };
             if docker.ping().await.is_ok() {
-                tracing::info!(kind, path = %path.display(), "container runtime connected");
+                tracing::info!(kind, endpoint, "container runtime connected");
                 return Self { docker: Some(docker), kind: kind.into() };
             }
         }
@@ -135,6 +123,67 @@ impl Runtime {
             .map_err(rt_err)?;
         Ok(())
     }
+}
+
+fn kind_of(endpoint: &str) -> &'static str {
+    if endpoint.contains("podman") {
+        "podman"
+    } else {
+        "docker"
+    }
+}
+
+/// Where engines listen, most specific first. Missing ones are skipped cheaply.
+fn candidates() -> Vec<(String, &'static str)> {
+    let mut out: Vec<(String, &'static str)> = Vec::new();
+    if let Ok(host) = std::env::var("DOCKER_HOST") {
+        let kind = kind_of(&host);
+        out.push((host, kind));
+    }
+    #[cfg(unix)]
+    {
+        let mut socks: Vec<PathBuf> = Vec::new();
+        if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
+            socks.push(PathBuf::from(dir).join("podman/podman.sock"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let home = PathBuf::from(home);
+            socks.push(home.join(".docker/run/docker.sock")); // Docker Desktop (per-user)
+            socks.push(home.join(".orbstack/run/docker.sock"));
+            socks.push(home.join(".colima/default/docker.sock"));
+            socks.push(home.join(".local/share/containers/podman/machine/podman.sock"));
+            // Podman machine (macOS)
+        }
+        socks.push("/var/run/docker.sock".into());
+        socks.push("/run/podman/podman.sock".into());
+        out.extend(socks.into_iter().filter(|p| p.exists()).map(|p| {
+            let s = format!("unix://{}", p.display());
+            let kind = kind_of(&s);
+            (s, kind)
+        }));
+    }
+    #[cfg(windows)]
+    {
+        out.push((r"npipe:////./pipe/docker_engine".into(), "docker"));
+        out.push((r"npipe:////./pipe/podman-machine-default".into(), "podman"));
+    }
+    out
+}
+
+fn connect(endpoint: &str) -> Option<Docker> {
+    let v = bollard::API_DEFAULT_VERSION;
+    #[cfg(unix)]
+    if let Some(path) = endpoint.strip_prefix("unix://") {
+        return Docker::connect_with_unix(path, 120, v).ok();
+    }
+    #[cfg(windows)]
+    if let Some(pipe) = endpoint.strip_prefix("npipe://") {
+        return Docker::connect_with_named_pipe(pipe, 120, v).ok();
+    }
+    if endpoint.starts_with("tcp://") || endpoint.starts_with("http://") {
+        return Docker::connect_with_http(endpoint, 120, v).ok();
+    }
+    None
 }
 
 pub fn network_name(ns: &str) -> String {
@@ -454,6 +503,13 @@ mod tests {
 
     fn spec(name: &str) -> NewSandbox {
         NewSandbox { name: name.into(), image: "docker.io/library/alpine:3.20".into(), cpu: 1.0, mem_mb: 256, network: "namespace".into() }
+    }
+
+    #[test]
+    fn endpoint_kinds() {
+        assert_eq!(kind_of("unix:///run/user/1000/podman/podman.sock"), "podman");
+        assert_eq!(kind_of("npipe:////./pipe/docker_engine"), "docker");
+        assert!(connect("ftp://nope").is_none());
     }
 
     #[test]
