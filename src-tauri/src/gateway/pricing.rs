@@ -168,10 +168,7 @@ mod tests {
 
     #[test]
     fn long_context_rates_apply_past_the_threshold() {
-        let t = Table::parse(
-            "[models.h]\ninput = 0.1\noutput = 0.5\nlong_context = { above = 100, input = 0.5, output = 2.5 }\n",
-        )
-        .unwrap();
+        let t = Table::parse("[models.h]\ninput = 0.1\noutput = 0.5\nlong_context = { above = 100, input = 0.5, output = 2.5 }\n").unwrap();
         assert_eq!(t.cost_micros("h", &usage(100, 10)), Some(10 + 5));
         assert_eq!(t.cost_micros("h", &usage(101, 10)), Some(51 + 25));
         let cached = Usage { input: 2, cache_read: 200, ..Default::default() };

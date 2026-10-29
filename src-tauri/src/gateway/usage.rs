@@ -156,10 +156,8 @@ fn openai(u: &Value) -> Usage {
     // tokens inside the prompt total.
     let prompt = n(u, "prompt_tokens").or_else(|| n(u, "input_tokens")).unwrap_or(0);
     let output = n(u, "completion_tokens").or_else(|| n(u, "output_tokens")).unwrap_or(0);
-    let cached = ["prompt_tokens_details", "input_tokens_details"]
-        .iter()
-        .find_map(|k| u.get(*k).and_then(|d| n(d, "cached_tokens")))
-        .unwrap_or(0);
+    let cached =
+        ["prompt_tokens_details", "input_tokens_details"].iter().find_map(|k| u.get(*k).and_then(|d| n(d, "cached_tokens"))).unwrap_or(0);
     Usage { input: prompt.saturating_sub(cached), output, cache_read: cached.min(prompt), ..Default::default() }
 }
 

@@ -149,10 +149,7 @@ pub fn list_keys(db: &Db, ns: &str) -> Result<Vec<GatewayKey>> {
 
 pub fn revoke_key(db: &Db, ns: &str, id: &str) -> Result<()> {
     let n = db.with(|c| {
-        Ok(c.execute(
-            "UPDATE gateway_keys SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE id = ?1 AND ns = ?2",
-            (id, ns),
-        )?)
+        Ok(c.execute("UPDATE gateway_keys SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE id = ?1 AND ns = ?2", (id, ns))?)
     })?;
     if n == 0 {
         return Err(KalypsoError::NotFound(format!("gateway key {id} in {ns}")));
@@ -163,11 +160,9 @@ pub fn revoke_key(db: &Db, ns: &str, id: &str) -> Result<()> {
 /// Who a token belongs to: (key id, namespace, label).
 fn resolve(db: &Db, token: &str) -> Result<Option<(String, String, String)>> {
     db.with(|c| {
-        Ok(c.query_row(
-            "SELECT id, ns, label FROM gateway_keys WHERE hash = ?1 AND revoked_at IS NULL",
-            [hash(token)],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
+        Ok(c.query_row("SELECT id, ns, label FROM gateway_keys WHERE hash = ?1 AND revoked_at IS NULL", [hash(token)], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
         .optional()?)
     })
 }
@@ -306,9 +301,8 @@ pub fn summary(db: &Db, ns: Option<&str>, days: u32) -> Result<UsageSummary> {
         let by_day = group("date(ts)", "1")?;
         let by_model = group("model", "8 DESC, 2 DESC")?;
         let by_source = group("source", "8 DESC, 2 DESC")?;
-        let mut st = c.prepare(&format!(
-            "SELECT date(ts), source, sum(cost_micros) FROM usage_events WHERE {filter} GROUP BY 1, 2 ORDER BY 1, 2"
-        ))?;
+        let mut st =
+            c.prepare(&format!("SELECT date(ts), source, sum(cost_micros) FROM usage_events WHERE {filter} GROUP BY 1, 2 ORDER BY 1, 2"))?;
         let by_day_source = st
             .query_map((ns, &since), |r| Ok(UsageCell { day: r.get(0)?, source: r.get(1)?, cost_micros: r.get(2)? }))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -342,10 +336,7 @@ pub struct GatewayInfo {
 
 impl Gateway {
     pub fn new(db: Arc<Db>, vault: Arc<Vault>, pricing: Pricing) -> Arc<Self> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
-            .build()
-            .expect("HTTP client builds");
+        let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(15)).build().expect("HTTP client builds");
         Arc::new(Self { db, vault, pricing, http, addr: Mutex::new(None), events: tokio::sync::broadcast::channel(256).0 })
     }
 
@@ -440,8 +431,19 @@ fn token(headers: &HeaderMap) -> Option<&str> {
 fn hop_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
-        "host" | "connection" | "keep-alive" | "proxy-connection" | "transfer-encoding" | "te" | "trailer" | "upgrade"
-            | "content-length" | "authorization" | "x-api-key" | "accept-encoding" | "proxy-authorization"
+        "host"
+            | "connection"
+            | "keep-alive"
+            | "proxy-connection"
+            | "transfer-encoding"
+            | "te"
+            | "trailer"
+            | "upgrade"
+            | "content-length"
+            | "authorization"
+            | "x-api-key"
+            | "accept-encoding"
+            | "proxy-authorization"
     )
 }
 
@@ -500,7 +502,8 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     let path = parts.uri.path().trim_start_matches('/');
     let (provider, rest) = path.split_once('/').unwrap_or((path, ""));
     let format = if provider == "anthropic" { Format::Anthropic } else { Format::OpenAi };
-    let provider_ok = (1..=32).contains(&provider.len()) && provider.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    let provider_ok =
+        (1..=32).contains(&provider.len()) && provider.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if !provider_ok {
         return fail(format, StatusCode::NOT_FOUND, "use /<provider>/<path>, for example /anthropic/v1/messages");
     }
@@ -581,16 +584,7 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         }
     }
 
-    let call = Call {
-        gw: gw.clone(),
-        key_id,
-        ns,
-        source,
-        provider: provider.to_string(),
-        model,
-        stream,
-        started: Instant::now(),
-    };
+    let call = Call { gw: gw.clone(), key_id, ns, source, provider: provider.to_string(), model, stream, started: Instant::now() };
     let upstream = match gw.http.request(parts.method.clone(), &url).headers(headers).body(bytes).send().await {
         Ok(r) => r,
         Err(e) => {
@@ -601,11 +595,8 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     };
 
     let status = upstream.status();
-    let sse = upstream
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.starts_with("text/event-stream"));
+    let sse =
+        upstream.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|ct| ct.starts_with("text/event-stream"));
     let mut builder = Response::builder().status(status);
     for (name, value) in upstream.headers() {
         if !hop_header(name) {

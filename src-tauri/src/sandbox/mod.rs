@@ -589,7 +589,8 @@ mod tests {
         assert_eq!(code, 0, "{body}");
         let v: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["saw_key"], "sk-ant-model-key");
-        let (_, everywhere) = exec(&rt, &ns, &sb.id, &["sh", "-c", "grep -rl sk-ant-model-key /run /tmp /work 2>/dev/null; true"], false).await.unwrap();
+        let (_, everywhere) =
+            exec(&rt, &ns, &sb.id, &["sh", "-c", "grep -rl sk-ant-model-key /run /tmp /work 2>/dev/null; true"], false).await.unwrap();
         assert_eq!(everywhere.trim(), "", "provider key found inside the sandbox");
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
