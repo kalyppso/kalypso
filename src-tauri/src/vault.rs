@@ -149,6 +149,26 @@ impl Vault {
         String::from_utf8(plain).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))
     }
 
+    /// Decrypt the secrets every sandbox in the namespace receives (scope `namespace`).
+    /// Callers audit the delivery; this does not count as a user reveal.
+    pub fn for_delivery(&self, db: &Db, ns: &str) -> Result<Vec<(String, String)>> {
+        let rows: Vec<(String, Vec<u8>, Vec<u8>)> = db.with(|c| {
+            let mut st = c.prepare("SELECT key, ciphertext, nonce FROM secrets WHERE ns = ?1 AND scope = 'namespace' ORDER BY key")?;
+            let rows = st.query_map([ns], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })?;
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = self.ns_key(db, ns)?;
+        rows.into_iter()
+            .map(|(k, ct, nonce)| {
+                let plain = open(&key, &ct, &nonce)?;
+                Ok((k, String::from_utf8(plain).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))?))
+            })
+            .collect()
+    }
+
     pub fn delete(&self, db: &Db, ns: &str, id: &str) -> Result<()> {
         let n = db.with(|c| Ok(c.execute("DELETE FROM secrets WHERE id = ?1 AND ns = ?2", (id, ns))?))?;
         if n == 0 {
@@ -270,6 +290,15 @@ mod tests {
             db.with(|c| Ok(c.query_row("SELECT count(*) FROM audit_log WHERE action = 'secret.reveal'", [], |r| r.get(0))?)).unwrap();
         assert_eq!(n, 1);
         assert_eq!(v.set(&db, "work", "lower-case", "x", "agent").unwrap_err().code(), "invalid");
+    }
+
+    #[test]
+    fn delivery_includes_only_namespace_scope() {
+        let (db, v) = setup();
+        v.set(&db, "work", "SHARED", "s", "namespace").unwrap();
+        v.set(&db, "work", "PRIVATE", "p", "agent").unwrap();
+        v.set(&db, "lab", "OTHER_NS", "o", "namespace").unwrap();
+        assert_eq!(v.for_delivery(&db, "work").unwrap(), vec![("SHARED".to_string(), "s".to_string())]);
     }
 
     #[test]
