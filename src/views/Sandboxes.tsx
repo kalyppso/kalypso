@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Pause, Play, Plus, Square, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
 import { Modal, ModalActions, PageHead, PrimaryButton, Status } from "../components/ui";
 import type { Sandbox } from "../types";
+import type { PortForward } from "../bindings/PortForward";
 
 export function Sandboxes() {
   const { state, dispatch } = useStore();
@@ -11,6 +12,7 @@ export function Sandboxes() {
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [ports, setPorts] = useState<Sandbox | null>(null);
 
   // Live: ask the core, then reload. Prototype: update the mock store.
   const act = (id: string, kind: "start" | "pause" | "stop" | "delete") => {
@@ -54,6 +56,9 @@ export function Sandboxes() {
                       {s.status !== "running" && (
                         <button className="btn sm" title="Start" disabled={busy === s.id} onClick={() => act(s.id, "start")}><Play size={12} /></button>
                       )}
+                      {s.status === "running" && isLive() && (
+                        <button className="btn sm" title="Forward a port to this computer" onClick={() => setPorts(s)}><Network size={12} /></button>
+                      )}
                       {s.status === "running" && (
                         <button className="btn sm" title="Pause" disabled={busy === s.id} onClick={() => act(s.id, "pause")}><Pause size={12} /></button>
                       )}
@@ -72,6 +77,7 @@ export function Sandboxes() {
       </div>
 
       {creating && <NewSandbox onClose={() => setCreating(false)} />}
+      {ports && <Ports sandbox={ports} onClose={() => setPorts(null)} />}
     </>
   );
 }
@@ -127,6 +133,50 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
         <label className="field">Memory (MB)<input className="input" type="number" min={256} step={256} value={form.memMb} onChange={(e) => set("memMb", +e.target.value)} /></label>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm={saving ? "Creating…" : "Create sandbox"} />
+    </Modal>
+  );
+}
+
+// Forward ports from a sandbox to 127.0.0.1 on this computer (src-tauri/src/forward.rs).
+function Ports({ sandbox, onClose }: { sandbox: Sandbox; onClose: () => void }) {
+  const { state } = useStore();
+  const toast = useToast();
+  const [port, setPort] = useState("3000");
+  const [open, setOpen] = useState<PortForward[]>([]);
+  const refresh = () => api.portForwardList(state.ns).then((all) => setOpen(all.filter((f) => f.sandbox === sandbox.id))).catch(() => {});
+  useEffect(() => {
+    refresh();
+  }, []); // once, when the dialog opens
+
+  const add = () => {
+    const n = Number(port);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) return toast("Use a port between 1 and 65535", "warn");
+    api.portForwardOpen(state.ns, sandbox.id, n).then(refresh).catch((e) => toast(errorMessage(e), "err"));
+  };
+  const close = (p: number) => api.portForwardClose(state.ns, sandbox.id, p).then(refresh).catch((e) => toast(errorMessage(e), "err"));
+  const url = (f: PortForward) => `http://127.0.0.1:${f.host_port}`;
+
+  return (
+    <Modal title={`Ports on ${sandbox.name}`} subtitle="Reach a service inside the sandbox from this computer only. Forwards close when the sandbox stops." onClose={onClose}>
+      <div className="row">
+        <input className="input mono" style={{ width: 120 }} value={port} onChange={(e) => setPort(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} aria-label="Port inside the sandbox" />
+        <button className="btn" onClick={add}>Forward</button>
+      </div>
+      {open.length === 0 ? (
+        <div className="faint small">No ports forwarded yet.</div>
+      ) : (
+        <div>
+          {open.map((f) => (
+            <div key={f.container_port} className="list-row">
+              <span className="mono small">{f.container_port}</span>
+              <span className="faint small">to</span>
+              <span className="mono small clip" style={{ flex: 1 }}>{url(f)}</span>
+              <button className="btn ghost sm icon" title="Copy address" onClick={() => navigator.clipboard?.writeText(url(f)).then(() => toast("Copied"))}><Copy size={12} /></button>
+              <button className="btn ghost sm icon" title="Stop forwarding" onClick={() => close(f.container_port)}><X size={12} /></button>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

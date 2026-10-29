@@ -17,7 +17,12 @@ use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
 fn app() -> WebviewWindow<tauri::test::MockRuntime> {
     // The real context: tauri.conf.json and capabilities/, so permissions match the app.
     let app = register(mock_builder()).build(tauri::generate_context!()).unwrap();
-    app.manage(AppState { db: Db::open_in_memory().unwrap(), vault: Vault::ephemeral(), rt: Runtime::none() });
+    app.manage(AppState {
+        db: Db::open_in_memory().unwrap(),
+        vault: Vault::ephemeral(),
+        rt: Runtime::none(),
+        forwards: Default::default(),
+    });
     WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap()
 }
 

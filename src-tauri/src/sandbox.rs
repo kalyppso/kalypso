@@ -78,7 +78,7 @@ impl Runtime {
         self.docker.is_some()
     }
 
-    fn docker(&self) -> Result<&Docker> {
+    pub(crate) fn docker(&self) -> Result<&Docker> {
         self.docker.as_ref().ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found. Start one and restart KALYPSO.".into()))
     }
 
@@ -190,7 +190,7 @@ pub fn network_name(ns: &str) -> String {
     format!("kalypso-ns-{ns}")
 }
 
-fn container_name(ns: &str, id: &str) -> String {
+pub(crate) fn container_name(ns: &str, id: &str) -> String {
     format!("kalypso-{ns}-{id}")
 }
 
@@ -225,7 +225,8 @@ fn row_to_record(r: &rusqlite::Row) -> rusqlite::Result<SandboxRecord> {
     })
 }
 
-fn get(db: &Db, ns: &str, id: &str) -> Result<SandboxRecord> {
+/// The sandbox record, checked to belong to `ns`.
+pub fn get(db: &Db, ns: &str, id: &str) -> Result<SandboxRecord> {
     let rec = db
         .with(|c| {
             Ok(c.query_row(
@@ -629,7 +630,50 @@ mod tests {
         redeliver_running(&db, &vault, &rt, &ns).await;
         let (gone, _) = exec(&rt, &ns, &sb.id, &["test", "-e", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
         assert_ne!(gone, 0);
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
+        rt.remove_network(&ns).await.unwrap();
+    }
 
+    /// A port inside a sandbox on an internal network is reachable on 127.0.0.1 through a forward.
+    #[tokio::test]
+    async fn port_forward_reaches_a_server_inside() {
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let rt = Runtime::detect().await;
+        let db = Db::open_in_memory().unwrap();
+        let ns = format!("pf{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        let sb = create(&db, &rt, &ns, spec("web")).await.unwrap();
+        start(&db, &rt, &ns, &sb.id).await.unwrap();
+        let server = "while true; do printf 'HTTP/1.0 200 OK\\r\\n\\r\\nhello from the sandbox' | nc -l -p 8080; done";
+        exec(&rt, &ns, &sb.id, &["sh", "-c", server], true).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        let fwd = crate::forward::Forwards::default();
+        let f = fwd.open(rt.docker().unwrap().clone(), container_name(&ns, &sb.id), &ns, &sb.id, 8080).await.unwrap();
+        assert_eq!(fwd.open(rt.docker().unwrap().clone(), container_name(&ns, &sb.id), &ns, &sb.id, 8080).await.unwrap(), f);
+
+        let mut conn = tokio::net::TcpStream::connect(("127.0.0.1", f.host_port)).await.unwrap();
+        conn.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+        let mut got = Vec::new();
+        let read = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let mut buf = [0u8; 1024];
+            while !String::from_utf8_lossy(&got).contains("hello") {
+                let n = conn.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                got.extend_from_slice(&buf[..n]);
+            }
+        })
+        .await;
+        assert!(read.is_ok(), "timed out; got {:?}", String::from_utf8_lossy(&got));
+        assert!(String::from_utf8_lossy(&got).contains("hello from the sandbox"));
+
+        fwd.close_sandbox(&sb.id);
+        assert!(fwd.list(&ns).is_empty());
         remove(&db, &rt, &ns, &sb.id).await.unwrap();
         rt.remove_network(&ns).await.unwrap();
     }
