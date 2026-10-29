@@ -25,6 +25,7 @@ rand = "0.8"
 chacha20poly1305 = "0.10"
 bollard = "0.18"
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "apple-native", "windows-native"] }
+tracing-appender = "0.2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

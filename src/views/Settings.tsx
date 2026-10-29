@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { api, errorMessage, isLive } from "../backend";
+import type { AuditEntry } from "../bindings/AuditEntry";
+import { Check, RefreshCw } from "lucide-react";
 import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
 import { themes } from "../themes";
 import { ACCENTS, FONTS, contrast, fontFamily } from "../appearance";
@@ -102,6 +104,8 @@ export function SettingsView() {
         </div>
       </div>
 
+      <AuditLog />
+
       <div className="section-title">Preferences</div>
       <div className="card" style={{ padding: "4px 18px", maxWidth: 760 }}>
         <Setting title="Ambient background" desc="A faint node web behind the app that follows the cursor, with a small spider. Off by default.">
@@ -198,5 +202,74 @@ function Setting({ title, desc, children }: { title: string; desc: string; child
       <span className="spacer" />
       {children}
     </div>
+  );
+}
+
+const KINDS = [
+  { id: "", label: "Everything" },
+  { id: "secret.", label: "Secrets" },
+  { id: "sandbox.", label: "Sandboxes" },
+  { id: "namespace.", label: "Namespaces" },
+];
+
+// Security-relevant actions recorded by the core (src-tauri/src/store). Newest first.
+function AuditLog() {
+  const { state } = useStore();
+  const toast = useToast();
+  const [kind, setKind] = useState("");
+  const [thisNs, setThisNs] = useState(true);
+  const [rows, setRows] = useState<AuditEntry[] | null>(null);
+
+  const load = useCallback(() => {
+    if (!isLive()) return;
+    api.auditList(thisNs ? state.ns : null, kind || null, 200).then(setRows).catch((e) => toast(errorMessage(e), "err"));
+  }, [thisNs, kind, state.ns, toast]);
+  useEffect(load, [load]);
+
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 12, maxWidth: 760 }}>
+        <div className="section-title" style={{ margin: 0 }}>Audit log</div>
+        <span className="spacer" />
+        {isLive() && (
+          <>
+            <div className="segmented">
+              {KINDS.map((k) => <button key={k.id} className={kind === k.id ? "active" : ""} onClick={() => setKind(k.id)}>{k.label}</button>)}
+            </div>
+            <div className="segmented">
+              <button className={thisNs ? "active" : ""} onClick={() => setThisNs(true)}>{state.ns}</button>
+              <button className={!thisNs ? "active" : ""} onClick={() => setThisNs(false)}>All</button>
+            </div>
+            <button className="btn ghost sm icon" title="Refresh" onClick={load}><RefreshCw size={13} /></button>
+          </>
+        )}
+      </div>
+      <div className="card flush" style={{ maxWidth: 760, marginBottom: 32 }}>
+        {!isLive() ? (
+          <div className="faint" style={{ padding: 16 }}>The audit log is recorded by the desktop app.</div>
+        ) : rows === null ? (
+          <div className="faint" style={{ padding: 16 }}>Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="faint" style={{ padding: 16 }}>Nothing recorded yet.</div>
+        ) : (
+          <div style={{ maxHeight: 320, overflow: "auto" }}>
+            <table className="table">
+              <thead><tr><th>When (UTC)</th><th>Namespace</th><th>Action</th><th>Target</th><th>By</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono faint small">{r.ts}</td>
+                    <td className="dim">{r.ns ?? "None"}</td>
+                    <td className="mono small">{r.action}</td>
+                    <td className="clip" style={{ maxWidth: 220 }} title={r.target}>{r.target}</td>
+                    <td className="dim">{r.actor}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

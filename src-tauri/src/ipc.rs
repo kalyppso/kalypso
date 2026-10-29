@@ -7,7 +7,7 @@ use tauri::State;
 use crate::error::{KalypsoError, Result};
 use crate::ns::{self, Namespace};
 use crate::sandbox::{self, NewSandbox, Runtime, SandboxRecord};
-use crate::store::Db;
+use crate::store::{AuditEntry, Db};
 use crate::vault::{KeySource, SecretMeta, Vault};
 
 pub struct AppState {
@@ -34,6 +34,13 @@ pub struct CoreInfo {
 #[tauri::command]
 pub fn core_info(s: State<'_, AppState>) -> CoreInfo {
     CoreInfo { version: env!("CARGO_PKG_VERSION"), runtime: s.rt.kind.clone(), key_source: s.vault.source }
+}
+
+// ---------- Audit log ----------
+
+#[tauri::command]
+pub fn audit_list(s: State<'_, AppState>, ns: Option<String>, action: Option<String>, limit: Option<u32>) -> Result<Vec<AuditEntry>> {
+    s.db.audit_list(ns.as_deref(), action.as_deref(), limit.unwrap_or(200))
 }
 
 // ---------- Namespaces ----------

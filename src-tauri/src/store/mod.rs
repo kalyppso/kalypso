@@ -2,11 +2,25 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::Connection;
+use serde::Serialize;
+use ts_rs::TS;
 
 use crate::error::Result;
 
 /// Migrations run in order; `PRAGMA user_version` records how many have been applied.
 const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct AuditEntry {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub ns: Option<String>,
+    pub actor: String,
+    pub action: String,
+    pub target: String,
+    pub ts: String,
+}
 
 pub struct Db {
     conn: Mutex<Connection>,
@@ -40,6 +54,22 @@ impl Db {
             Ok(())
         })
     }
+
+    /// Newest first. `ns` limits to one namespace (namespace deletions, which have
+    /// no namespace, are always included); `action_prefix` filters like "secret.".
+    pub fn audit_list(&self, ns: Option<&str>, action_prefix: Option<&str>, limit: u32) -> Result<Vec<AuditEntry>> {
+        self.with(|c| {
+            let mut st = c.prepare(
+                "SELECT id, ns, actor, action, target, ts FROM audit_log
+                 WHERE (?1 IS NULL OR ns = ?1 OR ns IS NULL) AND (?2 IS NULL OR action LIKE ?2 || '%')
+                 ORDER BY id DESC LIMIT ?3",
+            )?;
+            let rows = st.query_map((ns, action_prefix, limit.min(1000)), |r| {
+                Ok(AuditEntry { id: r.get(0)?, ns: r.get(1)?, actor: r.get(2)?, action: r.get(3)?, target: r.get(4)?, ts: r.get(5)? })
+            })?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })
+    }
 }
 
 fn migrate(conn: &Connection) -> Result<()> {
@@ -66,6 +96,23 @@ mod tests {
         let db = Db::open(&path).unwrap();
         let v: i64 = db.with(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).unwrap();
         assert_eq!(v as usize, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn audit_list_filters_and_orders() {
+        let db = Db::open_in_memory().unwrap();
+        db.audit(Some("work"), "user", "secret.set", "A").unwrap();
+        db.audit(Some("lab"), "user", "secret.reveal", "B").unwrap();
+        db.audit(Some("work"), "user", "sandbox.create", "box").unwrap();
+        db.audit(None, "user", "namespace.delete", "old").unwrap();
+
+        let all = db.audit_list(None, None, 50).unwrap();
+        assert_eq!(all.iter().map(|e| e.target.as_str()).collect::<Vec<_>>(), ["old", "box", "B", "A"]);
+        let work = db.audit_list(Some("work"), None, 50).unwrap();
+        assert_eq!(work.iter().map(|e| e.target.as_str()).collect::<Vec<_>>(), ["old", "box", "A"]);
+        let secrets = db.audit_list(Some("work"), Some("secret."), 50).unwrap();
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(db.audit_list(None, None, 2).unwrap().len(), 2);
     }
 
     #[test]
