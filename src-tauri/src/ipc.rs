@@ -5,6 +5,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::error::{KalypsoError, Result};
+use crate::forward::{Forwards, PortForward};
 use crate::ns::{self, Namespace};
 use crate::sandbox::{self, NewSandbox, Runtime, SandboxRecord};
 use crate::store::{AuditEntry, Db};
@@ -14,6 +15,7 @@ pub struct AppState {
     pub db: Db,
     pub vault: Vault,
     pub rt: Runtime,
+    pub forwards: Forwards,
 }
 
 fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
@@ -131,10 +133,37 @@ pub async fn sandbox_pause(s: State<'_, AppState>, ns: String, id: String) -> Re
 
 #[tauri::command]
 pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
-    sandbox::stop(&s.db, &s.rt, &ns, &id).await
+    let rec = sandbox::stop(&s.db, &s.rt, &ns, &id).await?;
+    s.forwards.close_sandbox(&id);
+    Ok(rec)
 }
 
 #[tauri::command]
 pub async fn sandbox_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
-    sandbox::remove(&s.db, &s.rt, &ns, &id).await
+    sandbox::remove(&s.db, &s.rt, &ns, &id).await?;
+    s.forwards.close_sandbox(&id);
+    Ok(())
+}
+
+// ---------- Port forwarding ----------
+
+#[tauri::command]
+pub async fn port_forward_open(s: State<'_, AppState>, ns: String, id: String, port: u16) -> Result<PortForward> {
+    let rec = sandbox::get(&s.db, &ns, &id)?;
+    if rec.status != "running" {
+        return Err(KalypsoError::Invalid(format!("start {} before forwarding a port", rec.name)));
+    }
+    s.forwards.open(s.rt.docker()?.clone(), sandbox::container_name(&ns, &id), &ns, &id, port).await
+}
+
+#[tauri::command]
+pub fn port_forward_list(s: State<'_, AppState>, ns: String) -> Result<Vec<PortForward>> {
+    ensure_ns(&s, &ns)?;
+    Ok(s.forwards.list(&ns))
+}
+
+#[tauri::command]
+pub fn port_forward_close(s: State<'_, AppState>, ns: String, id: String, port: u16) -> Result<bool> {
+    sandbox::get(&s.db, &ns, &id)?;
+    Ok(s.forwards.close(&id, port))
 }

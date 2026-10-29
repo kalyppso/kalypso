@@ -3,6 +3,7 @@
 
 pub mod error;
 pub mod events;
+pub mod forward;
 pub mod ipc;
 pub mod ns;
 pub mod sandbox;
@@ -61,6 +62,9 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::sandbox_pause,
         ipc::sandbox_stop,
         ipc::sandbox_delete,
+        ipc::port_forward_open,
+        ipc::port_forward_list,
+        ipc::port_forward_close,
     ])
 }
 
@@ -90,7 +94,7 @@ pub fn run() {
                     }
                 }
             }
-            app.manage(AppState { db, vault, rt });
+            app.manage(AppState { db, vault, rt, forwards: Default::default() });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
         })

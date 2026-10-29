@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
 import type { Namespace as NsRecord } from "./bindings/Namespace";
+import type { PortForward } from "./bindings/PortForward";
 import type { NewSandbox } from "./bindings/NewSandbox";
 import type { SandboxRecord } from "./bindings/SandboxRecord";
 import type { SandboxStatusEvent } from "./bindings/SandboxStatusEvent";
@@ -37,6 +38,9 @@ export const api = {
   sandboxPause: (ns: string, id: string) => invoke<SandboxRecord>("sandbox_pause", { ns, id }),
   sandboxStop: (ns: string, id: string) => invoke<SandboxRecord>("sandbox_stop", { ns, id }),
   sandboxDelete: (ns: string, id: string) => invoke<void>("sandbox_delete", { ns, id }),
+  portForwardOpen: (ns: string, id: string, port: number) => invoke<PortForward>("port_forward_open", { ns, id, port }),
+  portForwardList: (ns: string) => invoke<PortForward[]>("port_forward_list", { ns }),
+  portForwardClose: (ns: string, id: string, port: number) => invoke<boolean>("port_forward_close", { ns, id, port }),
 };
 
 /** Readable message from a core error ({ code, message }) or anything else thrown. */
