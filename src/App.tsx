@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, isLive, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
-import { applyAppearance } from "./appearance";
+import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
 import { Sidebar } from "./components/Sidebar";
@@ -63,6 +63,33 @@ export function App() {
     if (!isLive() || !state.session) return;
     syncNamespace(state.ns, dispatch).catch((e) => toast(errorMessage(e), "err"));
   }, [state.ns, state.session, dispatch, toast]);
+  // Appearance and preferences live in the core's settings table.
+  const prefsLoaded = useRef(false);
+  useEffect(() => {
+    if (!isLive() || !state.session) return;
+    prefsLoaded.current = false;
+    Promise.all([api.settingsGet("appearance"), api.settingsGet("preferences")])
+      .then(([look, prefs]) => {
+        const patch = sanitizeAppearance(look);
+        if (Object.keys(patch).length) dispatch({ type: "appearance", patch });
+        const p = (prefs ?? {}) as { showCode?: unknown; ambient?: unknown };
+        if (typeof p.showCode === "boolean") dispatch({ type: "showCode", value: p.showCode });
+        if (typeof p.ambient === "boolean") dispatch({ type: "ambient", value: p.ambient });
+      })
+      .catch((e) => toast(errorMessage(e), "err"))
+      .finally(() => { prefsLoaded.current = true; });
+  }, [state.session, dispatch, toast]);
+  useEffect(() => {
+    if (!isLive() || !state.session || !prefsLoaded.current) return;
+    // Debounced so dragging a colour picker doesn't write on every frame.
+    const t = setTimeout(() => api.settingsSet("appearance", state.appearance).catch(() => {}), 400);
+    return () => clearTimeout(t);
+  }, [state.appearance, state.session]);
+  useEffect(() => {
+    if (!isLive() || !state.session || !prefsLoaded.current) return;
+    api.settingsSet("preferences", { showCode: state.showCode, ambient: state.ambient }).catch(() => {});
+  }, [state.showCode, state.ambient, state.session]);
+
   // Containers changed outside KALYPSO (CLI, crash, engine restart) show up without a refresh.
   useEffect(() => {
     if (!isLive() || !state.session) return;

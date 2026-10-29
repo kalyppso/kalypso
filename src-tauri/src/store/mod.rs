@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::error::Result;
+use crate::error::{KalypsoError, Result};
 
 /// Migrations run in order; `PRAGMA user_version` records how many have been applied.
 const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
@@ -46,6 +46,32 @@ impl Db {
     pub fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         f(&conn)
+    }
+
+    /// A stored setting, or `None` if it was never set.
+    pub fn setting(&self, key: &str) -> Result<Option<serde_json::Value>> {
+        let raw: Option<String> = self.with(|c| {
+            Ok(rusqlite::OptionalExtension::optional(c.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)))?)
+        })?;
+        raw.map(|s| serde_json::from_str(&s).map_err(|e| KalypsoError::Invalid(format!("setting {key} is corrupt: {e}")))).transpose()
+    }
+
+    pub fn set_setting(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        let key_ok = (1..=64).contains(&key.len()) && key.chars().all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c));
+        if !key_ok {
+            return Err(KalypsoError::Invalid("setting keys use letters, digits, '.', '-' and '_' (max 64)".into()));
+        }
+        let text = value.to_string();
+        if text.len() > 64 * 1024 {
+            return Err(KalypsoError::Invalid(format!("setting {key} is larger than 64 KB")));
+        }
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (key, &text),
+            )?;
+            Ok(())
+        })
     }
 
     pub fn audit(&self, ns: Option<&str>, actor: &str, action: &str, target: &str) -> Result<()> {
@@ -113,6 +139,18 @@ mod tests {
         let secrets = db.audit_list(Some("work"), Some("secret."), 50).unwrap();
         assert_eq!(secrets.len(), 1);
         assert_eq!(db.audit_list(None, None, 2).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn settings_roundtrip_and_validation() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.setting("appearance").unwrap(), None);
+        let v = serde_json::json!({ "theme": "custom", "accent": "#5b2aaa", "size": "large" });
+        db.set_setting("appearance", &v).unwrap();
+        db.set_setting("appearance", &serde_json::json!({ "theme": "white" })).unwrap();
+        assert_eq!(db.setting("appearance").unwrap(), Some(serde_json::json!({ "theme": "white" })));
+        assert_eq!(db.set_setting("bad key!", &v).unwrap_err().code(), "invalid");
+        assert_eq!(db.set_setting("big", &serde_json::json!("x".repeat(70_000))).unwrap_err().code(), "invalid");
     }
 
     #[test]

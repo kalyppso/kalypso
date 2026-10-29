@@ -46,6 +46,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
     builder.invoke_handler(tauri::generate_handler![
         ipc::core_info,
         ipc::audit_list,
+        ipc::settings_get,
+        ipc::settings_set,
         ipc::ns_list,
         ipc::ns_create,
         ipc::ns_delete,

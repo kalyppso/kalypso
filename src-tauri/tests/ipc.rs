@@ -58,6 +58,15 @@ fn namespaces_and_secrets_over_ipc() {
 }
 
 #[test]
+fn settings_roundtrip_over_ipc() {
+    let w = app();
+    assert_eq!(call(&w, "settings_get", json!({ "key": "appearance" })).unwrap(), Value::Null);
+    let look = json!({ "theme": "custom", "bg": "#0d1117", "text": "#e6edf3", "accent": "#5b2aaa", "font": "manrope", "size": "large" });
+    call(&w, "settings_set", json!({ "key": "appearance", "value": look })).unwrap();
+    assert_eq!(call(&w, "settings_get", json!({ "key": "appearance" })).unwrap(), look);
+}
+
+#[test]
 fn sandbox_create_reports_missing_runtime() {
     let w = app();
     call(&w, "ns_create", json!({ "id": "lab", "description": "" })).unwrap();
