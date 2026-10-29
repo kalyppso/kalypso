@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { GitPullRequest, Plus, Trash2 } from "lucide-react";
+import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { Modal, ModalActions, PageHead, PrimaryButton, initials, usd } from "../components/ui";
 import type { Task, TaskStatus } from "../types";
+import { kindDef } from "./Integrations";
 
 const COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: "queued", label: "Queued" },
@@ -20,6 +21,8 @@ export function Tracker() {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<TaskStatus | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const ticketSources = useNamespaced().integrations.filter((i) => i.ticketing);
 
   const visible = tasks.filter((t) => agentFilter === "all" || t.agentId === agentFilter);
   const agentName = (id: string) => state.agents.find((a) => a.id === id)?.name ?? id;
@@ -30,7 +33,11 @@ export function Tracker() {
       const t = tasks.find((x) => x.id === dragging);
       if (t && t.status !== status) {
         dispatch({ type: "moveTask", id: dragging, status });
-        toast(`Moved to ${COLUMNS.find((c) => c.id === status)!.label.toLowerCase()}`, "info");
+        const label = COLUMNS.find((c) => c.id === status)!.label;
+        const it = t.ticket && state.integrations.find((i) => i.id === t.ticket!.integrationId);
+        // Linked tickets follow the board when two-way sync is on.
+        if (t.ticket && it?.ticketing?.twoWay) toast(`${t.ticket.key} moved to ${label} in ${kindDef(it.kind).label}`, "info");
+        else toast(`Moved to ${label.toLowerCase()}`, "info");
       }
     }
     setDragging(null);
@@ -44,6 +51,7 @@ export function Tracker() {
           <option value="all">All agents</option>
           {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        {ticketSources.length > 0 && <button className="btn" onClick={() => setImporting(true)}><Download size={14} /> Import tickets</button>}
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New task</PrimaryButton>
       </PageHead>
 
@@ -87,6 +95,7 @@ export function Tracker() {
       </div>
 
       {creating && <NewTask onClose={() => setCreating(false)} />}
+      {importing && <ImportTickets onClose={() => setImporting(false)} />}
     </>
   );
 }
@@ -106,6 +115,7 @@ function TaskCard({ task: t, agent, dragging, onDragStart, onDragEnd, onDelete }
         <span className="avatar" style={{ width: 20, height: 20, fontSize: 9 }}>{initials(agent)}</span>
         <span className="dim">{agent}</span>
         <span className="spacer" />
+        {t.ticket && <span className="badge mono" title={t.ticket.url}>{t.ticket.key}</span>}
         {t.priority === "high" && <span className="badge accent">High</span>}
       </div>
       {(t.startedAt || t.pr) && (
@@ -153,6 +163,60 @@ function NewTask({ onClose }: { onClose: () => void }) {
         </label>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Queue task" />
+    </Modal>
+  );
+}
+
+function ImportTickets({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = useStore();
+  const toast = useToast();
+  const { agents, integrations, tasks } = useNamespaced();
+  const sources = integrations.filter((i) => i.ticketing);
+  const linked = new Set(tasks.map((t) => t.ticket?.key).filter(Boolean));
+  const available = state.tickets.filter((t) => sources.some((s) => s.id === t.integrationId) && !linked.has(t.key));
+  const [picked, setPicked] = useState<string[]>([]);
+  const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
+  const toggle = (key: string) => setPicked(picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key]);
+
+  const importNow = () => {
+    if (!picked.length || !agentId) return;
+    for (const t of available.filter((x) => picked.includes(x.key))) {
+      dispatch({
+        type: "addTask",
+        task: {
+          id: uid("t"), ns: state.ns, title: t.title, agentId, status: "queued", priority: t.priority, progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null,
+          ticket: { integrationId: t.integrationId, key: t.key, url: t.url },
+        },
+      });
+    }
+    toast(`Queued ${picked.length} ticket${picked.length === 1 ? "" : "s"} for ${agents.find((a) => a.id === agentId)?.name}`);
+    onClose();
+  };
+
+  return (
+    <Modal title="Import tickets" subtitle={`Open tickets matching ${sources.map((s) => s.name).join(", ")}. Each becomes a queued task.`} onClose={onClose}>
+      {available.length === 0 ? (
+        <div className="faint">Every matching ticket is already on the board.</div>
+      ) : (
+        <div style={{ maxHeight: 280, overflow: "auto", margin: "0 -4px" }}>
+          {available.map((t) => (
+            <label key={t.key} className="list-row" style={{ cursor: "pointer", padding: "8px 4px" }}>
+              <input type="checkbox" checked={picked.includes(t.key)} onChange={() => toggle(t.key)} style={{ accentColor: "var(--accent)" }} />
+              <TicketIcon size={13} className="faint" />
+              <span className="mono small faint" style={{ width: 64, flex: "none" }}>{t.key}</span>
+              <span className="clip" style={{ flex: 1 }}>{t.title}</span>
+              {t.priority === "high" && <span className="badge accent">High</span>}
+              <span className="faint small">{t.status}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <label className="field">Assign to
+        <select className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+          {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </label>
+      <ModalActions onCancel={onClose} onConfirm={importNow} confirm={picked.length ? `Import ${picked.length}` : "Import"} />
     </Modal>
   );
 }

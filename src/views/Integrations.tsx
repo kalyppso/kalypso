@@ -8,7 +8,8 @@ interface KindDef {
   kind: IntegrationKind;
   label: string;
   glyph: string;
-  group: "Notes and wikis" | "Work tools" | "Anything else";
+  group: "Notes and wikis" | "Ticketing" | "Work tools" | "Anything else";
+  ticketing?: { projectLabel: string; projectPlaceholder: string };
   blurb: string;
   targetLabel: string;
   placeholder: string;
@@ -23,8 +24,14 @@ export const KINDS: KindDef[] = [
   { kind: "logseq", label: "Logseq", glyph: "Lq", group: "Notes and wikis", blurb: "Outliner graph", targetLabel: "Graph folder", placeholder: "~/logseq/graph", token: false, brain: true, via: "graph folder mount" },
   { kind: "confluence", label: "Confluence", glyph: "Cf", group: "Notes and wikis", blurb: "Team wiki spaces", targetLabel: "Site URL", placeholder: "acme.atlassian.net/wiki", token: true, brain: true, via: "Atlassian MCP server" },
   { kind: "gdrive", label: "Google Drive", glyph: "Dr", group: "Notes and wikis", blurb: "Docs, sheets & folders", targetLabel: "Folder URL", placeholder: "drive.google.com/drive/folders/…", token: true, brain: true, via: "Google Drive MCP server" },
+  { kind: "jira", label: "Jira", glyph: "Ji", group: "Ticketing", blurb: "Issues, sprints, service desk", targetLabel: "Site URL", placeholder: "acme.atlassian.net", token: true, brain: false, via: "Atlassian MCP server", ticketing: { projectLabel: "Project key", projectPlaceholder: "ENG" } },
+  { kind: "linear", label: "Linear", glyph: "Li", group: "Ticketing", blurb: "Issues & projects", targetLabel: "Workspace URL", placeholder: "linear.app/acme", token: true, brain: false, via: "Linear MCP server", ticketing: { projectLabel: "Team key", projectPlaceholder: "ENG" } },
+  { kind: "github-issues", label: "GitHub Issues", glyph: "GI", group: "Ticketing", blurb: "Issues in any repository", targetLabel: "Repository", placeholder: "github.com/acme/platform", token: true, brain: false, via: "GitHub MCP server", ticketing: { projectLabel: "Milestone or project", projectPlaceholder: "Optional" } },
+  { kind: "gitlab-issues", label: "GitLab Issues", glyph: "GL", group: "Ticketing", blurb: "Issues and boards", targetLabel: "Project URL", placeholder: "gitlab.com/acme/infra", token: true, brain: false, via: "GitLab MCP server", ticketing: { projectLabel: "Board or milestone", projectPlaceholder: "Optional" } },
+  { kind: "servicenow", label: "ServiceNow", glyph: "SN", group: "Ticketing", blurb: "Incidents and requests", targetLabel: "Instance URL", placeholder: "acme.service-now.com", token: true, brain: false, via: "ServiceNow REST API", ticketing: { projectLabel: "Assignment group", projectPlaceholder: "Platform Ops" } },
+  { kind: "zendesk", label: "Zendesk", glyph: "Zd", group: "Ticketing", blurb: "Support tickets", targetLabel: "Subdomain", placeholder: "acme.zendesk.com", token: true, brain: false, via: "Zendesk REST API", ticketing: { projectLabel: "Group or view", projectPlaceholder: "Tier 1" } },
+  { kind: "asana", label: "Asana", glyph: "As", group: "Ticketing", blurb: "Tasks and projects", targetLabel: "Workspace", placeholder: "app.asana.com/0/acme", token: true, brain: false, via: "Asana MCP server", ticketing: { projectLabel: "Project", projectPlaceholder: "Platform" } },
   { kind: "github", label: "GitHub", glyph: "GH", group: "Work tools", blurb: "Repos, issues, PRs", targetLabel: "Repository", placeholder: "github.com/acme/platform", token: true, brain: false, via: "GitHub MCP server" },
-  { kind: "linear", label: "Linear", glyph: "Li", group: "Work tools", blurb: "Issues & projects", targetLabel: "Team URL", placeholder: "linear.app/acme/team/ENG", token: true, brain: false, via: "Linear MCP server" },
   { kind: "slack", label: "Slack", glyph: "Sl", group: "Work tools", blurb: "Channels & threads", targetLabel: "Channel", placeholder: "acme.slack.com/#deploys", token: true, brain: false, via: "Slack MCP server" },
   { kind: "mcp", label: "Any MCP server", glyph: "MCP", group: "Anything else", blurb: "stdio, HTTP or SSE", targetLabel: "Command or URL", placeholder: "npx my-mcp-server or https://host/mcp", token: false, brain: false, via: "MCP" },
   { kind: "rest", label: "REST / webhook", glyph: "API", group: "Anything else", blurb: "Wrap any HTTP API as tools", targetLabel: "Base URL", placeholder: "https://api.example.com/v1", token: true, brain: false, via: "KALYPSO REST→MCP bridge (OpenAPI)" },
@@ -78,7 +85,12 @@ export function Integrations() {
                 <Status value={i.status} />
               </div>
               <div className="row" style={{ flexWrap: "wrap" }}>
-                <span className="faint small">{i.access === "read" ? "Read only" : "Read and write"}. {i.status === "syncing" ? "Syncing now" : i.status === "error" ? `Error: ${i.lastSync}` : `Synced ${i.lastSync}`}</span>
+                <span className="faint small">
+                  {i.ticketing
+                    ? `${i.ticketing.project || "All projects"}${i.ticketing.label ? `, label "${i.ticketing.label}"` : ""}, ${i.ticketing.twoWay ? "two-way sync" : "import only"}. `
+                    : `${i.access === "read" ? "Read only" : "Read and write"}. `}
+                  {i.status === "syncing" ? "Syncing now" : i.status === "error" ? `Error: ${i.lastSync}` : `Synced ${i.lastSync}`}
+                </span>
                 <span className="spacer" />
                 <label className="row small dim" style={{ cursor: "pointer" }}>
                   Brain
@@ -143,6 +155,9 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
   const [secretId, setSecretId] = useState<string>("");
   const [token, setToken] = useState("");
   const [granted, setGranted] = useState<string[]>(agents.map((a) => a.id));
+  const [project, setProject] = useState("");
+  const [label, setLabel] = useState("agent");
+  const [twoWay, setTwoWay] = useState(true);
 
   const connect = () => {
     if (!target.trim()) return;
@@ -156,6 +171,7 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
       integration: {
         id: uid("i"), ns: state.ns, kind, name: name.trim() || d.label, target: target.trim(), access, brain, secretId: sid,
         agents: granted, status: "connected", lastSync: "just now",
+        ticketing: d.ticketing ? { project: project.trim(), label: label.trim(), twoWay } : undefined,
       },
     });
     toast(`Connected ${d.label}`);
@@ -192,6 +208,22 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
         <span className="spacer" />
         <Toggle on={brain} onChange={setBrain} label="Use as brain" />
       </div>
+      {d.ticketing && (
+        <>
+          <div className="field-row">
+            <label className="field">{d.ticketing.projectLabel}<input className="input" value={project} onChange={(e) => setProject(e.target.value)} placeholder={d.ticketing.projectPlaceholder} /></label>
+            <label className="field">Only tickets labelled<input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Empty: every ticket assigned to an agent" /></label>
+          </div>
+          <div className="row">
+            <div>
+              <div style={{ color: "var(--text)" }}>Sync status back to {d.label}</div>
+              <div className="faint small">Moving a task in the Tracker moves its ticket, and comments name the agent.</div>
+            </div>
+            <span className="spacer" />
+            <Toggle on={twoWay} onChange={setTwoWay} label="Two-way sync" />
+          </div>
+        </>
+      )}
       <div className="field">Agents with access
         <div className="chips">
           {agents.map((a) => (

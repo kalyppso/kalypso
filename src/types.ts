@@ -127,6 +127,12 @@ export interface BudgetRule {
 }
 
 export type IntegrationKind =
+  | "jira"
+  | "github-issues"
+  | "gitlab-issues"
+  | "servicenow"
+  | "zendesk"
+  | "asana"
   | "obsidian"
   | "notion"
   | "logseq"
@@ -150,6 +156,7 @@ export interface Integration {
   secretId: string | null;
   agents: string[];
   status: "connected" | "syncing" | "error";
+  ticketing?: TicketSync; // set for ticketing tools
   lastSync: string;
 }
 
@@ -212,6 +219,7 @@ export interface Task {
   minutes: number;
   cost: number;
   pr: string | null;
+  ticket?: TicketRef;
 }
 
 export interface Repo {
@@ -253,3 +261,26 @@ export interface PullRequest {
 export type PaneNode =
   | { kind: "pane"; id: string; sandboxId: string | null }
   | { kind: "split"; id: string; dir: "row" | "column"; ratio: number; a: PaneNode; b: PaneNode };
+
+// Ticketing integrations: which tickets come into the Tracker, and whether
+// status changes flow back to the ticketing tool.
+export interface TicketSync {
+  project: string; // Jira project key, Linear team, repo, queue…
+  label: string; // only tickets with this label; empty = all assigned to agents
+  twoWay: boolean;
+}
+
+export interface TicketRef {
+  integrationId: string;
+  key: string; // ENG-142, #311, INC0012345
+  url: string;
+}
+
+export interface Ticket {
+  integrationId: string;
+  key: string;
+  title: string;
+  status: string;
+  priority: "low" | "normal" | "high";
+  url: string;
+}
