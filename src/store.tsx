@@ -25,6 +25,7 @@ import type {
   Skill,
   Task,
   TaskStatus,
+  Ticket,
   ThemeId,
   UsageDay,
   ViewId,
@@ -66,6 +67,7 @@ export interface State {
   repos: Repo[];
   commits: Commit[];
   pullRequests: PullRequest[];
+  tickets: Ticket[];
   terminals: Record<string, PaneNode>; // layout per namespace
 }
 
@@ -151,6 +153,7 @@ function initial(): State {
     repos: mock.repos,
     commits: mock.commits,
     pullRequests: mock.pullRequests,
+    tickets: mock.tickets,
     terminals: {},
   };
 }

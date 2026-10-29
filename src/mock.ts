@@ -11,6 +11,7 @@ import type {
   PolicyEvent,
   PullRequest,
   Repo,
+  Ticket,
   Sandbox,
   Secret,
   Skill,
@@ -145,6 +146,7 @@ export const integrations: Integration[] = [
   { id: "i-obsidian", ns: "personal", kind: "obsidian", name: "Second Brain", target: "~/Documents/Obsidian/Brain", access: "read-write", brain: true, secretId: null, agents: ["a-researcher", "a-writer"], status: "connected", lastSync: "2 min ago" },
   { id: "i-notion", ns: "work", kind: "notion", name: "Engineering Wiki", target: "notion.so/acme/engineering", access: "read", brain: true, secretId: null, agents: ["a-coder", "a-reviewer"], status: "syncing", lastSync: "syncing…" },
   { id: "i-github", ns: "work", kind: "github", name: "acme/platform", target: "github.com/acme/platform", access: "read-write", brain: false, secretId: "s-gh", agents: ["a-coder", "a-reviewer"], status: "connected", lastSync: "just now" },
+  { id: "i-jira", ns: "work", kind: "jira", name: "Jira ENG", target: "acme.atlassian.net", access: "read-write", brain: false, secretId: null, agents: ["a-coder", "a-reviewer", "a-ops"], status: "connected", lastSync: "1 min ago", ticketing: { project: "ENG", label: "agent", twoWay: true } },
   { id: "i-slack", ns: "work", kind: "slack", name: "#deploys", target: "acme.slack.com/#deploys", access: "read", brain: false, secretId: null, agents: ["a-ops"], status: "error", lastSync: "token expired" },
 ];
 
@@ -224,7 +226,7 @@ export const tasks: Task[] = [
   { id: "t2", ns: "work", title: "Review PR #482", agentId: "a-reviewer", status: "running", priority: "high", progress: 0.6, startedAt: "12:05", minutes: 18, cost: 0.41, pr: "#482" },
   { id: "t3", ns: "work", title: "Bump Node to 22 in CI images", agentId: "a-coder", status: "running", priority: "normal", progress: 0.35, startedAt: "12:14", minutes: 9, cost: 0.58, pr: null },
   { id: "t4", ns: "work", title: "Investigate kubernetes MCP disconnects", agentId: "a-ops", status: "failed", priority: "normal", progress: 0.2, startedAt: "12:09", minutes: 3, cost: 0.04, pr: null },
-  { id: "t5", ns: "work", title: "Add rate limiting to public API", agentId: "a-coder", status: "queued", priority: "normal", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
+  { id: "t5", ns: "work", title: "Add rate limiting to public API", agentId: "a-coder", status: "queued", priority: "normal", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null, ticket: { integrationId: "i-jira", key: "ENG-142", url: "https://acme.atlassian.net/browse/ENG-142" } },
   { id: "t6", ns: "work", title: "Write runbook for webhook outages", agentId: "a-ops", status: "queued", priority: "low", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
   { id: "t7", ns: "work", title: "Fix flaky billing integration test", agentId: "a-coder", status: "done", priority: "normal", progress: 1, startedAt: "09:20", minutes: 41, cost: 1.87, pr: "#479" },
   { id: "t8", ns: "work", title: "Review PR #479", agentId: "a-reviewer", status: "done", priority: "normal", progress: 1, startedAt: "10:05", minutes: 12, cost: 0.33, pr: "#479" },
@@ -282,4 +284,13 @@ export const pullRequests: PullRequest[] = [
   { id: "pr483", repoId: "r-platform", number: 483, title: "Bump Node to 22 in CI images", author: "a-coder", isAgent: true, ci: "pending", review: "waiting", updated: "12:20" },
   { id: "pr481", repoId: "r-platform", number: 481, title: "Org-level API keys", author: "dmitri", isAgent: false, ci: "failing", review: "waiting", updated: "10:44" },
   { id: "pr77", repoId: "r-infra", number: 77, title: "Rotate staging certificates", author: "a-ops", isAgent: true, ci: "passing", review: "approved", updated: "09:31" },
+];
+
+// Open tickets in connected ticketing tools that match their filters.
+export const tickets: Ticket[] = [
+  { integrationId: "i-jira", key: "ENG-142", title: "Add rate limiting to public API", status: "To Do", priority: "normal", url: "https://acme.atlassian.net/browse/ENG-142" },
+  { integrationId: "i-jira", key: "ENG-151", title: "Audit log API returns 500 on empty filters", status: "To Do", priority: "high", url: "https://acme.atlassian.net/browse/ENG-151" },
+  { integrationId: "i-jira", key: "ENG-153", title: "Paginate the webhooks list endpoint", status: "To Do", priority: "normal", url: "https://acme.atlassian.net/browse/ENG-153" },
+  { integrationId: "i-jira", key: "ENG-157", title: "Upgrade Postgres driver to 3.x", status: "Backlog", priority: "low", url: "https://acme.atlassian.net/browse/ENG-157" },
+  { integrationId: "i-jira", key: "ENG-160", title: "Flaky test: invoices_timezone_spec", status: "To Do", priority: "high", url: "https://acme.atlassian.net/browse/ENG-160" },
 ];

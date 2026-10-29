@@ -375,7 +375,9 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .task:hover { border-color: var(--border-strong); }
 .task:active { cursor: grabbing; }
 .task.dragging { opacity: 0.4; }
-.task-title { font-weight: 500; line-height: 1.4; }
+.task-title { font-weight: 500; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.task .row { flex-wrap: wrap; row-gap: 6px; }
+.task .row:first-child { flex-wrap: nowrap; }
 
 /* ---------- Line charts ---------- */
 .lchart { position: relative; }
