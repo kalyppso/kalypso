@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { AuditEntry } from "./bindings/AuditEntry";
 import type { Namespace as NsRecord } from "./bindings/Namespace";
 import type { NewSandbox } from "./bindings/NewSandbox";
 import type { SandboxRecord } from "./bindings/SandboxRecord";
@@ -20,6 +21,7 @@ export interface CoreInfo {
 
 export const api = {
   coreInfo: () => invoke<CoreInfo>("core_info"),
+  auditList: (ns: string | null, action: string | null, limit = 200) => invoke<AuditEntry[]>("audit_list", { ns, action, limit }),
   nsList: () => invoke<NsRecord[]>("ns_list"),
   nsCreate: (id: string, description: string) => invoke<NsRecord>("ns_create", { id, description }),
   nsDelete: (ns: string) => invoke<void>("ns_delete", { ns }),

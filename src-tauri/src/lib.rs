@@ -15,10 +15,37 @@ use crate::ipc::AppState;
 
 const SEED: &[(&str, &str)] = &[("personal", "Side projects and experiments"), ("work", "Client agents, production credentials")];
 
+/// Log to stderr and to a daily file in `<app data>/logs`, keeping the last week.
+fn init_logging(dir: &std::path::Path) {
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    static GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> = std::sync::OnceLock::new();
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "kalypso_lib=info".into());
+    let file = tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("kalypso")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(dir);
+    let registry = tracing_subscriber::registry().with(filter).with(fmt::layer());
+    match file {
+        Ok(appender) => {
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            let _ = GUARD.set(guard); // flushes the file on exit
+            let _ = registry.with(fmt::layer().with_ansi(false).with_writer(writer)).try_init();
+        }
+        Err(e) => {
+            let _ = registry.try_init();
+            tracing::warn!(error = %e, "could not open the log file; logging to stderr only");
+        }
+    }
+}
+
 /// Every IPC command the frontend may call. Shared by the app and the IPC tests.
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![
         ipc::core_info,
+        ipc::audit_list,
         ipc::ns_list,
         ipc::ns_create,
         ipc::ns_delete,
@@ -37,14 +64,11 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "kalypso_lib=info".into()))
-        .init();
-
     register(tauri::Builder::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            init_logging(&dir.join("logs"));
             let db = store::Db::open(&dir.join("kalypso.db"))?;
             let vault = vault::Vault::load(&dir)?;
             let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());
