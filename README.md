@@ -1,35 +1,65 @@
-# KALYPSO
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/assets/logo-dark.png">
+    <img src="src/assets/logo-light.png" width="96" alt="KALYPSO logo">
+  </picture>
+</p>
 
-Desktop workspace for your AI agents: sandboxes, secrets, agents, budgets, skills & MCPs, agent-to-agent connections and tunnels, an integrated browser and phone preview — all separated by namespaces.
+<h1 align="center">KALYPSO</h1>
 
-Status: **UI prototype** on mock data. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design and roadmap.
+<p align="center">A desktop workspace for running and supervising AI agents.<br>Sandboxes, secrets, budgets, policies and connections, kept apart by namespaces.</p>
 
-## Run
+<p align="center">
+  <a href="https://github.com/kalyppso/kalypso/actions/workflows/ci.yml"><img src="https://github.com/kalyppso/kalypso/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/kalyppso/kalypso/issues/41">Roadmap</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a>
+</p>
 
-Prerequisites: Node 20+, Rust (stable, via rustup), and Tauri's system deps
-(Linux: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`; see https://tauri.app/start/prerequisites/).
+![KALYPSO overview: agents, sandboxes, spend, policy stops, a year of commits, activity and policy events](docs/images/overview.png)
+
+## What it does
+
+- **Sandboxes.** Every agent runs in a hardened container: read-only root, no Linux capabilities, its own network.
+- **Namespaces.** Separate networks, encryption keys, budgets and policies for each workspace (personal, work, a client). Nothing crosses between them.
+- **Secrets.** Encrypted at rest with a per-namespace key and handed to agents as files, never in prompts. Every reveal is logged.
+- **Policies.** Plain-language guardrails such as "never force-push to main", each set to block, ask you, or warn.
+- **Budgets.** Monthly, daily and per-run caps that pause an agent, alert you, or switch it to a cheaper model.
+- **Connections.** Link agents to each other, to your tools (Obsidian, Notion, GitHub, any MCP server) or to other machines.
+- **Observe.** A tracker board, a Git tracker with agent and human commits told apart, and live monitoring.
+- **Tools.** Split terminals into sandboxes, a browser and a phone preview.
+- **Code only when you ask.** Configs, specs and diffs stay folded until you open them.
+
+## Status
+
+Early. The whole UI exists as a prototype on sample data. The Rust core (Phase 1) is being built, and namespaces, secrets and sandboxes already run for real in the desktop app. Progress is tracked in the [Roadmap](https://github.com/kalyppso/kalypso/issues/41).
+
+## Run it
+
+You need Node 20+, Rust stable and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. For sandboxes you also need Docker, or Podman with its API socket (`systemctl --user enable --now podman.socket`).
 
 ```bash
 npm install
-npm run tauri dev     # desktop app
-npm run dev           # UI only, in a browser at http://localhost:1420
-npm run tauri build   # installers in src-tauri/target/release/bundle
+npm run tauri dev     # desktop app, backed by the Rust core
+npm run dev           # UI only in a browser, on sample data
 ```
 
-## Backend (Phase 1)
-The desktop build talks to a Rust core (`src-tauri/src/`): SQLite store, namespaces, an encrypted secrets vault and sandboxes on Docker or Podman. In a plain browser (`npm run dev`) the UI falls back to sample data.
+On WSL, if the window is blank, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 
-- Sandboxes need Docker, or Podman with its API socket: `systemctl --user enable --now podman.socket`.
-- Tests: `cd src-tauri && cargo test`. Add `KALYPSO_TEST_RUNTIME=1` to also run the real container lifecycle test.
-- Generated TypeScript types live in `src/bindings/` (refreshed by `cargo test`).
+## Develop
 
-## Tour
-- **Ctrl/⌘ K** opens the command menu: jump anywhere, switch namespace or theme, toggle code.
-- **Namespace switcher** (top-left): everything you see is scoped to it.
-- **Themes** (top-right): Void (default), Dark Blur, Cappuccino, Blossom, Ocean, Daylight.
-- **Code** toggle: code stays hidden unless this is on or you click "Show …" on a block.
-- **Policies**: plain-language guardrails ("Never force-push to main") with Block / Ask me / Warn.
-- **Integrations**: connect Obsidian, Notion, GitHub, any MCP or REST API; mark one as a *Brain* for shared agent memory.
-- **Budget**: monthly limit plus per-agent / daily / per-run caps that pause, alert or downgrade.
-- **Connections**: click an agent, then another agent or an integration, to wire them together.
-- The spider is clickable. Settings → *Ambient web* turns the motion off.
+```bash
+cd src-tauri
+cargo test                          # unit and IPC tests
+KALYPSO_TEST_RUNTIME=1 cargo test   # also run real container tests (needs Docker or Podman)
+cargo clippy --all-targets -- -D warnings
+```
+
+TypeScript types for the IPC layer are generated from the Rust structs into `src/bindings/` when the tests run. CI fails if they drift.
+
+## Layout
+
+```
+src/            React UI (views, components, store, generated bindings)
+src-tauri/src/  Rust core: store, ns, vault, sandbox, events, ipc
+docs/           Architecture and images
+```
