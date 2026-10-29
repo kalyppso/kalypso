@@ -2,6 +2,7 @@
 // sandboxes on Docker or Podman. See docs/ARCHITECTURE.md and the Roadmap issue.
 
 pub mod error;
+pub mod events;
 pub mod ipc;
 pub mod ns;
 pub mod sandbox;
@@ -64,6 +65,7 @@ pub fn run() {
                 }
             }
             app.manage(AppState { db, vault, rt });
+            events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

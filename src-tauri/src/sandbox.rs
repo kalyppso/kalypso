@@ -8,8 +8,9 @@ use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::CreateImageOptions;
 use bollard::models::{HostConfig, Mount, MountTypeEnum};
 use bollard::network::CreateNetworkOptions;
+use bollard::system::EventsOptions;
 use bollard::Docker;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::{Stream, StreamExt, TryStreamExt};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -373,6 +374,64 @@ pub async fn namespace_ip(rt: &Runtime, ns: &str, id: &str) -> Result<Option<Str
         .filter(|ip| !ip.is_empty()))
 }
 
+/// A sandbox changed state in the engine, whoever caused it.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct SandboxStatusEvent {
+    pub ns: String,
+    pub id: String,
+    pub status: String,
+}
+
+/// Map a container event action to the status KALYPSO shows. `None` for actions that don't change it.
+pub fn status_for_action(action: &str) -> Option<&'static str> {
+    match action {
+        "start" | "unpause" | "restart" => Some("running"),
+        "pause" => Some("paused"),
+        "die" | "stop" | "kill" => Some("stopped"),
+        "destroy" | "remove" => Some("missing"),
+        _ => None,
+    }
+}
+
+impl Runtime {
+    /// Container events for KALYPSO sandboxes only. Ends when the engine connection drops.
+    pub fn watch(&self) -> Result<impl Stream<Item = SandboxStatusEvent> + Send + 'static> {
+        let docker = self.docker()?.clone();
+        let filters = HashMap::from([
+            ("type".to_string(), vec!["container".to_string()]),
+            ("label".to_string(), vec!["kalypso.sandbox".to_string()]),
+        ]);
+        // The request is only sent on first poll, so ask the engine to replay from now:
+        // nothing that happens between this call and the first read is lost.
+        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).ok();
+        Ok(docker.events(Some(EventsOptions::<String> { since, filters, ..Default::default() })).filter_map(|msg| async move {
+            let msg = match msg {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::warn!(error = %e, "unreadable container event");
+                    return None;
+                }
+            };
+            let status = status_for_action(msg.action.as_deref()?)?;
+            let attrs = msg.actor?.attributes?;
+            Some(SandboxStatusEvent {
+                ns: attrs.get("kalypso.ns")?.clone(),
+                id: attrs.get("kalypso.sandbox")?.clone(),
+                status: status.to_string(),
+            })
+        }))
+    }
+}
+
+/// Record a status reported by the engine. Unknown ids (already deleted here) are ignored.
+pub fn apply_event(db: &Db, ev: &SandboxStatusEvent) -> Result<bool> {
+    let n = db.with(|c| {
+        Ok(c.execute("UPDATE sandboxes SET status = ?3 WHERE id = ?1 AND ns = ?2 AND status != ?3", (&ev.id, &ev.ns, &ev.status))?)
+    })?;
+    Ok(n > 0)
+}
+
 /// Read the real state from the engine and store it.
 pub async fn refresh(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
     get(db, ns, id)?;
@@ -450,6 +509,49 @@ mod tests {
         }
         rt.remove_network(&a).await.unwrap();
         rt.remove_network(&b).await.unwrap();
+    }
+
+    #[test]
+    fn actions_map_to_statuses() {
+        assert_eq!(status_for_action("start"), Some("running"));
+        assert_eq!(status_for_action("die"), Some("stopped"));
+        assert_eq!(status_for_action("pause"), Some("paused"));
+        assert_eq!(status_for_action("destroy"), Some("missing"));
+        assert_eq!(status_for_action("exec_create"), None);
+    }
+
+    /// Changes made outside KALYPSO (here: straight through the engine API) arrive as events.
+    #[tokio::test]
+    async fn engine_events_reach_the_watcher() {
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Db::open_in_memory().unwrap();
+        let ns = format!("ev{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        let sb = create(&db, &rt, &ns, spec("watched")).await.unwrap();
+
+        let mut events = Box::pin(rt.watch().unwrap());
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        rt.docker().unwrap().start_container(&container_name(&ns, &sb.id), None::<StartContainerOptions<String>>).await.unwrap();
+
+        let got = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let ev = events.next().await.expect("event stream ended");
+                if ev.id == sb.id && ev.status == "running" {
+                    return ev;
+                }
+            }
+        })
+        .await
+        .expect("no start event within 10s");
+        assert_eq!(got.ns, ns);
+        assert!(apply_event(&db, &got).unwrap());
+        assert_eq!(list(&db, &ns).unwrap()[0].status, "running");
+
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
+        rt.remove_network(&ns).await.unwrap();
     }
 
     /// Runs against a real Docker or Podman. Opt in with KALYPSO_TEST_RUNTIME=1.
