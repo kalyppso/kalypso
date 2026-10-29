@@ -22,6 +22,8 @@ export interface CoreInfo {
 export const api = {
   coreInfo: () => invoke<CoreInfo>("core_info"),
   auditList: (ns: string | null, action: string | null, limit = 200) => invoke<AuditEntry[]>("audit_list", { ns, action, limit }),
+  settingsGet: (key: string) => invoke<unknown>("settings_get", { key }),
+  settingsSet: (key: string, value: unknown) => invoke<void>("settings_set", { key, value }),
   nsList: () => invoke<NsRecord[]>("ns_list"),
   nsCreate: (id: string, description: string) => invoke<NsRecord>("ns_create", { id, description }),
   nsDelete: (ns: string) => invoke<void>("ns_delete", { ns }),

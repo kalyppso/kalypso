@@ -43,6 +43,18 @@ pub fn audit_list(s: State<'_, AppState>, ns: Option<String>, action: Option<Str
     s.db.audit_list(ns.as_deref(), action.as_deref(), limit.unwrap_or(200))
 }
 
+// ---------- Settings ----------
+
+#[tauri::command]
+pub fn settings_get(s: State<'_, AppState>, key: String) -> Result<Option<serde_json::Value>> {
+    s.db.setting(&key)
+}
+
+#[tauri::command]
+pub fn settings_set(s: State<'_, AppState>, key: String, value: serde_json::Value) -> Result<()> {
+    s.db.set_setting(&key, &value)
+}
+
 // ---------- Namespaces ----------
 
 #[tauri::command]

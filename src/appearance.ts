@@ -58,3 +58,17 @@ export function applyAppearance(a: Appearance) {
 }
 
 export const isDark = (a: Appearance) => (a.theme === "custom" ? luminance(a.bg) < 0.4 : a.theme === "black");
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/** Keep only well-formed appearance fields from stored data, so a bad value can't break the theme. */
+export function sanitizeAppearance(x: unknown): Partial<Appearance> {
+  if (!x || typeof x !== "object") return {};
+  const o = x as Record<string, unknown>;
+  const out: Partial<Appearance> = {};
+  if (o.theme === "black" || o.theme === "white" || o.theme === "custom") out.theme = o.theme;
+  for (const k of ["bg", "text", "accent"] as const) if (typeof o[k] === "string" && HEX.test(o[k] as string)) out[k] = (o[k] as string).toLowerCase();
+  if (typeof o.font === "string" && o.font.length <= 80 && (o.font.startsWith("system:") || FONTS.some((f) => f.id === o.font))) out.font = o.font;
+  if (o.size === "compact" || o.size === "default" || o.size === "large") out.size = o.size;
+  return out;
+}
