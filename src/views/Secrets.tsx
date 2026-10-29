@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, Eye, EyeOff, Lock, Plus, Trash2 } from "lucide-react";
+import type { GatewayInfo } from "../bindings/GatewayInfo";
+import type { GatewayKey } from "../bindings/GatewayKey";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
 import { Modal, ModalActions, PageHead, PrimaryButton } from "../components/ui";
@@ -52,7 +54,7 @@ export function Secrets() {
                     {shown ? revealed[s.id] : "•".repeat(16)}
                   </td>
                   <td><span className="badge">{s.scope}</span></td>
-                  <td className="dim">{s.scope === "namespace" ? "all agents" : users.map((a) => a.name).join(", ") || "None"}</td>
+                  <td className="dim">{s.scope === "namespace" ? "all agents" : s.scope === "gateway" ? "model gateway" : users.map((a) => a.name).join(", ") || "None"}</td>
                   <td className="dim">{s.updatedAt}</td>
                   <td>
                     <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -69,8 +71,77 @@ export function Secrets() {
         {secrets.length === 0 && <div className="empty" style={{ margin: 16 }}>No secrets in this namespace.</div>}
       </div>
 
+      {isLive() && <GatewayKeys />}
+
       {creating && <NewSecret onClose={() => setCreating(false)} />}
     </>
+  );
+}
+
+/** Keys that let a tool outside KALYPSO call models through the gateway. */
+function GatewayKeys() {
+  const { state } = useStore();
+  const toast = useToast();
+  const [info, setInfo] = useState<GatewayInfo | null>(null);
+  const [keys, setKeys] = useState<GatewayKey[]>([]);
+  const [label, setLabel] = useState("");
+  const [minted, setMinted] = useState<string | null>(null);
+
+  const load = () => api.gatewayKeyList(state.ns).then(setKeys).catch((e) => toast(errorMessage(e), "err"));
+  useEffect(() => {
+    api.gatewayInfo().then(setInfo).catch(() => {});
+    setMinted(null);
+    load();
+  }, [state.ns]);
+
+  const create = () => {
+    if (!label.trim()) return;
+    api.gatewayKeyCreate(state.ns, label.trim())
+      .then((k) => { setMinted(k.token); setLabel(""); return load(); })
+      .catch((e) => toast(errorMessage(e), "err"));
+  };
+  const revoke = (k: GatewayKey) => {
+    if (!confirm(`Revoke ${k.label}? Tools using it stop working.`)) return;
+    api.gatewayKeyRevoke(state.ns, k.id).then(load).then(() => toast(`Revoked ${k.label}`, "warn")).catch((e) => toast(errorMessage(e), "err"));
+  };
+  const active = keys.filter((k) => !k.revoked_at && !k.sandbox_id);
+
+  return (
+    <div className="card flush" style={{ marginTop: 16 }}>
+      <div className="card-head" style={{ padding: "16px 16px 0" }}>
+        <span className="card-title">Model gateway</span>
+        <span className="spacer" />
+        <span className="faint small mono">{info?.url ?? "not running"}</span>
+      </div>
+      <p className="dim small" style={{ margin: "8px 16px 0" }}>
+        Store provider keys with the <span className="mono">gateway</span> scope (ANTHROPIC_API_KEY, OPENAI_API_KEY, or
+        &lt;PROVIDER&gt;_API_KEY with &lt;PROVIDER&gt;_BASE_URL). Sandboxes get their own key at start; for other tools, set the
+        SDK base URL to <span className="mono">{info?.url ?? "the gateway"}/anthropic</span> (or /openai, /&lt;provider&gt;) and use a key below.
+      </p>
+      {minted && (
+        <div className="row" style={{ margin: "12px 16px 0" }}>
+          <span className="mono small" style={{ wordBreak: "break-all" }}>{minted}</span>
+          <button className="btn sm" onClick={() => navigator.clipboard?.writeText(minted).then(() => toast("Copied"))}><Copy size={12} /></button>
+          <span className="faint small">Shown once.</span>
+        </div>
+      )}
+      {active.length > 0 && <table className="table">
+        <thead><tr><th>Key</th><th>Created</th><th /></tr></thead>
+        <tbody>
+          {active.map((k) => (
+            <tr key={k.id}>
+              <td style={{ fontWeight: 500 }}>{k.label}</td>
+              <td className="dim">{k.created_at.slice(0, 10)}</td>
+              <td><div className="row" style={{ justifyContent: "flex-end" }}><button className="btn sm danger" onClick={() => revoke(k)}>Revoke</button></div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>}
+      <div className="row" style={{ padding: 16 }}>
+        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. laptop scripts" onKeyDown={(e) => e.key === "Enter" && create()} />
+        <button className="btn" onClick={create}>Create key</button>
+      </div>
+    </div>
   );
 }
 
@@ -79,7 +150,13 @@ function NewSecret({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const [scope, setScope] = useState<"namespace" | "agent">("namespace");
+  const [scope, setScope] = useState<"namespace" | "agent" | "gateway">("namespace");
+  const [scopeTouched, setScopeTouched] = useState(false);
+  // Model provider keys belong to the gateway unless the user says otherwise.
+  const onKey = (v: string) => {
+    setKey(v);
+    if (!scopeTouched) setScope(/^(ANTHROPIC|OPENAI)_/i.test(v) || /_BASE_URL$/i.test(v) ? "gateway" : "namespace");
+  };
 
   const create = () => {
     const k = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
@@ -97,12 +174,13 @@ function NewSecret({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Add secret" subtitle="Encrypted at rest. Agents receive it as a file, never in their prompt." onClose={onClose}>
-      <label className="field">Key<input className="input mono" autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder="OPENWEATHER_API_KEY" /></label>
+      <label className="field">Key<input className="input mono" autoFocus value={key} onChange={(e) => onKey(e.target.value)} placeholder="OPENWEATHER_API_KEY" /></label>
       <label className="field">Value<input className="input mono" type="password" value={value} onChange={(e) => setValue(e.target.value)} /></label>
       <label className="field">Scope
-        <select className="select" value={scope} onChange={(e) => setScope(e.target.value as "namespace" | "agent")}>
+        <select className="select" value={scope} onChange={(e) => { setScopeTouched(true); setScope(e.target.value as typeof scope); }}>
           <option value="namespace">Every agent in {state.ns}</option>
           <option value="agent">Only agents you grant it to</option>
+          <option value="gateway">Model gateway only (never sent to sandboxes)</option>
         </select>
       </label>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Save secret" />

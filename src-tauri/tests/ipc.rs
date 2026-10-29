@@ -7,6 +7,9 @@
 //! platform and is covered on Linux and macOS.
 #![cfg(not(windows))]
 
+use std::sync::Arc;
+
+use kalypso_lib::gateway::{pricing::Pricing, Gateway};
 use kalypso_lib::{ipc::AppState, register, sandbox::Runtime, store::Db, vault::Vault};
 use serde_json::{json, Value};
 use tauri::ipc::{CallbackFn, InvokeBody};
@@ -17,12 +20,10 @@ use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
 fn app() -> WebviewWindow<tauri::test::MockRuntime> {
     // The real context: tauri.conf.json and capabilities/, so permissions match the app.
     let app = register(mock_builder()).build(tauri::generate_context!()).unwrap();
-    app.manage(AppState {
-        db: Db::open_in_memory().unwrap(),
-        vault: Vault::ephemeral(),
-        rt: Runtime::none(),
-        forwards: Default::default(),
-    });
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let vault = Arc::new(Vault::ephemeral());
+    let gateway = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
+    app.manage(AppState { db, vault, rt: Runtime::none(), forwards: Default::default(), gateway });
     WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap()
 }
 
