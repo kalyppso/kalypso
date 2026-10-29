@@ -7,7 +7,7 @@ use tauri::State;
 use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
 use crate::ns::{self, Namespace};
-use crate::sandbox::{self, NewSandbox, Runtime, SandboxRecord};
+use crate::sandbox::{self, NewSandbox, ProviderInfo, Runtime, SandboxRecord};
 use crate::store::{AuditEntry, Db};
 use crate::vault::{KeySource, SecretMeta, Vault};
 
@@ -106,6 +106,12 @@ pub async fn secret_delete(s: State<'_, AppState>, ns: String, id: String) -> Re
 
 // ---------- Sandboxes ----------
 
+/// Sandbox providers available on this machine, default first.
+#[tauri::command]
+pub fn sandbox_providers(s: State<'_, AppState>) -> Vec<ProviderInfo> {
+    s.rt.infos()
+}
+
 #[tauri::command]
 pub fn sandbox_list(s: State<'_, AppState>, ns: String) -> Result<Vec<SandboxRecord>> {
     ensure_ns(&s, &ns)?;
@@ -153,7 +159,7 @@ pub async fn port_forward_open(s: State<'_, AppState>, ns: String, id: String, p
     if rec.status != "running" {
         return Err(KalypsoError::Invalid(format!("start {} before forwarding a port", rec.name)));
     }
-    s.forwards.open(s.rt.docker()?.clone(), sandbox::container_name(&ns, &id), &ns, &id, port).await
+    s.forwards.open(s.rt.provider(&rec.runtime)?, &ns, &id, port).await
 }
 
 #[tauri::command]

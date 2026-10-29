@@ -56,6 +56,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::secret_set,
         ipc::secret_reveal,
         ipc::secret_delete,
+        ipc::sandbox_providers,
         ipc::sandbox_list,
         ipc::sandbox_create,
         ipc::sandbox_start,
