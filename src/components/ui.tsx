@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, Code2, EyeOff, Info, TriangleAlert, X, XCircle } from "lucide-react";
+import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle } from "lucide-react";
 import { useStore } from "../store";
 
 const tone: Record<string, "ok" | "warn" | "err" | ""> = {
@@ -43,6 +43,36 @@ export function Modal({ title, subtitle, onClose, children }: { title: string; s
         {children}
       </div>
     </div>
+  );
+}
+
+export type Errors = Partial<Record<string, string>>;
+
+// Form errors for a modal. `check` runs on submit and returns true when the form
+// is valid; editing a field calls `clear` so its message goes away as you type.
+export function useErrors() {
+  const [errors, setErrors] = useState<Errors>({});
+  const check = (next: Errors) => {
+    const found = Object.fromEntries(Object.entries(next).filter(([, v]) => v));
+    setErrors(found);
+    return Object.keys(found).length === 0;
+  };
+  const clear = (key: string) => setErrors((e) => (e[key] ? { ...e, [key]: undefined } : e));
+  return { errors, check, clear };
+}
+
+// A labelled form control with an optional error under it.
+export function Field({ label, error, hint, children }: { label: ReactNode; error?: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className={`field ${error ? "invalid" : ""}`}>
+      {label}
+      {children}
+      {error ? (
+        <span className="field-error" role="alert"><CircleAlert size={12} /> {error}</span>
+      ) : hint ? (
+        <span className="faint small">{hint}</span>
+      ) : null}
+    </label>
   );
 }
 

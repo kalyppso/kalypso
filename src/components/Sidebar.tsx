@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Logo } from "./Logo";
 import {
+  BarChart3,
   Bot,
   Boxes,
   BrainCircuit,
@@ -38,6 +39,7 @@ export const NAV: { title: string; items: NavDef[] }[] = [
     title: "Workspace",
     items: [
       { id: "overview", label: "Overview", icon: LayoutDashboard },
+      { id: "analytics", label: "Analytics", icon: BarChart3 },
       { id: "agents", label: "Agents", icon: Bot },
       { id: "tracker", label: "Tracker", icon: KanbanSquare },
       { id: "git", label: "Git tracker", icon: GitCommitHorizontal },

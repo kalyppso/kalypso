@@ -10,7 +10,7 @@ export function Secrets() {
   const toast = useToast();
   // Decrypted values live only in this component, only after the user asks.
   const [revealed, setRevealed] = useState<Record<string, string>>({});
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
 
   const valueOf = async (id: string) => {
     if (revealed[id] !== undefined) return revealed[id];

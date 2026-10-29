@@ -9,7 +9,7 @@ export function Agents() {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { agents, sandboxes, secrets, policies, integrations } = useNamespaced();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
 
   const label = (ids: string[], list: { id: string; name?: string; key?: string }[]) =>
     ids.map((id) => list.find((x) => x.id === id)).filter(Boolean).map((x) => x!.name ?? x!.key);

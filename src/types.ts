@@ -5,6 +5,7 @@ export type ThemeId = "black" | "white" | "custom";
 
 export type ViewId =
   | "overview"
+  | "analytics"
   | "agents"
   | "tracker"
   | "git"

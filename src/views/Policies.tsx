@@ -29,7 +29,7 @@ export function Policies() {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { policies, policyEvents, agents } = useNamespaced();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
   const name = (id: string) => state.agents.find((a) => a.id === id)?.name ?? id;
   const active = policies.filter((p) => p.enabled);
   const unusedTemplates = TEMPLATES.filter((t) => !policies.some((p) => p.name === t.name));

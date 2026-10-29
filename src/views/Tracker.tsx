@@ -20,7 +20,7 @@ export function Tracker() {
   const [agentFilter, setAgentFilter] = useState("all");
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<TaskStatus | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
   const [importing, setImporting] = useState(false);
   const ticketSources = useNamespaced().integrations.filter((i) => i.ticketing);
 

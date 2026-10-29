@@ -11,11 +11,11 @@ const NODE_W = 156;
 const NODE_H = 54;
 
 export function Connections() {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const toast = useToast();
   const { agents, connections, integrations } = useNamespaced();
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ from?: string; to?: string } | null>(null);
+  const [draft, setDraft] = useState<{ from?: string; to?: string } | null>(state.compose ? {} : null);
 
   // Agents on an inner ellipse, integrations on an outer arc along the bottom.
   const pos = new Map<string, { x: number; y: number }>();

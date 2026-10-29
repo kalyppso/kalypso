@@ -49,6 +49,8 @@ export interface State {
   ambient: boolean;
   paletteOpen: boolean;
   sidebarOpen: boolean;
+  // Set by a quick action: the next view opens with its create form showing.
+  compose: boolean;
   toasts: Toast[];
   namespaces: Namespace[];
   agents: Agent[];
@@ -84,7 +86,7 @@ export type Action =
   | { type: "terminalLayout"; ns: string; layout: PaneNode }
   | { type: "hydrateNamespaces"; namespaces: Namespace[] }
   | { type: "hydrateNs"; ns: string; secrets: Secret[]; sandboxes: Sandbox[] }
-  | { type: "view"; view: ViewId }
+  | { type: "view"; view: ViewId; compose?: boolean }
   | { type: "ns"; ns: string }
   | { type: "showCode"; value: boolean }
   | { type: "ambient"; value: boolean }
@@ -137,6 +139,7 @@ function initial(): State {
     ambient: false,
     paletteOpen: false,
     sidebarOpen: true,
+    compose: false,
     toasts: [],
     namespaces: mock.namespaces,
     agents: mock.agents,
@@ -166,7 +169,7 @@ function load(): State {
     const raw = localStorage.getItem(STORAGE_KEY);
     // Transient UI state never comes back from storage.
     if (raw) {
-      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, toasts: [] } as State;
+      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, toasts: [] } as State;
       // The default accent moved to the logo purple; only migrate people who never changed it.
       if (saved.appearance.accent === "#8b5cf6") saved.appearance = { ...saved.appearance, accent: DEFAULT_APPEARANCE.accent };
       return saved;
@@ -222,9 +225,9 @@ function reducer(s: State, a: Action): State {
     case "removeTask":
       return { ...s, tasks: s.tasks.filter((t) => t.id !== a.id) };
     case "view":
-      return { ...s, view: a.view, paletteOpen: false };
+      return { ...s, view: a.view, paletteOpen: false, compose: a.compose ?? false };
     case "ns":
-      return { ...s, ns: a.ns };
+      return { ...s, ns: a.ns, compose: false };
     case "showCode":
       return { ...s, showCode: a.value };
     case "ambient":
@@ -311,7 +314,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const { paletteOpen: _p, toasts: _t, ...persisted } = state;
+      const { paletteOpen: _p, toasts: _t, compose: _c, ...persisted } = state;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
     } catch {
       // Persistence is a convenience in the prototype; ignore failures.

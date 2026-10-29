@@ -10,7 +10,7 @@ export function Sandboxes() {
   const { state, dispatch } = useStore();
   const { sandboxes, agents } = useNamespaced();
   const toast = useToast();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
   const [busy, setBusy] = useState<string | null>(null);
   const [ports, setPorts] = useState<Sandbox | null>(null);
 

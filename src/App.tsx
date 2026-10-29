@@ -9,6 +9,7 @@ import { Toasts } from "./components/ui";
 import { useNamespaced, useStore, useToast } from "./store";
 import type { ViewId } from "./types";
 import { Overview } from "./views/Overview";
+import { Analytics } from "./views/Analytics";
 import { Auth } from "./views/Auth";
 import { Tracker } from "./views/Tracker";
 import { Git } from "./views/Git";
@@ -27,6 +28,7 @@ import { SettingsView } from "./views/Settings";
 
 const views: Record<ViewId, () => JSX.Element> = {
   overview: Overview,
+  analytics: Analytics,
   agents: Agents,
   tracker: Tracker,
   git: Git,

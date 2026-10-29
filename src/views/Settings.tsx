@@ -89,7 +89,7 @@ export function SettingsView() {
           )}
         </div>
 
-        <div style={{ padding: 14, borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", fontFamily: `${fontFamily(a.font)}, system-ui` }}>
+        <div style={{ padding: 14, borderRadius: 8, background: "var(--card-2)", fontFamily: `${fontFamily(a.font)}, system-ui` }}>
           <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>coder opened PR #482</div>
           <div className="dim" style={{ marginTop: 2 }}>Retry webhooks with exponential backoff. 3 files changed, 0123456789.</div>
           <div className="row" style={{ marginTop: 10 }}>

@@ -56,7 +56,7 @@ export function ContributionGraph({ commits, seed }: { commits: Commit[]; seed: 
   const total = days.reduce((s, d) => s + count(d), 0);
   const max = Math.max(1, ...days.map(count));
   const level = (n: number) => (n === 0 ? 0 : Math.min(4, Math.ceil((n / max) * 4)));
-  const fill = (lv: number) => (lv === 0 ? "var(--surface-2)" : `color-mix(in srgb, var(--accent-hi) ${LEVELS[lv]}%, var(--surface-2))`);
+  const fill = (lv: number) => (lv === 0 ? "var(--card-3)" : `color-mix(in srgb, var(--accent-hi) ${LEVELS[lv]}%, var(--card-3))`);
 
   const weeks: Day[][] = [];
   days.forEach((d, i) => {
@@ -99,10 +99,8 @@ export function ContributionGraph({ commits, seed }: { commits: Commit[]; seed: 
                       y={y}
                       width={CELL}
                       height={CELL}
-                      rx={2}
+                      rx={3}
                       fill={fill(level(n))}
-                      stroke="var(--border)"
-                      strokeWidth={level(n) === 0 ? 1 : 0}
                       onMouseEnter={() => setHover({ day: d, x, y })}
                     />
                   );
@@ -126,7 +124,7 @@ export function ContributionGraph({ commits, seed }: { commits: Commit[]; seed: 
         <span>Agent commits are tagged with a KALYPSO-Agent trailer.</span>
         <span className="spacer" />
         Less
-        {LEVELS.map((_, i) => <span key={i} style={{ width: CELL, height: CELL, borderRadius: 2, background: fill(i), border: i === 0 ? "1px solid var(--border)" : 0 }} />)}
+        {LEVELS.map((_, i) => <span key={i} style={{ width: CELL, height: CELL, borderRadius: 3, background: fill(i) }} />)}
         More
       </div>
     </div>
