@@ -4,11 +4,12 @@ use std::path::PathBuf;
 use bollard::container::{
     Config, CreateContainerOptions, InspectContainerOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::CreateImageOptions;
 use bollard::models::{HostConfig, Mount, MountTypeEnum};
 use bollard::network::CreateNetworkOptions;
 use bollard::Docker;
-use futures_util::TryStreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -337,6 +338,41 @@ pub async fn remove(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<()> {
     db.audit(Some(ns), "user", "sandbox.delete", &rec.name)
 }
 
+/// Run a command inside a running sandbox and collect its output.
+/// With `detach`, start it in the background and return immediately.
+pub async fn exec(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], detach: bool) -> Result<(i64, String)> {
+    let docker = rt.docker()?;
+    let created = docker
+        .create_exec(
+            &container_name(ns, id),
+            CreateExecOptions { cmd: Some(cmd.to_vec()), attach_stdout: Some(!detach), attach_stderr: Some(!detach), ..Default::default() },
+        )
+        .await
+        .map_err(rt_err)?;
+    let mut out = String::new();
+    match docker.start_exec(&created.id, Some(StartExecOptions { detach, ..Default::default() })).await.map_err(rt_err)? {
+        StartExecResults::Attached { mut output, .. } => {
+            while let Some(chunk) = output.next().await {
+                out.push_str(&chunk.map_err(rt_err)?.to_string());
+            }
+        }
+        StartExecResults::Detached => return Ok((0, out)),
+    }
+    let code = docker.inspect_exec(&created.id).await.map_err(rt_err)?.exit_code.unwrap_or(-1);
+    Ok((code, out))
+}
+
+/// The sandbox's address on its namespace network, if it is attached to one.
+pub async fn namespace_ip(rt: &Runtime, ns: &str, id: &str) -> Result<Option<String>> {
+    let info = rt.docker()?.inspect_container(&container_name(ns, id), None::<InspectContainerOptions>).await.map_err(rt_err)?;
+    Ok(info
+        .network_settings
+        .and_then(|n| n.networks)
+        .and_then(|mut nets| nets.remove(&network_name(ns)))
+        .and_then(|n| n.ip_address)
+        .filter(|ip| !ip.is_empty()))
+}
+
 /// Read the real state from the engine and store it.
 pub async fn refresh(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
     get(db, ns, id)?;
@@ -376,6 +412,44 @@ mod tests {
         let err = create(&db, &Runtime::none(), "work", spec("a")).await.unwrap_err();
         assert_eq!(err.code(), "runtime");
         assert!(list(&db, "work").unwrap().is_empty());
+    }
+
+    /// Two sandboxes in one namespace can talk; a sandbox in another namespace cannot.
+    /// Runs against a real Docker or Podman. Opt in with KALYPSO_TEST_RUNTIME=1.
+    #[tokio::test]
+    async fn namespaces_cannot_reach_each_other() {
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Db::open_in_memory().unwrap();
+        let (a, b) = (format!("ia{}", &new_id("x")[2..8]), format!("ib{}", &new_id("x")[2..8]));
+        for ns in [&a, &b] {
+            db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [ns])?)).unwrap();
+        }
+        let server = create(&db, &rt, &a, spec("server")).await.unwrap();
+        let neighbour = create(&db, &rt, &a, spec("neighbour")).await.unwrap();
+        let outsider = create(&db, &rt, &b, spec("outsider")).await.unwrap();
+        for (ns, sb) in [(&a, &server), (&a, &neighbour), (&b, &outsider)] {
+            start(&db, &rt, ns, &sb.id).await.unwrap();
+        }
+
+        // A tiny TCP server in namespace A.
+        exec(&rt, &a, &server.id, &["sh", "-c", "while true; do echo hi | nc -l -p 8080; done"], true).await.unwrap();
+        let ip = namespace_ip(&rt, &a, &server.id).await.unwrap().expect("server has an address on its namespace network");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        let probe = format!("nc -w 2 {ip} 8080 </dev/null");
+        let (same_ns, out) = exec(&rt, &a, &neighbour.id, &["sh", "-c", &probe], false).await.unwrap();
+        assert_eq!(same_ns, 0, "same-namespace sandboxes should connect: {out}");
+        let (other_ns, _) = exec(&rt, &b, &outsider.id, &["sh", "-c", &probe], false).await.unwrap();
+        assert_ne!(other_ns, 0, "a sandbox in another namespace reached {ip}:8080");
+
+        for (ns, sb) in [(&a, &server), (&a, &neighbour), (&b, &outsider)] {
+            remove(&db, &rt, ns, &sb.id).await.unwrap();
+        }
+        rt.remove_network(&a).await.unwrap();
+        rt.remove_network(&b).await.unwrap();
     }
 
     /// Runs against a real Docker or Podman. Opt in with KALYPSO_TEST_RUNTIME=1.
