@@ -101,14 +101,19 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (state.session && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      if (!state.session || !(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "k") {
         e.preventDefault();
         dispatch({ type: "palette", open: !state.paletteOpen });
+      } else if (key === "b") {
+        e.preventDefault();
+        dispatch({ type: "sidebar", open: !state.sidebarOpen });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, state.paletteOpen, state.session]);
+  }, [dispatch, state.paletteOpen, state.sidebarOpen, state.session]);
 
   if (!state.session) return <Auth />;
 
@@ -116,7 +121,7 @@ export function App() {
   return (
     <>
       {state.ambient && <NeuralWeb theme={state.appearance.theme} active />}
-      <div className="shell">
+      <div className={`shell ${state.sidebarOpen ? "" : "collapsed"}`}>
         <Sidebar />
         <div className="main">
           <Topbar />

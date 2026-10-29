@@ -48,6 +48,7 @@ export interface State {
   showCode: boolean;
   ambient: boolean;
   paletteOpen: boolean;
+  sidebarOpen: boolean;
   toasts: Toast[];
   namespaces: Namespace[];
   agents: Agent[];
@@ -88,6 +89,7 @@ export type Action =
   | { type: "showCode"; value: boolean }
   | { type: "ambient"; value: boolean }
   | { type: "palette"; open: boolean }
+  | { type: "sidebar"; open: boolean }
   | { type: "toast"; toast: Toast }
   | { type: "dismissToast"; id: string }
   | { type: "addNamespace"; ns: Namespace }
@@ -134,6 +136,7 @@ function initial(): State {
     showCode: false,
     ambient: false,
     paletteOpen: false,
+    sidebarOpen: true,
     toasts: [],
     namespaces: mock.namespaces,
     agents: mock.agents,
@@ -228,6 +231,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, ambient: a.value };
     case "palette":
       return { ...s, paletteOpen: a.open };
+    case "sidebar":
+      return { ...s, sidebarOpen: a.open };
     case "toast":
       return { ...s, toasts: [...s.toasts.slice(-3), a.toast] };
     case "dismissToast":

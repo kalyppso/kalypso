@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, Code2, EyeOff, Info, TriangleAlert, X, XCircle } from "lucide-react";
 import { useStore } from "../store";
 
@@ -115,6 +115,20 @@ export function Toasts() {
       ))}
     </div>
   );
+}
+
+export const modKey = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+
+export function usePopover() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+  return { open, setOpen, ref };
 }
 
 export const usd = (n: number) => `$${n.toFixed(2)}`;
