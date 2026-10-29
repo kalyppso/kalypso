@@ -1,0 +1,148 @@
+import { useEffect, useMemo, useState } from "react";
+import { Pause, Play } from "lucide-react";
+import { useNamespaced } from "../store";
+import { LineChart } from "../components/LineChart";
+import { Status } from "../components/ui";
+
+type Range = "15m" | "1h" | "24h";
+const POINTS = 40;
+const STEP_MIN: Record<Range, number> = { "15m": 15 / POINTS, "1h": 60 / POINTS, "24h": 1440 / POINTS };
+
+interface Metric {
+  key: string;
+  label: string;
+  base: number;
+  jitter: number;
+  format: (v: number) => string;
+}
+
+const METRICS: Metric[] = [
+  { key: "rpm", label: "Model requests per minute", base: 42, jitter: 0.35, format: (v) => v.toFixed(0) },
+  { key: "tpm", label: "Tokens per minute", base: 61000, jitter: 0.3, format: (v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v.toFixed(0)) },
+  { key: "p95", label: "p95 latency", base: 1850, jitter: 0.25, format: (v) => `${(v / 1000).toFixed(1)}s` },
+  { key: "err", label: "Error rate", base: 1.6, jitter: 0.6, format: (v) => `${v.toFixed(1)}%` },
+];
+
+// Mock telemetry: a bounded random walk per metric. The real feed comes from
+// the model gateway and the Docker stats stream (ARCHITECTURE.md §4.17).
+function walk(seed: number, base: number, jitter: number, n: number) {
+  let s = seed;
+  const rand = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const out: number[] = [];
+  let v = base;
+  for (let i = 0; i < n; i++) {
+    v = Math.max(base * 0.25, Math.min(base * 1.9, v + (rand() - 0.5) * base * jitter));
+    out.push(v);
+  }
+  return out;
+}
+
+const clock = (minsAgo: number) => {
+  const d = new Date(Date.now() - minsAgo * 60000);
+  return d.toTimeString().slice(0, 5);
+};
+
+export function MonitoringPanel() {
+  const { agents, sandboxes, namespace } = useNamespaced();
+  const [range, setRange] = useState<Range>("1h");
+  const [live, setLive] = useState(true);
+  const seed = (namespace?.id ?? "").length * 97 + range.length * 13;
+
+  const [series, setSeries] = useState(() => Object.fromEntries(METRICS.map((m, i) => [m.key, walk(seed + i * 31, m.base, m.jitter, POINTS)])));
+  useEffect(() => {
+    setSeries(Object.fromEntries(METRICS.map((m, i) => [m.key, walk(seed + i * 31, m.base, m.jitter, POINTS)])));
+  }, [seed]);
+
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => {
+      setSeries((prev) =>
+        Object.fromEntries(
+          METRICS.map((m) => {
+            const arr = prev[m.key];
+            const last = arr[arr.length - 1];
+            const next = Math.max(m.base * 0.25, Math.min(m.base * 1.9, last + (Math.random() - 0.5) * m.base * m.jitter));
+            return [m.key, [...arr.slice(1), next]];
+          }),
+        ),
+      );
+    }, 2000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  const labels = useMemo(() => Array.from({ length: POINTS }, (_, i) => clock((POINTS - 1 - i) * STEP_MIN[range])), [range, series]);
+  const now = (k: string) => series[k][series[k].length - 1];
+
+  const sbStats = sandboxes.map((s, i) => {
+    const on = s.status === "running";
+    const cpu = on ? 18 + ((i * 37 + Math.round(now("rpm"))) % 60) : 0;
+    const mem = on ? Math.round(s.memMb * (0.35 + ((i * 13) % 40) / 100)) : 0;
+    return { s, cpu, mem };
+  });
+
+  return (
+    <section>
+      <div className="row" style={{ margin: "0 0 12px" }}>
+        <h2 style={{ fontSize: 15 }}>Monitoring</h2>
+        <span className="spacer" />
+        <div className="segmented">
+          {(["15m", "1h", "24h"] as Range[]).map((r) => (
+            <button key={r} className={range === r ? "active" : ""} onClick={() => setRange(r)}>{r}</button>
+          ))}
+        </div>
+        <button className="btn sm" onClick={() => setLive(!live)} title={live ? "Pause live updates" : "Resume live updates"}>
+          {live ? <Pause size={12} /> : <Play size={12} />} {live ? "Live" : "Paused"}
+        </button>
+      </div>
+
+      <div className="metric-grid">
+        {METRICS.map((m) => (
+          <div key={m.key} className="card">
+            <div className="card-head"><span className="card-title">{m.label}</span><span className="spacer" /><span className="mono">{m.format(now(m.key))}</span></div>
+            <LineChart values={series[m.key]} labels={labels} format={m.format} height={96} />
+          </div>
+        ))}
+      </div>
+
+      <div className="grid cols-2 even">
+        <div className="card flush">
+          <div className="card-head" style={{ padding: "16px 16px 0" }}><span className="card-title">Sandboxes</span></div>
+          <table className="table">
+            <thead><tr><th>Name</th><th>CPU</th><th style={{ width: "34%" }}>Memory</th><th>Status</th></tr></thead>
+            <tbody>
+              {sbStats.map(({ s, cpu, mem }) => (
+                <tr key={s.id}>
+                  <td style={{ fontWeight: 500 }}>{s.name}</td>
+                  <td className="mono">{cpu}%</td>
+                  <td>
+                    <div className="bar"><span style={{ width: `${(mem / s.memMb) * 100}%` }} /></div>
+                    <div className="faint small mono" style={{ marginTop: 4 }}>{(mem / 1024).toFixed(1)} / {(s.memMb / 1024).toFixed(0)} GB</div>
+                  </td>
+                  <td><Status value={s.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {sandboxes.length === 0 && <div className="empty" style={{ margin: 16 }}>No sandboxes in this namespace.</div>}
+        </div>
+
+        <div className="card flush">
+          <div className="card-head" style={{ padding: "16px 16px 0" }}><span className="card-title">Agents</span></div>
+          <table className="table">
+            <thead><tr><th>Agent</th><th>Status</th><th>Last heartbeat</th><th>Errors (1h)</th></tr></thead>
+            <tbody>
+              {agents.map((a, i) => (
+                <tr key={a.id}>
+                  <td style={{ fontWeight: 500 }}>{a.name}</td>
+                  <td><Status value={a.status} /></td>
+                  <td className="mono dim">{a.status === "running" ? `${2 + i}s ago` : a.status === "error" ? "4m ago" : "None"}</td>
+                  <td className="mono">{a.status === "error" ? 12 : a.status === "running" ? i : 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}

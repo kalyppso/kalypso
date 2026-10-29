@@ -1,0 +1,114 @@
+//! Tauri commands. Every command that touches namespaced data takes `ns` first;
+//! the services check ownership so a buggy view can't cross namespaces.
+
+use serde::Serialize;
+use tauri::State;
+
+use crate::error::{KalypsoError, Result};
+use crate::ns::{self, Namespace};
+use crate::sandbox::{self, NewSandbox, Runtime, SandboxRecord};
+use crate::store::Db;
+use crate::vault::{KeySource, SecretMeta, Vault};
+
+pub struct AppState {
+    pub db: Db,
+    pub vault: Vault,
+    pub rt: Runtime,
+}
+
+fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
+    if ns::exists(&s.db, ns)? {
+        Ok(())
+    } else {
+        Err(KalypsoError::NotFound(format!("namespace {ns}")))
+    }
+}
+
+#[derive(Serialize)]
+pub struct CoreInfo {
+    version: &'static str,
+    runtime: String,
+    key_source: KeySource,
+}
+
+#[tauri::command]
+pub fn core_info(s: State<'_, AppState>) -> CoreInfo {
+    CoreInfo { version: env!("CARGO_PKG_VERSION"), runtime: s.rt.kind.clone(), key_source: s.vault.source }
+}
+
+// ---------- Namespaces ----------
+
+#[tauri::command]
+pub fn ns_list(s: State<'_, AppState>) -> Result<Vec<Namespace>> {
+    ns::list(&s.db)
+}
+
+#[tauri::command]
+pub async fn ns_create(s: State<'_, AppState>, id: String, description: String) -> Result<Namespace> {
+    ns::create(&s.db, &s.vault, &s.rt, &id, &description).await
+}
+
+#[tauri::command]
+pub async fn ns_delete(s: State<'_, AppState>, ns: String) -> Result<()> {
+    ns::delete(&s.db, &s.rt, &ns).await
+}
+
+// ---------- Secrets ----------
+
+#[tauri::command]
+pub fn secret_list(s: State<'_, AppState>, ns: String) -> Result<Vec<SecretMeta>> {
+    ensure_ns(&s, &ns)?;
+    s.vault.list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn secret_set(s: State<'_, AppState>, ns: String, key: String, value: String, scope: String) -> Result<SecretMeta> {
+    ensure_ns(&s, &ns)?;
+    s.vault.set(&s.db, &ns, &key, &value, &scope)
+}
+
+#[tauri::command]
+pub fn secret_reveal(s: State<'_, AppState>, ns: String, id: String) -> Result<String> {
+    ensure_ns(&s, &ns)?;
+    s.vault.reveal(&s.db, &ns, &id)
+}
+
+#[tauri::command]
+pub fn secret_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    s.vault.delete(&s.db, &ns, &id)
+}
+
+// ---------- Sandboxes ----------
+
+#[tauri::command]
+pub fn sandbox_list(s: State<'_, AppState>, ns: String) -> Result<Vec<SandboxRecord>> {
+    ensure_ns(&s, &ns)?;
+    sandbox::list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub async fn sandbox_create(s: State<'_, AppState>, ns: String, spec: NewSandbox) -> Result<SandboxRecord> {
+    ensure_ns(&s, &ns)?;
+    sandbox::create(&s.db, &s.rt, &ns, spec).await
+}
+
+#[tauri::command]
+pub async fn sandbox_start(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
+    sandbox::start(&s.db, &s.rt, &ns, &id).await
+}
+
+#[tauri::command]
+pub async fn sandbox_pause(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
+    sandbox::pause(&s.db, &s.rt, &ns, &id).await
+}
+
+#[tauri::command]
+pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
+    sandbox::stop(&s.db, &s.rt, &ns, &id).await
+}
+
+#[tauri::command]
+pub async fn sandbox_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    sandbox::remove(&s.db, &s.rt, &ns, &id).await
+}

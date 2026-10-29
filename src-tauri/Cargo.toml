@@ -1,0 +1,31 @@
+[package]
+name = "kalypso"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kalypso_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tokio = { version = "1.54.1", features = ["full"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+futures-util = "0.3.34"
+ts-rs = "12.0.1"
+rand = "0.8"
+chacha20poly1305 = "0.10"
+bollard = "0.18"
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "apple-native", "windows-native"] }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+tempfile = "3.27.0"
