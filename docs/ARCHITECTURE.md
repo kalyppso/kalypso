@@ -103,6 +103,20 @@ Every IPC command takes `ns` as its first argument. The `ipc` layer checks that 
 - Revealing a secret in the UI requires a recent OS authentication (Touch ID, Windows Hello or polkit) when that's available. Every reveal is written to the audit log.
 
 ### 4.3 Sandboxes
+- **Providers.** KALYPSO builds on existing sandbox tools rather than being one. Every engine sits behind the `SandboxProvider` trait (`src-tauri/src/sandbox/provider.rs`), which covers:
+  - namespace preparation and teardown;
+  - create, start, resume, pause, stop and remove;
+  - status;
+  - exec (with stdin or as a live stream);
+  - address lookup and status events.
+
+  Each provider also describes itself (`ProviderInfo`: isolation level, supported network modes, limits, hosted or local), and the New sandbox form lists what is installed. Each sandbox records its provider in the `runtime` column.
+  - **Docker/Podman** (`oci.rs`): the default, done.
+  - **Microsandbox** (#48): microVMs on Linux and macOS.
+  - **E2B** (#49): hosted or self-hosted microVMs.
+  - **Quicksand** (#50): full VMs, including Windows.
+
+  Secrets delivery, port forwarding, policies and budgets work the same for every provider.
 - `SandboxSpec { runtime, image, cpu, mem_mb, network: isolated|namespace|internet, mounts, ports }`.
 - **Docker/Podman.** Containers are labelled `kalypso.ns=X` and `kalypso.sandbox=<id>`. They run with a read-only root filesystem plus a writable `/work` volume, `--cap-drop=ALL`, `no-new-privileges` and a seccomp profile.
 - Network modes:

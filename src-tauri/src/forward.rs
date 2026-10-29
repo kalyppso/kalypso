@@ -4,13 +4,13 @@
 //! Instead KALYPSO listens on 127.0.0.1 and pipes each connection into the
 //! sandbox through an exec channel (`nc 127.0.0.1 <port>`). Nothing is exposed
 //! beyond this machine and the sandbox's network mode is left untouched.
+//! Works for any provider that can open an exec stream.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use bollard::container::LogOutput;
-use bollard::exec::{CreateExecOptions, StartExecResults};
-use bollard::Docker;
+use std::sync::Arc;
+
 use futures_util::StreamExt;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 use ts_rs::TS;
 
 use crate::error::{KalypsoError, Result};
+use crate::sandbox::SandboxProvider;
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export)]
@@ -42,7 +43,7 @@ pub struct Forwards {
 impl Forwards {
     /// Forward `container_port` of a running sandbox to a free port on 127.0.0.1.
     /// Opening the same port twice returns the existing forward.
-    pub async fn open(&self, docker: Docker, container: String, ns: &str, sandbox: &str, container_port: u16) -> Result<PortForward> {
+    pub async fn open(&self, provider: Arc<dyn SandboxProvider>, ns: &str, sandbox: &str, container_port: u16) -> Result<PortForward> {
         if container_port == 0 {
             return Err(KalypsoError::Invalid("port must be between 1 and 65535".into()));
         }
@@ -52,11 +53,12 @@ impl Forwards {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let host_port = listener.local_addr()?.port();
         let info = PortForward { ns: ns.into(), sandbox: sandbox.into(), container_port, host_port };
+        let (ns_owned, sb_owned) = (ns.to_string(), sandbox.to_string());
         let task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
-                let (docker, container) = (docker.clone(), container.clone());
+                let (provider, ns, sb) = (provider.clone(), ns_owned.clone(), sb_owned.clone());
                 tokio::spawn(async move {
-                    if let Err(e) = pipe(&docker, &container, container_port, stream).await {
+                    if let Err(e) = pipe(provider.as_ref(), &ns, &sb, container_port, stream).await {
                         tracing::debug!(error = %e, container_port, "forwarded connection ended with an error");
                     }
                 });
@@ -96,26 +98,9 @@ impl Forwards {
 }
 
 /// Copy bytes both ways between a local TCP connection and `nc` inside the sandbox.
-async fn pipe(docker: &Docker, container: &str, port: u16, stream: TcpStream) -> Result<()> {
+async fn pipe(provider: &dyn SandboxProvider, ns: &str, sandbox: &str, port: u16, stream: TcpStream) -> Result<()> {
     let port = port.to_string();
-    let exec = docker
-        .create_exec(
-            container,
-            CreateExecOptions {
-                cmd: Some(vec!["nc", "127.0.0.1", port.as_str()]),
-                attach_stdin: Some(true),
-                attach_stdout: Some(true),
-                attach_stderr: Some(true),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|e| KalypsoError::Runtime(e.to_string()))?;
-    let StartExecResults::Attached { mut output, mut input } =
-        docker.start_exec(&exec.id, None).await.map_err(|e| KalypsoError::Runtime(e.to_string()))?
-    else {
-        return Err(KalypsoError::Runtime("exec unexpectedly detached".into()));
-    };
+    let mut exec = provider.open_stream(ns, sandbox, &["nc", "127.0.0.1", port.as_str()]).await?;
     let (mut tcp_read, mut tcp_write) = stream.into_split();
 
     let upstream = async {
@@ -125,15 +110,13 @@ async fn pipe(docker: &Docker, container: &str, port: u16, stream: TcpStream) ->
             if n == 0 {
                 break;
             }
-            input.write_all(&buf[..n]).await?;
+            exec.input.write_all(&buf[..n]).await?;
         }
-        input.shutdown().await
+        exec.input.shutdown().await
     };
     let downstream = async {
-        while let Some(chunk) = output.next().await {
-            if let Ok(LogOutput::StdOut { message }) = chunk {
-                tcp_write.write_all(&message).await?;
-            }
+        while let Some(chunk) = exec.output.next().await {
+            tcp_write.write_all(&chunk?).await?;
         }
         tcp_write.shutdown().await
     };

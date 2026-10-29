@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
 import type { Namespace as NsRecord } from "./bindings/Namespace";
 import type { PortForward } from "./bindings/PortForward";
+import type { ProviderInfo } from "./bindings/ProviderInfo";
 import type { NewSandbox } from "./bindings/NewSandbox";
 import type { SandboxRecord } from "./bindings/SandboxRecord";
 import type { SandboxStatusEvent } from "./bindings/SandboxStatusEvent";
@@ -32,6 +33,7 @@ export const api = {
   secretSet: (ns: string, key: string, value: string, scope: string) => invoke<SecretMeta>("secret_set", { ns, key, value, scope }),
   secretReveal: (ns: string, id: string) => invoke<string>("secret_reveal", { ns, id }),
   secretDelete: (ns: string, id: string) => invoke<void>("secret_delete", { ns, id }),
+  sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
   sandboxCreate: (ns: string, spec: NewSandbox) => invoke<SandboxRecord>("sandbox_create", { ns, spec }),
   sandboxStart: (ns: string, id: string) => invoke<SandboxRecord>("sandbox_start", { ns, id }),
@@ -59,7 +61,7 @@ export const toSecret = (m: SecretMeta): Secret => ({
 
 export const toSandbox = (r: SandboxRecord): Sandbox => ({
   id: r.id, ns: r.ns, name: r.name,
-  runtime: (r.runtime === "podman" ? "podman" : "docker") as Sandbox["runtime"],
+  runtime: r.runtime,
   image: r.image,
   status: (r.status === "running" || r.status === "paused" ? r.status : "stopped") as Sandbox["status"],
   cpu: r.cpu, memMb: Number(r.mem_mb), network: r.network as Sandbox["network"], createdAt: day(r.created_at),
