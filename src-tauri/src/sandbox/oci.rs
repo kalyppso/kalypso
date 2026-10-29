@@ -23,6 +23,10 @@ use super::provider::{ExecStream, ProviderInfo, SandboxProvider};
 use super::{NewSandbox, SandboxStatusEvent};
 use crate::error::{KalypsoError, Result};
 
+/// KALYPSO's own commands (secret delivery, port forwards) run as root inside the
+/// sandbox, whatever user the image defaults to. Capabilities stay dropped.
+const EXEC_USER: &str = "0";
+
 pub struct OciProvider {
     docker: Docker,
     kind: &'static str,
@@ -121,6 +125,19 @@ impl SandboxProvider for OciProvider {
             _ => "bridge".to_string(),
         };
         let labels = HashMap::from([("kalypso.ns".to_string(), ns.to_string()), ("kalypso.sandbox".to_string(), id.to_string())]);
+        // Anonymous volume: removed together with the container.
+        let mut mounts = vec![Mount { target: Some("/work".into()), typ: Some(MountTypeEnum::VOLUME), ..Default::default() }];
+        // The model gateway's socket: the only way out to a model, whatever the network mode.
+        // A local engine sees the host's files; a VM-backed one (Docker Desktop) cannot pass sockets.
+        if let Some(dir) = crate::gateway::socket_dir().filter(|_| cfg!(target_os = "linux")) {
+            mounts.push(Mount {
+                source: Some(dir.display().to_string()),
+                target: Some(crate::gateway::SANDBOX_SOCKET_DIR.into()),
+                typ: Some(MountTypeEnum::BIND),
+                read_only: Some(true),
+                ..Default::default()
+            });
+        }
         let host = |limits: bool| HostConfig {
             // A tiny init as PID 1 so stop signals are handled and containers stop promptly.
             init: Some(true),
@@ -134,13 +151,14 @@ impl SandboxProvider for OciProvider {
                 ("/tmp".to_string(), "rw,size=256m".to_string()),
                 ("/run/kalypso/secrets".to_string(), "rw,size=1m,mode=0700".to_string()),
             ])),
-            // Anonymous volume: removed together with the container.
-            mounts: Some(vec![Mount { target: Some("/work".into()), typ: Some(MountTypeEnum::VOLUME), ..Default::default() }]),
+            mounts: Some(mounts.clone()),
             ..Default::default()
         };
         let config = |limits: bool| Config {
             image: Some(spec.image.clone()),
-            cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            // Idle until KALYPSO execs into it, whatever the image would run by default.
+            entrypoint: Some(vec!["sleep".to_string()]),
+            cmd: Some(vec!["infinity".to_string()]),
             working_dir: Some("/work".into()),
             labels: Some(labels.clone()),
             host_config: Some(host(limits)),
@@ -202,6 +220,7 @@ impl SandboxProvider for OciProvider {
                 &container_name(ns, id),
                 CreateExecOptions {
                     cmd: Some(cmd.to_vec()),
+                    user: Some(EXEC_USER),
                     attach_stdout: Some(!detach),
                     attach_stderr: Some(!detach),
                     ..Default::default()
@@ -230,6 +249,7 @@ impl SandboxProvider for OciProvider {
                 &container_name(ns, id),
                 CreateExecOptions {
                     cmd: Some(cmd.to_vec()),
+                    user: Some(EXEC_USER),
                     attach_stdin: Some(true),
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),
@@ -259,6 +279,7 @@ impl SandboxProvider for OciProvider {
                 &container_name(ns, id),
                 CreateExecOptions {
                     cmd: Some(cmd.to_vec()),
+                    user: Some(EXEC_USER),
                     attach_stdin: Some(true),
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),

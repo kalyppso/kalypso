@@ -319,7 +319,9 @@ pub const SECRETS_DIR: &str = "/run/kalypso/secrets";
 pub async fn deliver_secrets(db: &Db, vault: &Vault, rt: &Runtime, ns: &str, id: &str) -> Result<usize> {
     let rec = get(db, ns, id)?;
     let p = provider_for(rt, &rec)?;
-    let secrets = vault.for_delivery(db, ns)?;
+    let mut secrets = vault.for_delivery(db, ns)?;
+    // Model keys stay with the gateway; the sandbox gets a key that only works through it.
+    secrets.push(("KALYPSO_GATEWAY_KEY".to_string(), crate::gateway::mint_for_sandbox(db, ns, id, &rec.name)?));
     let (code, out) = p.exec(ns, id, &["sh", "-c", &format!("rm -f {SECRETS_DIR}/*")], false).await?;
     if code != 0 {
         return Err(KalypsoError::Runtime(format!("could not clear secrets in {}: {out}", rec.name)));
@@ -508,10 +510,16 @@ mod tests {
         vault.create_ns_key(&db, &ns).unwrap();
         let token = vault.set(&db, &ns, "API_TOKEN", "tok-123 with spaces\nand a newline", "namespace").unwrap();
         vault.set(&db, &ns, "AGENT_ONLY", "not-for-everyone", "agent").unwrap();
+        vault.set(&db, &ns, "ANTHROPIC_API_KEY", "sk-ant-model-key", "gateway").unwrap();
 
         let sb = create(&db, &rt, &ns, spec("vaulted")).await.unwrap();
         start(&db, &rt, &ns, &sb.id).await.unwrap();
-        assert_eq!(deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap(), 1);
+        // API_TOKEN plus the sandbox's own gateway key.
+        assert_eq!(deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap(), 2);
+        let (_, gk) = exec(&rt, &ns, &sb.id, &["cat", &format!("{SECRETS_DIR}/KALYPSO_GATEWAY_KEY")], false).await.unwrap();
+        assert!(gk.starts_with("kx_"));
+        let (_, listing) = exec(&rt, &ns, &sb.id, &["sh", "-c", &format!("cat {SECRETS_DIR}/*")], false).await.unwrap();
+        assert!(!listing.contains("sk-ant-model-key"), "model keys must stay with the gateway");
 
         let (_, body) = exec(&rt, &ns, &sb.id, &["cat", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
         assert_eq!(body, "tok-123 with spaces\nand a newline");
@@ -530,6 +538,64 @@ mod tests {
         assert_ne!(gone, 0);
         remove(&db, &rt, &ns, &sb.id).await.unwrap();
         rt.remove_network(&ns).await.unwrap();
+    }
+
+    /// A sandbox with no network at all reaches a model only through the gateway socket,
+    /// and the provider key never enters it.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn sandbox_reaches_the_model_gateway_through_its_socket() {
+        use crate::gateway::{pricing::Pricing, summary, Gateway};
+        use std::sync::Arc;
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Arc::new(Db::open_in_memory().unwrap());
+        let vault = Arc::new(Vault::ephemeral());
+        let ns = format!("gw{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        vault.create_ns_key(&db, &ns).unwrap();
+
+        // A stand-in for the provider that echoes the key it was given.
+        let up = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_url = format!("http://{}", up.local_addr().unwrap());
+        let app = axum::Router::new().fallback(|h: axum::http::HeaderMap| async move {
+            let key = h.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+            axum::Json(serde_json::json!({"model": "claude-opus-5-5", "saw_key": key, "usage": {"input_tokens": 10, "output_tokens": 5}}))
+        });
+        tokio::spawn(async move { axum::serve(up, app).await.unwrap() });
+        vault.set(&db, &ns, "ANTHROPIC_API_KEY", "sk-ant-model-key", "gateway").unwrap();
+        vault.set(&db, &ns, "ANTHROPIC_BASE_URL", &up_url, "gateway").unwrap();
+
+        let gw = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
+        // Never removed while tests run: other sandboxes created meanwhile mount it too.
+        gw.listen_unix(std::env::temp_dir().join(format!("kalypso-gw-test-{}", std::process::id()))).await.unwrap();
+
+        let mut s = spec("modelcaller");
+        s.image = "docker.io/curlimages/curl:8.10.1".into();
+        s.network = "isolated".into();
+        let sb = create(&db, &rt, &ns, s).await.unwrap();
+        start(&db, &rt, &ns, &sb.id).await.unwrap();
+        deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap();
+
+        let script = format!(
+            "curl -sS --unix-socket {}/gateway.sock -H \"x-api-key: $(cat {SECRETS_DIR}/KALYPSO_GATEWAY_KEY)\" \
+             -H 'content-type: application/json' -d '{{\"model\":\"claude-opus-5-5\"}}' {}/anthropic/v1/messages",
+            crate::gateway::SANDBOX_SOCKET_DIR,
+            crate::gateway::SANDBOX_URL,
+        );
+        let (code, body) = exec(&rt, &ns, &sb.id, &["sh", "-c", &script], false).await.unwrap();
+        assert_eq!(code, 0, "{body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["saw_key"], "sk-ant-model-key");
+        let (_, everywhere) =
+            exec(&rt, &ns, &sb.id, &["sh", "-c", "grep -rl sk-ant-model-key /run /tmp /work 2>/dev/null; true"], false).await.unwrap();
+        assert_eq!(everywhere.trim(), "", "provider key found inside the sandbox");
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(summary(&db, Some(&ns), 1).unwrap().totals.requests, 1);
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
     }
 
     /// A port inside a sandbox on an internal network is reachable on 127.0.0.1 through a forward.

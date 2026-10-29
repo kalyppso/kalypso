@@ -4,6 +4,7 @@
 pub mod error;
 pub mod events;
 pub mod forward;
+pub mod gateway;
 pub mod ipc;
 pub mod ns;
 pub mod sandbox;
@@ -56,6 +57,11 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::secret_set,
         ipc::secret_reveal,
         ipc::secret_delete,
+        ipc::gateway_info,
+        ipc::gateway_key_list,
+        ipc::gateway_key_create,
+        ipc::gateway_key_revoke,
+        ipc::usage_summary,
         ipc::sandbox_providers,
         ipc::sandbox_list,
         ipc::sandbox_create,
@@ -76,8 +82,8 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             init_logging(&dir.join("logs"));
-            let db = store::Db::open(&dir.join("kalypso.db"))?;
-            let vault = vault::Vault::load(&dir)?;
+            let db = std::sync::Arc::new(store::Db::open(&dir.join("kalypso.db"))?);
+            let vault = std::sync::Arc::new(vault::Vault::load(&dir)?);
             let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());
             tracing::info!(data = %dir.display(), runtime = %rt.kind, key = ?vault.source, "core ready");
 
@@ -95,7 +101,19 @@ pub fn run() {
                     }
                 }
             }
-            app.manage(AppState { db, vault, rt, forwards: Default::default() });
+            let gw = gateway::Gateway::new(db.clone(), vault.clone(), gateway::pricing::Pricing::load(&dir)?);
+            tauri::async_runtime::block_on(async {
+                if let Err(e) = gw.listen_tcp(gateway::DEFAULT_PORT).await {
+                    tracing::error!(error = %e, "model gateway could not start");
+                }
+                // Sandboxes reach the gateway through this socket (Linux engines can mount it).
+                #[cfg(target_os = "linux")]
+                if let Err(e) = gw.listen_unix(dir.join("run")).await {
+                    tracing::warn!(error = %e, "model gateway socket unavailable; sandboxes cannot reach the gateway");
+                }
+            });
+            events::spawn_usage_events(app.handle().clone(), gw.subscribe());
+            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
         })

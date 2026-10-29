@@ -64,7 +64,8 @@ pub trait SandboxProvider: Send + Sync + 'static {
     /// "running", "paused" or "stopped".
     async fn status(&self, ns: &str, id: &str) -> Result<&'static str>;
 
-    /// Run a command and collect its output, or start it in the background with `detach`.
+    /// Run a command as root and collect its output, or start it in the background with `detach`.
+    /// These are KALYPSO's own commands; agents choose their user through the supervisor.
     async fn exec(&self, ns: &str, id: &str, cmd: &[&str], detach: bool) -> Result<(i64, String)>;
     /// Run a command with `input` on stdin, so data never appears in its arguments.
     async fn exec_with_stdin(&self, ns: &str, id: &str, cmd: &[&str], input: &[u8]) -> Result<i64>;

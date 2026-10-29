@@ -148,12 +148,12 @@ Adapters, in priority order:
 The supervisor restarts agents according to a policy, enforces `max_turns` and pauses an agent when its budget runs out. It also turns agent events into UI events. Transcripts are stored per run, and the code and diffs inside them are rendered collapsed (code on demand).
 
 ### 4.5 Model gateway (budget enforcement)
-A local HTTP proxy at `127.0.0.1:<port>`. Inside the namespace network, sandboxes reach it at `http://gateway.kalypso`.
-- Each agent authenticates with a virtual key that maps to `(ns, agent)`.
-- On every response the gateway reads `usage` (input, output and cache tokens), prices it from `pricing.toml`, and writes a `usage_events` row.
-- **Before** forwarding a request, it checks the namespace and agent budgets. When a budget is exceeded the request is rejected with HTTP 402, and the supervisor marks the agent `paused:budget`.
-- Alerts fire at `alert_at` (for example 80%) as a desktop notification.
-- This is why the Budget view can show *enforced* limits and month-end projections.
+A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes through. It listens on `127.0.0.1:47821` (or a free port) for tools on the host, and on `<app data>/run/gateway.sock` for sandboxes.
+- **Routes** mirror each provider SDK's base URL: `/<provider>/<path>` goes to `<PROVIDER>_BASE_URL/<path>`. `anthropic` (Messages API) and `openai` have built-in base URLs; any other OpenAI-compatible provider (OpenRouter, Ollama, vLLM, …) works once its `<PROVIDER>_BASE_URL` is set.
+- **Keys.** Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `<PROVIDER>_API_KEY`) are namespace secrets with the `gateway` scope: the gateway decrypts them per request and they are never delivered into a sandbox. Callers present a KALYPSO virtual key (`kx_…`, stored only as a SHA-256 hash) in `x-api-key` or `Authorization: Bearer`; the gateway resolves it to its namespace and swaps in the real key.
+- **Sandboxes.** On every start (and secret refresh) a sandbox gets a fresh key in `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`; the previous one is revoked. On Linux engines the socket folder is bind-mounted read-only at `/run/kalypso/gateway`, so even a sandbox with no network can call `http://gateway.kalypso/anthropic/v1/messages` with `curl --unix-socket /run/kalypso/gateway/gateway.sock`. SDKs that only speak TCP need a loopback shim inside the sandbox; the agent image (#14) is planned to ship one. VM-backed engines (Docker Desktop on macOS and Windows) cannot pass sockets through, so they are not mounted there yet.
+- **Metering.** Responses stream back unchanged while the gateway reads `usage`: JSON bodies; Anthropic SSE `message_start` and `message_delta` (running totals); OpenAI `usage` chunks (the gateway sets `stream_options.include_usage` on streamed Chat Completions) and Responses `response.completed`. Input, output, cache-write (5-minute and 1-hour) and cache-read tokens are priced from `<app data>/pricing.toml` (created with defaults, re-read when it changes) and written to `usage_events` with the namespace, source (sandbox or key label), model, status and latency. Models without a price are counted and flagged as unpriced.
+- **Budgets (#17).** Before a request is forwarded, the gateway will check the namespace and agent budgets. When a budget is exceeded the request is rejected with HTTP 402, and the supervisor marks the agent `paused:budget`. Alerts fire at `alert_at` (for example 80%) as a desktop notification.
 
 ### 4.6 Connections and tunnels (mesh)
 - **Direct:** NATS subjects `ns.X.agent.<id>.inbox`. Each link is an ACL entry allowing A to publish to B's inbox (and the reverse, if two-way). Protocol envelopes cover A2A and MCP-over-NATS, plus an HTTP bridge.

@@ -1,13 +1,45 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { dailySeries, monthSpend, uid, useNamespaced, useStore, useToast } from "../store";
+import { api, errorMessage, isLive, onUsage } from "../backend";
 import { Modal, ModalActions, PageHead, PrimaryButton, usd } from "../components/ui";
-import type { BudgetAction, BudgetPeriod, BudgetRule } from "../types";
+import type { BudgetAction, BudgetPeriod, BudgetRule, UsageDay } from "../types";
 
 // One accent for the biggest spender, then stepped neutrals. No rainbow.
 const SERIES = ["var(--accent-hi)", "var(--text-2)", "var(--text-3)", "var(--border-strong)", "var(--border)"];
 const ACTION_LABEL: Record<BudgetAction, string> = { pause: "Pause agent", alert: "Alert me", downgrade: "Downgrade model" };
 const DAYS_IN_MONTH = 31;
+
+interface Spender { id: string; name: string; model: string }
+
+/** Month-to-date spend from the gateway, by day and by source (sandbox or key). Null outside the desktop app. */
+function useLiveSpend(ns: string) {
+  const toast = useToast();
+  const [live, setLive] = useState<{ usage: UsageDay[]; spenders: Spender[]; unpriced: string[] } | null>(null);
+  useEffect(() => {
+    if (!isLive()) return;
+    let gone = false;
+    const load = () => {
+      const now = new Date();
+      const days = now.getUTCDate();
+      api.usageSummary(ns, days).then((s) => {
+        if (gone) return;
+        const dates = Array.from({ length: days }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), i + 1)).toISOString().slice(0, 10));
+        const usage = dates.map((date) => ({ date, byAgent: {} as Record<string, number> }));
+        for (const c of s.by_day_source) {
+          const d = usage.find((u) => u.date === c.day);
+          if (d) d.byAgent[c.source] = (d.byAgent[c.source] ?? 0) + c.cost_micros / 1e6;
+        }
+        const spenders = s.by_source.map((g) => ({ id: g.name, name: g.name, model: `${g.totals.requests} requests` }));
+        setLive({ usage, spenders, unpriced: s.unpriced });
+      }).catch((e) => toast(errorMessage(e), "err"));
+    };
+    load();
+    const off = onUsage((e) => { if (e.ns === ns) load(); });
+    return () => { gone = true; off.then((f) => f()); };
+  }, [ns]);
+  return live;
+}
 
 export function Budget() {
   const { state, dispatch } = useStore();
@@ -17,24 +49,29 @@ export function Budget() {
   const [alertDraft, setAlertDraft] = useState(Math.round((budget?.alertAt ?? 0.8) * 100));
   const [adding, setAdding] = useState<Partial<BudgetRule> | null>(null);
 
-  const ids = agents.map((a) => a.id);
-  const spend = monthSpend(state.usage, ids);
+  // In the desktop app spend comes from the gateway, by sandbox or key; agents arrive with the supervisor.
+  const live = useLiveSpend(state.ns);
+  const usage = live?.usage ?? state.usage;
+  const spenders: Spender[] = live?.spenders ?? agents;
+  const ids = spenders.map((a) => a.id);
+  const spend = monthSpend(usage, ids);
   const limit = budget?.monthlyLimit ?? 0;
   const pct = limit ? spend / limit : 0;
-  const days = state.usage.length;
+  const days = usage.length;
   const burn = spend / Math.max(days, 1);
   const projected = burn * DAYS_IN_MONTH;
   const daysLeft = burn > 0 ? Math.max(0, (limit - spend) / burn) : Infinity;
-  const totals = dailySeries(state.usage, ids);
+  const totals = dailySeries(usage, ids);
   const today = totals[totals.length - 1] ?? 0;
 
-  const perAgent = agents.map((a) => ({ a, total: monthSpend(state.usage, [a.id]) })).sort((x, y) => y.total - x.total);
+  const perAgent = spenders.map((a) => ({ a, total: monthSpend(usage, [a.id]) })).sort((x, y) => y.total - x.total);
+  const month = new Date().toLocaleString("en", { month: "long" });
   const targetName = (t: string) => (t === "namespace" ? `All of ${state.ns}` : state.agents.find((a) => a.id === t)?.name ?? t);
 
   const ruleUsage = (r: BudgetRule) => {
     const pick = r.target === "namespace" ? ids : [r.target];
-    const daily = dailySeries(state.usage, pick);
-    if (r.period === "monthly") return monthSpend(state.usage, pick);
+    const daily = dailySeries(usage, pick);
+    if (r.period === "monthly") return monthSpend(usage, pick);
     if (r.period === "daily") return daily[daily.length - 1] ?? 0;
     return (daily[daily.length - 1] ?? 0) / 6; // per-run: mock average run cost today
   };
@@ -42,7 +79,7 @@ export function Budget() {
   const nsDaily = budgetRules.find((r) => r.target === "namespace" && r.period === "daily");
   const max = Math.max(1, ...totals, nsDaily?.limit ?? 0);
   const CW = 900, CH = 220, pad = { l: 40, b: 22, t: 10 };
-  const bw = (CW - pad.l) / state.usage.length;
+  const bw = (CW - pad.l) / Math.max(usage.length, 1);
   const y = (v: number) => CH - pad.b - (v / max) * (CH - pad.b - pad.t);
 
   const save = () => {
@@ -70,7 +107,7 @@ export function Budget() {
         <div className="stat">
           <div className="stat-label">Projected month end</div>
           <div className="stat-value" style={{ color: projected > limit ? "var(--err)" : undefined }}>{usd(projected)}</div>
-          <div className="stat-sub">{Number.isFinite(daysLeft) ? `Limit reached in ${daysLeft.toFixed(0)} days at this pace` : "No spend yet"}</div>
+          <div className="stat-sub">{!Number.isFinite(daysLeft) ? "No spend yet" : projected <= limit ? "Within the limit at this pace" : `Limit reached in ${daysLeft.toFixed(0)} days at this pace`}</div>
         </div>
         <div className="stat">
           <div className="stat-label">Monthly limit</div>
@@ -86,9 +123,15 @@ export function Budget() {
         </div>
       </div>
 
+      {live && live.unpriced.length > 0 && (
+        <div className="empty" style={{ marginBottom: 16, textAlign: "left" }}>
+          No price for {live.unpriced.join(", ")}, so those requests count as $0. Add them to pricing.toml.
+        </div>
+      )}
+
       <div className="card">
         <div className="card-head">
-          <div className="card-title">Daily spend, October</div>
+          <div className="card-title">Daily spend, {month}</div>
           <span className="spacer" />
           {nsDaily && <span className="faint small">Dashed line: daily cap {usd(nsDaily.limit)}</span>}
         </div>
@@ -99,7 +142,7 @@ export function Budget() {
               <text className="axis" x={0} y={y(max * f) + 3}>{`$${(max * f).toFixed(0)}`}</text>
             </g>
           ))}
-          {state.usage.map((d, i) => {
+          {usage.map((d, i) => {
             let top = CH - pad.b;
             return (
               <g key={d.date}>
@@ -109,7 +152,7 @@ export function Budget() {
                   top -= h;
                   return <rect key={a.id} x={pad.l + i * bw + 2} y={top} width={bw - 4} height={Math.max(h - 1, 0)} fill={SERIES[si % SERIES.length]} rx={1.5}><title>{`${d.date}, ${a.name}: ${usd(v)}`}</title></rect>;
                 })}
-                {(i % 7 === 0 || i === state.usage.length - 1) && <text className="axis" x={pad.l + i * bw + (i === state.usage.length - 1 ? bw - 2 : 2)} y={CH - 5} textAnchor={i === state.usage.length - 1 ? "end" : "start"}>{d.date.slice(5)}</text>}
+                {(i % 7 === 0 || i === usage.length - 1) && <text className="axis" x={pad.l + i * bw + (i === usage.length - 1 ? bw - 2 : 2)} y={CH - 5} textAnchor={i === usage.length - 1 ? "end" : "start"}>{d.date.slice(5)}</text>}
               </g>
             );
           })}
@@ -148,20 +191,21 @@ export function Budget() {
         </div>
 
         <div className="card flush">
-          <div className="card-head" style={{ padding: "16px 16px 0" }}><span className="card-title">By agent</span></div>
+          <div className="card-head" style={{ padding: "16px 16px 0" }}><span className="card-title">{live ? "By source" : "By agent"}</span></div>
           <table className="table">
-            <thead><tr><th>Agent</th><th>Month to date</th><th style={{ width: "34%" }}>Share</th><th /></tr></thead>
+            <thead><tr><th>{live ? "Sandbox or key" : "Agent"}</th><th>Month to date</th><th style={{ width: "34%" }}>Share</th><th /></tr></thead>
             <tbody>
               {perAgent.map(({ a, total }) => (
                 <tr key={a.id}>
                   <td><div style={{ fontWeight: 500 }}>{a.name}</div><div className="faint mono small">{a.model}</div></td>
                   <td className="mono">{usd(total)}</td>
                   <td><div className="bar"><span style={{ width: `${spend ? (total / spend) * 100 : 0}%` }} /></div></td>
-                  <td><button className="btn sm" onClick={() => setAdding({ target: a.id, period: "monthly", limit: Math.ceil(total * 1.2) })}>Set cap</button></td>
+                  <td>{!live && <button className="btn sm" onClick={() => setAdding({ target: a.id, period: "monthly", limit: Math.ceil(total * 1.2) })}>Set cap</button>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {perAgent.length === 0 && <div className="empty" style={{ margin: 18 }}>No model requests this month. Sandboxes and gateway keys show up here once they call a model.</div>}
         </div>
       </div>
 

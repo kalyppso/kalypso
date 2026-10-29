@@ -103,7 +103,7 @@ impl Vault {
         if value.is_empty() {
             return Err(KalypsoError::Invalid("secret value is empty".into()));
         }
-        if scope != "namespace" && scope != "agent" {
+        if !["namespace", "agent", "gateway"].contains(&scope) {
             return Err(KalypsoError::Invalid(format!("unknown scope {scope}")));
         }
         let (ct, nonce) = seal(&self.ns_key(db, ns)?, value.as_bytes())?;
@@ -167,6 +167,18 @@ impl Vault {
                 Ok((k, String::from_utf8(plain).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))?))
             })
             .collect()
+    }
+
+    /// Decrypt one secret by key, for the model gateway. Not a user reveal, so not audited
+    /// per call; the gateway records each request in `usage_events` instead.
+    pub fn lookup(&self, db: &Db, ns: &str, key: &str) -> Result<Option<String>> {
+        let row: Option<(Vec<u8>, Vec<u8>)> = db.with(|c| {
+            Ok(c.query_row("SELECT ciphertext, nonce FROM secrets WHERE ns = ?1 AND key = ?2", (ns, key), |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?)
+        })?;
+        let Some((ct, nonce)) = row else { return Ok(None) };
+        let plain = open(&self.ns_key(db, ns)?, &ct, &nonce)?;
+        String::from_utf8(plain).map(Some).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))
     }
 
     pub fn delete(&self, db: &Db, ns: &str, id: &str) -> Result<()> {

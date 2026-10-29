@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
+import type { GatewayInfo } from "./bindings/GatewayInfo";
+import type { GatewayKey } from "./bindings/GatewayKey";
+import type { MintedKey } from "./bindings/MintedKey";
+import type { UsageEvent } from "./bindings/UsageEvent";
+import type { UsageSummary } from "./bindings/UsageSummary";
 import type { Namespace as NsRecord } from "./bindings/Namespace";
 import type { PortForward } from "./bindings/PortForward";
 import type { ProviderInfo } from "./bindings/ProviderInfo";
@@ -33,6 +38,11 @@ export const api = {
   secretSet: (ns: string, key: string, value: string, scope: string) => invoke<SecretMeta>("secret_set", { ns, key, value, scope }),
   secretReveal: (ns: string, id: string) => invoke<string>("secret_reveal", { ns, id }),
   secretDelete: (ns: string, id: string) => invoke<void>("secret_delete", { ns, id }),
+  gatewayInfo: () => invoke<GatewayInfo>("gateway_info"),
+  gatewayKeyList: (ns: string) => invoke<GatewayKey[]>("gateway_key_list", { ns }),
+  gatewayKeyCreate: (ns: string, label: string) => invoke<MintedKey>("gateway_key_create", { ns, label }),
+  gatewayKeyRevoke: (ns: string, id: string) => invoke<void>("gateway_key_revoke", { ns, id }),
+  usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),
   sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
   sandboxCreate: (ns: string, spec: NewSandbox) => invoke<SandboxRecord>("sandbox_create", { ns, spec }),
@@ -75,3 +85,6 @@ export async function syncNamespace(ns: string, dispatch: (a: Action) => void) {
 
 /** Engine-reported sandbox changes (src-tauri/src/events.rs). Returns an unsubscribe function. */
 export const onSandboxStatus = (fn: (e: SandboxStatusEvent) => void) => listen<SandboxStatusEvent>("sandbox://status", (e) => fn(e.payload));
+
+/** Every model request metered by the gateway (src-tauri/src/events.rs). */
+export const onUsage = (fn: (e: UsageEvent) => void) => listen<UsageEvent>("usage://event", (e) => fn(e.payload));
