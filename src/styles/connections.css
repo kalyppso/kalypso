@@ -1,0 +1,51 @@
+/* Connections map (React Flow), themed from the app tokens. */
+.flow-wrap { display: flex; flex-direction: column; height: 480px; margin-bottom: 16px; border-radius: 12px; background: var(--card); overflow: hidden; }
+.flow-bar { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; flex-wrap: wrap; }
+.flow {
+  flex: 1;
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--border-strong);
+  --xy-edge-stroke: var(--text-3);
+  --xy-edge-stroke-width: 1.25;
+  --xy-edge-stroke-selected: var(--accent-hi);
+  --xy-connectionline-stroke: var(--accent-hi);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-edge-label-background-color: var(--card-2);
+  --xy-edge-label-color: var(--text-2);
+  --xy-handle-background-color: var(--accent-hi);
+  --xy-handle-border-color: var(--card);
+  --xy-controls-button-background-color: var(--card-2);
+  --xy-controls-button-background-color-hover: var(--card-3);
+  --xy-controls-button-color: var(--text-2);
+  --xy-controls-button-color-hover: var(--text);
+  --xy-controls-button-border-color: transparent;
+  --xy-controls-box-shadow: none;
+}
+.flow .react-flow__edge-text { font-family: var(--mono); font-size: 10.5px; }
+.flow .react-flow__edge-textbg { rx: 4; }
+.flow .react-flow__controls { border-radius: 8px; overflow: hidden; }
+
+/* Agent links: accent when up, dashed by transport, faint and dotted when down. */
+.flow-edge.up path.react-flow__edge-path { stroke: var(--accent-hi); stroke-width: 1.5; }
+.flow-edge.down path.react-flow__edge-path { stroke: var(--text-3); stroke-dasharray: 2 4; opacity: 0.7; }
+.flow-edge.access path.react-flow__edge-path { stroke: var(--border-strong); stroke-dasharray: 1 4; stroke-linecap: round; }
+
+.flow-agent { display: flex; align-items: center; gap: 10px; width: 160px; padding: 10px 12px; border-radius: 10px; background: var(--card-2); box-shadow: 0 0 0 1px transparent; transition: box-shadow 0.15s, background 0.15s; }
+.flow-agent:hover { background: var(--card-3); }
+.flow-agent.sel, .react-flow__node.selected .flow-agent { box-shadow: 0 0 0 1.5px var(--accent-hi); }
+.flow-name { font-weight: 500; font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-sub { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.flow-tool { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.flow-tool .logo { transition: box-shadow 0.15s; }
+.flow-tool.sel .logo, .react-flow__node.selected .flow-tool .logo { box-shadow: 0 0 0 1.5px var(--accent-hi); }
+
+/* Handles only show while hovering a node, so the map stays calm. */
+.flow .react-flow__handle { width: 7px; height: 7px; opacity: 0; transition: opacity 0.15s; }
+.flow .react-flow__node:hover .react-flow__handle, .flow.react-flow .connecting .react-flow__handle { opacity: 1; }
+
+.flow-key { display: inline-block; width: 16px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 1.5px solid var(--accent-hi); }
+.flow-key.down { border-top: 1.5px dotted var(--text-3); }
+.flow-key.access { border-top: 1.5px dotted var(--border-strong); }
+
+.flow-table { margin-bottom: 16px; border-radius: 12px; background: var(--card); overflow: hidden; }
+.flow-table .empty { background: none; }

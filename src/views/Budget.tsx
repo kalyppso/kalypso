@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { dailySeries, monthSpend, uid, useNamespaced, useStore, useToast } from "../store";
-import { Modal, ModalActions, PageHead, PrimaryButton, usd } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PrimaryButton, usd, useErrors } from "../components/ui";
+import "../styles/pages.css";
 import type { BudgetAction, BudgetPeriod, BudgetRule } from "../types";
 
 // One accent for the biggest spender, then stepped neutrals. No rainbow.
@@ -178,10 +179,15 @@ function AddBudget({ seed, onClose }: { seed: Partial<BudgetRule>; onClose: () =
   const [period, setPeriod] = useState<BudgetPeriod>(seed.period ?? "daily");
   const [limit, setLimit] = useState(String(seed.limit ?? 10));
   const [action, setAction] = useState<BudgetAction>(seed.action ?? "pause");
+  const { errors, check, clear } = useErrors();
 
   const add = () => {
     const l = +limit;
-    if (!(l > 0)) return;
+    const ok = check({
+      limit: !limit.trim() ? "Enter a cap." : !(l > 0) ? "The cap has to be more than $0." : l > 100000 ? "That cap is higher than $100,000. Check for a typo." : undefined,
+      target: state.budgetRules.some((r) => r.ns === state.ns && r.target === target && r.period === period) ? "There is already a cap for this with the same period. Edit or delete that one." : undefined,
+    });
+    if (!ok) return;
     dispatch({ type: "addBudgetRule", rule: { id: uid("br"), ns: state.ns, target, period, limit: l, action } });
     toast("Budget added");
     onClose();
@@ -189,16 +195,18 @@ function AddBudget({ seed, onClose }: { seed: Partial<BudgetRule>; onClose: () =
 
   return (
     <Modal title="Add budget" subtitle="Caps stack: the tightest one that applies wins." onClose={onClose}>
-      <label className="field">Applies to
-        <select className="select" value={target} onChange={(e) => setTarget(e.target.value)}>
+      <Field label="Applies to" error={errors.target}>
+        <select className="select" value={target} onChange={(e) => { setTarget(e.target.value); clear("target"); }}>
           <option value="namespace">Whole namespace ({state.ns})</option>
           {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-      </label>
+      </Field>
       <div className="field-row">
-        <label className="field">Cap (USD)<input className="input mono" type="number" min={0} step={0.5} value={limit} onChange={(e) => setLimit(e.target.value)} /></label>
+        <Field label="Cap (USD)" error={errors.limit}>
+          <input className="input mono" type="number" min={0} step={0.5} value={limit} onChange={(e) => { setLimit(e.target.value); clear("limit"); }} />
+        </Field>
         <label className="field">Per
-          <select className="select" value={period} onChange={(e) => setPeriod(e.target.value as BudgetPeriod)}>
+          <select className="select" value={period} onChange={(e) => { setPeriod(e.target.value as BudgetPeriod); clear("target"); }}>
             <option value="per-run">Run</option><option value="daily">Day</option><option value="monthly">Month</option>
           </select>
         </label>

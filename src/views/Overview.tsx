@@ -5,7 +5,7 @@ import { ContributionGraph } from "../components/ContributionGraph";
 import type { ViewId } from "../types";
 
 // Quick actions open the target page with its create form already showing.
-const ACTIONS: { view: ViewId; label: string; hint: string; icon: LucideIcon; compose: boolean }[] = [
+const ACTIONS: { view: ViewId | "terminal"; label: string; hint: string; icon: LucideIcon; compose: boolean }[] = [
   { view: "agents", label: "New agent", hint: "Pick a model, sandbox and tools", icon: Bot, compose: true },
   { view: "tracker", label: "New task", hint: "Hand work to an agent", icon: KanbanSquare, compose: true },
   { view: "sandboxes", label: "New sandbox", hint: "An isolated container", icon: Boxes, compose: true },
@@ -27,7 +27,7 @@ export function Overview() {
 
       <div className="actions">
         {ACTIONS.map(({ view, label, hint, icon: Icon, compose }) => (
-          <button key={label} className="action" onClick={() => dispatch({ type: "view", view, compose })}>
+          <button key={label} className="action" onClick={() => dispatch(view === "terminal" ? { type: "openTool", tool: "terminal" } : { type: "view", view, compose })}>
             <span className="action-icon"><Icon size={16} /></span>
             <span style={{ minWidth: 0 }}>
               <span className="action-label">{label}</span>

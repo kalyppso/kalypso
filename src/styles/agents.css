@@ -1,0 +1,34 @@
+/* Agents: a compact list that opens a detail view. */
+.agent-list { display: flex; flex-direction: column; gap: 6px; }
+.agent-row {
+  display: grid; grid-template-columns: auto minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.8fr) 64px auto 16px; align-items: center; gap: 16px;
+  width: 100%; padding: 12px 16px; border: 0; border-radius: 12px; background: var(--card); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: background 0.15s, transform 0.2s var(--ease);
+}
+.agent-row:hover { background: var(--card-2); }
+.agent-row:active { transform: scale(0.995); }
+.agent-row:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+.agent-main { display: flex; flex-direction: column; min-width: 0; }
+.agent-name { font-weight: 500; }
+.agent-chevron { color: var(--text-3); transition: transform 0.2s var(--ease), color 0.15s; }
+.agent-row:hover .agent-chevron { color: var(--text); transform: translateX(2px); }
+@media (max-width: 900px) { .agent-row { grid-template-columns: auto minmax(0, 1fr) auto 16px; } .agent-meta { display: none; } }
+
+.agent-avatar {
+  position: relative; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none;
+  font-size: 11.5px; font-weight: 600; background: var(--card-3); color: var(--text-2);
+}
+.agent-avatar.lg { width: 48px; height: 48px; border-radius: 13px; font-size: 15px; }
+/* Status dot on the avatar corner; running uses the accent. */
+.agent-avatar::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 0 2px var(--card); }
+.agent-avatar.running::after { background: var(--accent-hi); }
+.agent-avatar.error::after { background: var(--err); }
+.agent-head .agent-avatar::after { box-shadow: 0 0 0 2px var(--page-bg); }
+
+.agent-back { margin: -6px 0 14px -9px; }
+.agent-head { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; animation: enter 0.25s var(--ease); }
+.agent-head h1 { margin: 0; }
+.agent-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+.agent-fact { min-width: 0; padding: 14px 16px; border-radius: 12px; background: var(--card); }
+.agent-section { padding: 16px 0; border-top: 1px solid var(--border); }
+.agent-section h3 { margin: 0 0 10px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }

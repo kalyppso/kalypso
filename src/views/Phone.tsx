@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { RotateCw } from "lucide-react";
-import { PageHead } from "../components/ui";
 
 const DEVICES = [
   { id: "iphone15", label: "iPhone 15", w: 393, h: 852 },
@@ -12,7 +11,8 @@ const DEVICES = [
 // Inner screen size of the phone frame in styles.css (.phone minus padding).
 const SCREEN_W = 276;
 
-export function Phone() {
+// Device preview pane in the tools layer.
+export function PhonePane() {
   const [deviceId, setDeviceId] = useState(DEVICES[0].id);
   const [url, setUrl] = useState("https://example.com");
   const [draft, setDraft] = useState(url);
@@ -21,8 +21,15 @@ export function Phone() {
   const scale = SCREEN_W / device.w;
 
   return (
-    <>
-      <PageHead title="Phone" subtitle="Preview what your agents build at real device sizes." />
+    <div className="phone-pane">
+      <form className="urlbar" onSubmit={(e) => { e.preventDefault(); setUrl(/^https?:\/\//.test(draft) ? draft : `https://${draft}`); }}>
+        <select className="select" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} aria-label="Device">
+          {DEVICES.map((d) => <option key={d.id} value={d.id}>{d.label} ({d.w}×{d.h})</option>)}
+        </select>
+        <input className="input mono" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="URL" title="Tip: point this at a sandbox's forwarded port, e.g. http://localhost:5173" />
+        <button className="btn sm">Open</button>
+        <button type="button" className="btn ghost sm" onClick={() => setNonce(nonce + 1)} aria-label="Reload"><RotateCw size={14} /></button>
+      </form>
       <div className="phone-stage">
         <div className="phone">
           <div className="notch" />
@@ -36,26 +43,7 @@ export function Phone() {
             />
           </div>
         </div>
-
-        <div className="card" style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 12 }}>
-          <label className="field">Device
-            <select className="select" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
-              {DEVICES.map((d) => <option key={d.id} value={d.id}>{d.label} ({d.w}×{d.h})</option>)}
-            </select>
-          </label>
-          <form className="field" onSubmit={(e) => { e.preventDefault(); setUrl(/^https?:\/\//.test(draft) ? draft : `https://${draft}`); }}>
-            URL
-            <div className="row">
-              <input className="input mono" style={{ flex: 1 }} value={draft} onChange={(e) => setDraft(e.target.value)} />
-              <button className="btn primary" style={{ padding: "8px 16px" }}>Open</button>
-              <button type="button" className="btn" onClick={() => setNonce(nonce + 1)}><RotateCw size={14} /></button>
-            </div>
-          </form>
-          <div className="dim" style={{ fontSize: 12.5 }}>
-            Tip: point this at a sandbox's forwarded port (e.g. <span className="mono">http://localhost:5173</span>) to watch an agent's app update live.
-          </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }

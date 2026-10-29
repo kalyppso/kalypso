@@ -9,7 +9,6 @@ import {
   Check,
   ChevronsUpDown,
   GitCommitHorizontal,
-  Globe,
   KanbanSquare,
   KeyRound,
   LogOut,
@@ -18,14 +17,12 @@ import {
   Puzzle,
   Settings,
   ShieldCheck,
-  Smartphone,
-  SquareTerminal,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, toNamespace } from "../backend";
-import { Modal, ModalActions, usePopover } from "./ui";
+import { Field, Modal, ModalActions, useErrors, usePopover } from "./ui";
 import type { ViewId } from "../types";
 
 export interface NavDef {
@@ -64,13 +61,9 @@ export const NAV: { title: string; items: NavDef[] }[] = [
     ],
   },
   {
-    title: "Tools",
-    items: [
-      { id: "terminal", label: "Terminal", icon: SquareTerminal },
-      { id: "browser", label: "Browser", icon: Globe },
-      { id: "phone", label: "Phone", icon: Smartphone },
-      { id: "settings", label: "Settings", icon: Settings },
-    ],
+    // Terminal, browser and phone live in the tools layer, opened from the status bar.
+    title: "App",
+    items: [{ id: "settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -141,12 +134,21 @@ function NamespaceSwitcher() {
   const { open, setOpen, ref } = usePopover();
   const [creating, setCreating] = useState(false);
   const [newNs, setNewNs] = useState("");
+  const { errors, check, clear } = useErrors();
   const current = state.namespaces.find((n) => n.id === state.ns);
+  const closeModal = () => { setCreating(false); setNewNs(""); check({}); };
 
   const createNs = () => {
-    const id = newNs.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    if (!id || state.namespaces.some((n) => n.id === id)) return;
-    const done = () => { toast(`Created namespace ${id}`); setNewNs(""); setCreating(false); };
+    const id = newNs.trim();
+    const valid = check({
+      name: !id ? "Give the namespace a name."
+        : !/^[a-z0-9][a-z0-9-]*$/.test(id) ? "Use lowercase letters, digits and dashes, starting with a letter or digit."
+        : id.length > 40 ? "Keep it under 40 characters."
+        : state.namespaces.some((n) => n.id === id) ? `A namespace called ${id} already exists.`
+        : undefined,
+    });
+    if (!valid) return;
+    const done = () => { toast(`Created namespace ${id}`); closeModal(); };
     if (isLive()) {
       api.nsCreate(id, "New isolated namespace")
         .then((n) => { dispatch({ type: "addNamespace", ns: toNamespace(n) }); done(); })
@@ -189,12 +191,11 @@ function NamespaceSwitcher() {
         </div>
       )}
       {creating && (
-        <Modal title="New namespace" subtitle="Gets its own network, secrets, budget, policies and browser profile." onClose={() => setCreating(false)}>
-          <label className="field">
-            Name
-            <input className="input" autoFocus value={newNs} onChange={(e) => setNewNs(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createNs()} placeholder="e.g. client-acme" />
-          </label>
-          <ModalActions onCancel={() => setCreating(false)} onConfirm={createNs} confirm="Create namespace" />
+        <Modal title="New namespace" subtitle="Gets its own network, secrets, budget, policies and browser profile." onClose={closeModal}>
+          <Field label="Name" error={errors.name} hint="Lowercase letters, digits and dashes.">
+            <input className="input" autoFocus value={newNs} onChange={(e) => { setNewNs(e.target.value); clear("name"); }} onKeyDown={(e) => e.key === "Enter" && createNs()} placeholder="e.g. client-acme" aria-invalid={!!errors.name} />
+          </Field>
+          <ModalActions onCancel={closeModal} onConfirm={createNs} confirm="Create namespace" />
         </Modal>
       )}
     </div>

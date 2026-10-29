@@ -13,7 +13,7 @@ import { Analytics } from "./views/Analytics";
 import { Auth } from "./views/Auth";
 import { Tracker } from "./views/Tracker";
 import { Git } from "./views/Git";
-import { Terminal } from "./views/Terminal";
+import { TOOLS, ToolsLayer, currentToolTab, tabHasTool } from "./views/Terminal";
 import { Agents } from "./views/Agents";
 import { Sandboxes } from "./views/Sandboxes";
 import { Secrets } from "./views/Secrets";
@@ -22,8 +22,6 @@ import { Budget } from "./views/Budget";
 import { Registry } from "./views/Registry";
 import { Integrations } from "./views/Integrations";
 import { Policies } from "./views/Policies";
-import { Browser } from "./views/Browser";
-import { Phone } from "./views/Phone";
 import { SettingsView } from "./views/Settings";
 
 const views: Record<ViewId, () => JSX.Element> = {
@@ -32,7 +30,6 @@ const views: Record<ViewId, () => JSX.Element> = {
   agents: Agents,
   tracker: Tracker,
   git: Git,
-  terminal: Terminal,
   sandboxes: Sandboxes,
   secrets: Secrets,
   connections: Connections,
@@ -40,8 +37,6 @@ const views: Record<ViewId, () => JSX.Element> = {
   registry: Registry,
   integrations: Integrations,
   policies: Policies,
-  browser: Browser,
-  phone: Phone,
   settings: SettingsView,
 };
 
@@ -111,11 +106,19 @@ export function App() {
       } else if (key === "b") {
         e.preventDefault();
         dispatch({ type: "sidebar", open: !state.sidebarOpen });
+      } else if (key === "`" && e.ctrlKey) {
+        e.preventDefault();
+        dispatch(state.toolsOpen ? { type: "tools", open: false } : { type: "openTool", tool: "terminal" });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, state.paletteOpen, state.sidebarOpen, state.session]);
+  }, [dispatch, state.paletteOpen, state.sidebarOpen, state.toolsOpen, state.session]);
+
+  // The tools layer mounts on first open and stays mounted so shells keep running.
+  const toolsSeen = useRef(false);
+  if (state.toolsOpen) toolsSeen.current = true;
+  const toolTab = currentToolTab(state);
 
   if (!state.session) return <Auth />;
 
@@ -134,6 +137,7 @@ export function App() {
               <View />
             </div>
           </main>
+          {toolsSeen.current && <ToolsLayer />}
           <footer className="statusbar">
             {core ? (
               <span title={`KALYPSO core ${core.version}`}>
@@ -145,6 +149,16 @@ export function App() {
             )}
             <span>{agents.filter((a) => a.status === "running").length} agents running</span>
             <span>{policies.filter((p) => p.enabled).length} policies active</span>
+            <span className="spacer" />
+            {TOOLS.map(({ kind, label, icon: Icon }) => {
+              const on = state.toolsOpen && tabHasTool(toolTab, kind);
+              return (
+                <button key={kind} className={`status-tool ${on ? "active" : ""}`} aria-pressed={on} title={kind === "terminal" ? "Terminal (Ctrl `)" : label}
+                  onClick={() => dispatch(on ? { type: "tools", open: false } : { type: "openTool", tool: kind })}>
+                  <Icon size={13} /> {label}
+                </button>
+              );
+            })}
           </footer>
         </div>
       </div>

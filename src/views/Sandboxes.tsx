@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
-import { Modal, ModalActions, PageHead, PrimaryButton, Status } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
+import "../styles/pages.css";
 import type { Sandbox } from "../types";
 import type { PortForward } from "../bindings/PortForward";
 
@@ -87,12 +88,24 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState<Pick<Sandbox, "name" | "runtime" | "image" | "cpu" | "memMb" | "network">>({
     name: "", runtime: "docker", image: "docker.io/library/alpine:3.20", cpu: 2, memMb: 2048, network: "namespace",
   });
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm({ ...form, [k]: v });
+  const { errors, check, clear } = useErrors();
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => { setForm({ ...form, [k]: v }); clear(k); };
+  const { sandboxes } = useNamespaced();
 
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const create = () => {
-    if (!form.name.trim()) return;
+    const name = form.name.trim();
+    const ok = check({
+      name: !name ? "Name the sandbox."
+        : !/^[a-z0-9][a-z0-9_.-]*$/i.test(name) ? "Use letters, digits, dots, dashes or underscores, starting with a letter or digit."
+        : sandboxes.some((s) => s.name.toLowerCase() === name.toLowerCase()) ? `There is already a sandbox called ${name}.`
+        : undefined,
+      image: form.image.trim() ? (/\s/.test(form.image.trim()) ? "Image references cannot contain spaces." : undefined) : "Pick an image to run.",
+      cpu: Number.isInteger(form.cpu) && form.cpu >= 1 && form.cpu <= 16 ? undefined : "Use a whole number from 1 to 16.",
+      memMb: form.memMb >= 256 && form.memMb <= 65536 ? undefined : "Use between 256 MB and 64 GB.",
+    });
+    if (!ok) return;
     if (isLive()) {
       setSaving(true);
       api.sandboxCreate(state.ns, { name: form.name.trim(), image: form.image.trim(), cpu: form.cpu, mem_mb: form.memMb, network: form.network })
@@ -111,7 +124,9 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="New sandbox" subtitle="Hardened by default: read-only root, all capabilities dropped." onClose={onClose}>
-      <label className="field">Name<input className="input" autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} /></label>
+      <Field label="Name" error={errors.name}>
+        <input className="input" autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="repo-workspace" />
+      </Field>
       <div className="field-row">
         {/* The desktop build uses whichever engine it detected; Firecracker arrives in #35. */}
         {!isLive() && (
@@ -127,10 +142,16 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
           </select>
         </label>
       </div>
-      <label className="field">Image<input className="input mono" value={form.image} onChange={(e) => set("image", e.target.value)} /></label>
+      <Field label="Image" error={errors.image}>
+        <input className="input mono" value={form.image} onChange={(e) => set("image", e.target.value)} />
+      </Field>
       <div className="field-row">
-        <label className="field">vCPU<input className="input" type="number" min={1} max={16} value={form.cpu} onChange={(e) => set("cpu", +e.target.value)} /></label>
-        <label className="field">Memory (MB)<input className="input" type="number" min={256} step={256} value={form.memMb} onChange={(e) => set("memMb", +e.target.value)} /></label>
+        <Field label="vCPU" error={errors.cpu}>
+          <input className="input" type="number" min={1} max={16} value={form.cpu || ""} onChange={(e) => set("cpu", +e.target.value)} />
+        </Field>
+        <Field label="Memory (MB)" error={errors.memMb}>
+          <input className="input" type="number" min={256} step={256} value={form.memMb || ""} onChange={(e) => set("memMb", +e.target.value)} />
+        </Field>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm={saving ? "Creating…" : "Create sandbox"} />
     </Modal>
@@ -148,9 +169,16 @@ function Ports({ sandbox, onClose }: { sandbox: Sandbox; onClose: () => void }) 
     refresh();
   }, []); // once, when the dialog opens
 
+  const { errors, check, clear } = useErrors();
   const add = () => {
     const n = Number(port);
-    if (!Number.isInteger(n) || n < 1 || n > 65535) return toast("Use a port between 1 and 65535", "warn");
+    const ok = check({
+      port: !port.trim() ? "Enter a port."
+        : !Number.isInteger(n) || n < 1 || n > 65535 ? "Use a port between 1 and 65535."
+        : open.some((f) => f.container_port === n) ? `Port ${n} is already forwarded.`
+        : undefined,
+    });
+    if (!ok) return;
     api.portForwardOpen(state.ns, sandbox.id, n).then(refresh).catch((e) => toast(errorMessage(e), "err"));
   };
   const close = (p: number) => api.portForwardClose(state.ns, sandbox.id, p).then(refresh).catch((e) => toast(errorMessage(e), "err"));
@@ -158,9 +186,11 @@ function Ports({ sandbox, onClose }: { sandbox: Sandbox; onClose: () => void }) 
 
   return (
     <Modal title={`Ports on ${sandbox.name}`} subtitle="Reach a service inside the sandbox from this computer only. Forwards close when the sandbox stops." onClose={onClose}>
-      <div className="row">
-        <input className="input mono" style={{ width: 120 }} value={port} onChange={(e) => setPort(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} aria-label="Port inside the sandbox" />
-        <button className="btn" onClick={add}>Forward</button>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <Field label="Port inside the sandbox" error={errors.port}>
+          <input className="input mono" style={{ width: 160 }} value={port} onChange={(e) => { setPort(e.target.value); clear("port"); }} onKeyDown={(e) => e.key === "Enter" && add()} />
+        </Field>
+        <button className="btn" onClick={add} style={{ marginBottom: errors.port ? 24 : 0 }}>Forward</button>
       </div>
       {open.length === 0 ? (
         <div className="faint small">No ports forwarded yet.</div>

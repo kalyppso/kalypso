@@ -14,6 +14,8 @@ import type {
   McpServer,
   Namespace,
   PaneNode,
+  ToolKind,
+  ToolTab,
   Policy,
   PolicyEvent,
   PullRequest,
@@ -71,7 +73,9 @@ export interface State {
   commits: Commit[];
   pullRequests: PullRequest[];
   tickets: Ticket[];
-  terminals: Record<string, PaneNode>; // layout per namespace
+  toolTabs: Record<string, ToolTab[]>; // tools layer tabs per namespace
+  toolsOpen: boolean; // transient: the tools layer covers the main panel
+  toolsTab: string | null; // transient: tab shown in the tools layer
 }
 
 export type Action =
@@ -83,7 +87,9 @@ export type Action =
   | { type: "addTask"; task: Task }
   | { type: "moveTask"; id: string; status: TaskStatus }
   | { type: "removeTask"; id: string }
-  | { type: "terminalLayout"; ns: string; layout: PaneNode }
+  | { type: "toolTabs"; ns: string; tabs: ToolTab[] }
+  | { type: "openTool"; tool: ToolKind; fresh?: boolean } // fresh: always open a new tab
+  | { type: "tools"; open: boolean; tab?: string }
   | { type: "hydrateNamespaces"; namespaces: Namespace[] }
   | { type: "hydrateNs"; ns: string; secrets: Secret[]; sandboxes: Sandbox[] }
   | { type: "view"; view: ViewId; compose?: boolean }
@@ -160,7 +166,9 @@ function initial(): State {
     commits: mock.commits,
     pullRequests: mock.pullRequests,
     tickets: mock.tickets,
-    terminals: {},
+    toolTabs: {},
+    toolsOpen: false,
+    toolsTab: null,
   };
 }
 
@@ -169,7 +177,10 @@ function load(): State {
     const raw = localStorage.getItem(STORAGE_KEY);
     // Transient UI state never comes back from storage.
     if (raw) {
-      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, toasts: [] } as State;
+      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, toolsOpen: false, toolsTab: null, toasts: [] } as State;
+      // Terminal, Browser and Phone used to be pages; they now live in the tools layer.
+      if (["terminal", "browser", "phone"].includes(saved.view)) saved.view = "overview";
+      delete (saved as Partial<State> & { terminals?: unknown }).terminals;
       // The default accent moved to the logo purple; only migrate people who never changed it.
       if (saved.appearance.accent === "#8b5cf6") saved.appearance = { ...saved.appearance, accent: DEFAULT_APPEARANCE.accent };
       return saved;
@@ -220,14 +231,24 @@ function reducer(s: State, a: Action): State {
         secrets: [...s.secrets.filter((x) => x.ns !== a.ns), ...a.secrets],
         sandboxes: [...s.sandboxes.filter((x) => x.ns !== a.ns), ...a.sandboxes],
       };
-    case "terminalLayout":
-      return { ...s, terminals: { ...s.terminals, [a.ns]: a.layout } };
+    case "toolTabs":
+      return { ...s, toolTabs: { ...s.toolTabs, [a.ns]: a.tabs } };
+    case "openTool": {
+      const tabs = s.toolTabs[s.ns] ?? [];
+      const existing = !a.fresh && tabs.find((t) => panesOf(t.layout).some((p) => (p.tool ?? "terminal") === a.tool));
+      if (existing) return { ...s, toolsOpen: true, toolsTab: existing.id };
+      const sandboxId = s.sandboxes.find((x) => x.ns === s.ns)?.id ?? null;
+      const tab: ToolTab = { id: uid("tab"), layout: { kind: "pane", id: uid("p"), tool: a.tool, sandboxId } };
+      return { ...s, toolsOpen: true, toolsTab: tab.id, toolTabs: { ...s.toolTabs, [s.ns]: [...tabs, tab] } };
+    }
+    case "tools":
+      return { ...s, toolsOpen: a.open, toolsTab: a.tab ?? s.toolsTab };
     case "removeTask":
       return { ...s, tasks: s.tasks.filter((t) => t.id !== a.id) };
     case "view":
       return { ...s, view: a.view, paletteOpen: false, compose: a.compose ?? false };
     case "ns":
-      return { ...s, ns: a.ns, compose: false };
+      return { ...s, ns: a.ns, compose: false, toolsOpen: s.toolsOpen && (s.toolTabs[a.ns]?.length ?? 0) > 0 };
     case "showCode":
       return { ...s, showCode: a.value };
     case "ambient":
@@ -314,7 +335,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const { paletteOpen: _p, toasts: _t, compose: _c, ...persisted } = state;
+      const { paletteOpen: _p, toasts: _t, compose: _c, toolsOpen: _o, toolsTab: _tt, ...persisted } = state;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
     } catch {
       // Persistence is a convenience in the prototype; ignore failures.
@@ -372,5 +393,7 @@ export function monthSpend(usage: UsageDay[], agentIds: string[]) {
 export function dailySeries(usage: UsageDay[], agentIds: string[]) {
   return usage.map((d) => agentIds.reduce((s, id) => s + (d.byAgent[id] ?? 0), 0));
 }
+
+export const panesOf = (n: PaneNode): Extract<PaneNode, { kind: "pane" }>[] => (n.kind === "pane" ? [n] : [...panesOf(n.a), ...panesOf(n.b)]);
 
 export const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Copy, Eye, EyeOff, Lock, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
-import { Modal, ModalActions, PageHead, PrimaryButton } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors } from "../components/ui";
+import "../styles/pages.css";
 
 export function Secrets() {
   const { state, dispatch } = useStore();
@@ -80,10 +81,20 @@ function NewSecret({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [scope, setScope] = useState<"namespace" | "agent">("namespace");
+  const { errors, check, clear } = useErrors();
+  const { secrets } = useNamespaced();
 
   const create = () => {
-    const k = key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-    if (!k || !value) return;
+    const k = key.trim();
+    const suggestion = k.toUpperCase().replace(/[^A-Z0-9_]+/g, "_").replace(/^[^A-Z]+/, "");
+    const ok = check({
+      key: !k ? "Give the secret a key."
+        : !/^[A-Z][A-Z0-9_]*$/.test(k) ? `Use capitals, digits and underscores, starting with a letter${suggestion ? `, like ${suggestion}` : ""}.`
+        : secrets.some((s) => s.key === k) ? `${k} already exists in ${state.ns}. Delete it first to replace it.`
+        : undefined,
+      value: value ? undefined : "Paste the value to encrypt.",
+    });
+    if (!ok) return;
     if (isLive()) {
       api.secretSet(state.ns, k, value, scope)
         .then(() => syncNamespace(state.ns, dispatch))
@@ -97,8 +108,12 @@ function NewSecret({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Add secret" subtitle="Encrypted at rest. Agents receive it as a file, never in their prompt." onClose={onClose}>
-      <label className="field">Key<input className="input mono" autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder="OPENWEATHER_API_KEY" /></label>
-      <label className="field">Value<input className="input mono" type="password" value={value} onChange={(e) => setValue(e.target.value)} /></label>
+      <Field label="Key" error={errors.key}>
+        <input className="input mono" autoFocus value={key} onChange={(e) => { setKey(e.target.value); clear("key"); }} placeholder="OPENWEATHER_API_KEY" />
+      </Field>
+      <Field label="Value" error={errors.value}>
+        <input className="input mono" type="password" value={value} onChange={(e) => { setValue(e.target.value); clear("value"); }} />
+      </Field>
       <label className="field">Scope
         <select className="select" value={scope} onChange={(e) => setScope(e.target.value as "namespace" | "agent")}>
           <option value="namespace">Every agent in {state.ns}</option>

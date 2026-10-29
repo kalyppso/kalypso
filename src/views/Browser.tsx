@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from "lucide-react";
 import { uid, useStore } from "../store";
-import { PageHead } from "../components/ui";
 
 interface Tab {
   id: string;
@@ -23,7 +22,8 @@ function normalize(input: string) {
 
 const newTab = (url = HOME): Tab => ({ id: uid("t"), url, history: [url], index: 0, nonce: 0 });
 
-export function Browser() {
+// One browser pane in the tools layer: its own tabs, history and the namespace profile.
+export function BrowserPane() {
   const { state } = useStore();
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()]);
   const [active, setActive] = useState(tabs[0].id);
@@ -67,9 +67,7 @@ export function Browser() {
   };
 
   return (
-    <>
-      <PageHead title="Browser" subtitle={`Profile ns-${state.ns}: cookies and storage are separate per namespace. Agents can drive this browser when you allow it.`} />
-      <div className="card flush browser">
+    <div className="browser" title={`Profile ns-${state.ns}: cookies and storage are separate per namespace`}>
         <div className="tabs">
           {tabs.map((t) => (
             <button key={t.id} className={`tab ${t.id === tab.id ? "active" : ""}`} onClick={() => select(t)}>
@@ -96,10 +94,7 @@ export function Browser() {
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           />
         ))}
-      </div>
-      <p className="dim" style={{ fontSize: 12 }}>
-        Prototype uses an iframe, so sites that forbid embedding show blank. The desktop build uses a native child webview (see docs/ARCHITECTURE.md §4.8).
-      </p>
-    </>
+      {/* Prototype uses an iframe, so sites that forbid embedding show blank. The desktop build uses a native child webview (docs/ARCHITECTURE.md §4.8). */}
+    </div>
   );
 }

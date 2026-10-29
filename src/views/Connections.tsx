@@ -1,14 +1,45 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, applyNodeChanges, type Connection as FlowLink, type Edge, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import "../styles/connections.css";
 import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Modal, ModalActions, PageHead, PrimaryButton, Status } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
 import { kindDef } from "./Integrations";
-import type { Connection, ConnectionKind } from "../types";
+import type { Agent, Connection, ConnectionKind } from "../types";
 
 const W = 960;
 const H = 460;
-const NODE_W = 156;
-const NODE_H = 54;
+
+type AgentNodeData = { agent: Agent; sel: boolean };
+type ToolNodeData = { glyph: string; name: string; brain: boolean; sel: boolean };
+
+function AgentNode({ data }: NodeProps<Node<AgentNodeData>>) {
+  const { agent, sel } = data;
+  return (
+    <div className={`flow-agent ${sel ? "sel" : ""}`}>
+      <Handle type="target" position={Position.Top} />
+      <span className={`dot ${agent.status === "running" ? "ok" : agent.status === "error" ? "err" : ""}`} />
+      <div style={{ minWidth: 0 }}>
+        <div className="flow-name">{agent.name}</div>
+        <div className="flow-sub">{agent.model.replace("claude-", "")}</div>
+      </div>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+function ToolNode({ data }: NodeProps<Node<ToolNodeData>>) {
+  return (
+    <div className={`flow-tool ${data.sel ? "sel" : ""}`}>
+      <Handle type="target" position={Position.Top} />
+      <span className="logo">{data.glyph}</span>
+      <div className="flow-sub">{data.name}{data.brain ? " (brain)" : ""}</div>
+    </div>
+  );
+}
+
+const nodeTypes = { agent: AgentNode, tool: ToolNode };
 
 export function Connections() {
   const { state, dispatch } = useStore();
@@ -16,19 +47,6 @@ export function Connections() {
   const { agents, connections, integrations } = useNamespaced();
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ from?: string; to?: string } | null>(state.compose ? {} : null);
-
-  // Agents on an inner ellipse, integrations on an outer arc along the bottom.
-  const pos = new Map<string, { x: number; y: number }>();
-  agents.forEach((a, i) => {
-    const t = (i / Math.max(agents.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const r = agents.length === 1 ? 0 : 1;
-    pos.set(a.id, { x: W / 2 + Math.cos(t) * 250 * r, y: H / 2 - 30 + Math.sin(t) * 120 * r });
-  });
-  integrations.forEach((it, i) => {
-    const span = Math.min(integrations.length - 1, 4) || 1;
-    const t = integrations.length === 1 ? 0.5 : i / span;
-    pos.set(it.id, { x: 120 + t * (W - 240), y: H - 46 });
-  });
 
   const isAgent = (id: string) => agents.some((a) => a.id === id);
   const name = (id: string) => agents.find((a) => a.id === id)?.name ?? integrations.find((i) => i.id === id)?.name ?? id.replace(/^remote:/, "");
@@ -39,12 +57,40 @@ export function Connections() {
     agents.slice(i + 1).filter((b) => a.sandboxId && a.sandboxId === b.sandboxId && !linked(a.id, b.id)).map((b) => [a, b] as const),
   );
 
-  const clickNode = (id: string) => {
-    if (!selected) return setSelected(id);
-    if (selected === id) return setSelected(null);
-    const [a, b] = [selected, id];
-    setSelected(null);
+  // Starting layout: agents on an ellipse, integrations along the bottom. Dragged positions are kept.
+  const base: Node[] = [
+    ...agents.map((a, i): Node<AgentNodeData> => {
+      const t = (i / Math.max(agents.length, 1)) * Math.PI * 2 - Math.PI / 2;
+      const r = agents.length === 1 ? 0 : 1;
+      return { id: a.id, type: "agent", position: { x: W / 2 + Math.cos(t) * 250 * r - 80, y: H / 2 - 60 + Math.sin(t) * 130 * r }, data: { agent: a, sel: selected === a.id } };
+    }),
+    ...integrations.map((it, i): Node<ToolNodeData> => {
+      const span = Math.min(integrations.length - 1, 4) || 1;
+      const t = integrations.length === 1 ? 0.5 : i / span;
+      return { id: it.id, type: "tool", position: { x: 80 + t * (W - 240), y: H - 40 }, data: { glyph: kindDef(it.kind).glyph, name: it.name, brain: it.brain, sel: selected === it.id } };
+    }),
+  ];
+  const sig = JSON.stringify(base.map((n) => [n.id, n.data]));
+  const [nodes, setNodes] = useState<Node[]>(base);
+  useEffect(() => setNodes((prev) => base.map((n) => {
+    const old = prev.find((p) => p.id === n.id);
+    return old ? { ...old, data: n.data } : n;
+  })), [sig]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const edges: Edge[] = useMemo(() => [
+    ...integrations.flatMap((it) => it.agents.filter(isAgent).map((aid): Edge => ({
+      id: `${it.id}-${aid}`, source: aid, target: it.id, className: "flow-edge access",
+    }))),
+    ...connections.filter((c) => isAgent(c.from) && isAgent(c.to)).map((c): Edge => ({
+      id: c.id, source: c.from, target: c.to,
+      animated: c.status === "up",
+      className: `flow-edge ${c.kind} ${c.status}`,
+      label: `${c.protocol} · ${c.kind}`,
+    })),
+  ], [sig, connections]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const link = (a: string, b: string) => {
+    if (a === b) return;
     if (isAgent(a) && isAgent(b)) {
       if (linked(a, b)) return toast("Those agents are already linked", "info");
       return setDraft({ from: a, to: b });
@@ -55,6 +101,12 @@ export function Connections() {
     const it = integrations.find((i) => i.id === integ)!;
     dispatch({ type: "toggleIntegrationAgent", id: integ, agentId: agent });
     toast(it.agents.includes(agent) ? `${name(agent)} lost access to ${it.name}` : `${name(agent)} can now use ${it.name}`, it.agents.includes(agent) ? "warn" : "ok");
+  };
+
+  const clickNode = (id: string) => {
+    if (!selected) return setSelected(id);
+    setSelected(null);
+    if (selected !== id) link(selected, id);
   };
 
   const manifest = [
@@ -83,81 +135,60 @@ export function Connections() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <span className="dim">{selected ? <>Linking from <span style={{ color: "var(--text)" }}>{name(selected)}</span>. Pick a target.</> : "Or click two agents on the map."}</span>
-          <span className="spacer" />
-          <span className="legend" style={{ marginTop: 0 }}>
-            <span>Solid: direct</span>
-            <span>Dashed: tunnel</span>
-            <span>Dotted: integration</span>
-            <span>Bold dots: down</span>
-          </span>
+      {agents.length === 0 ? (
+        <div className="empty" style={{ marginBottom: 16 }}>Add agents to this namespace to connect them.</div>
+      ) : (
+        <div className="flow-wrap">
+          <div className="flow-bar">
+            <span className="dim">{selected ? <>Linking from <span style={{ color: "var(--text)" }}>{name(selected)}</span>. Pick a target.</> : "Drag from one node to another, or click two nodes, to link them."}</span>
+            <span className="spacer" />
+            <span className="legend" style={{ marginTop: 0 }}>
+              <span><i className="flow-key up" />Link up</span>
+              <span><i className="flow-key down" />Link down</span>
+              <span><i className="flow-key access" />Integration access</span>
+            </span>
+          </div>
+          <ReactFlow
+            className="flow"
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={(c: NodeChange[]) => setNodes((ns) => applyNodeChanges(c, ns))}
+            onNodeClick={(_, n) => clickNode(n.id)}
+            onPaneClick={() => setSelected(null)}
+            onConnect={(c: FlowLink) => link(c.source, c.target)}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.4}
+            maxZoom={1.75}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
         </div>
-        {agents.length === 0 ? (
-          <div className="empty">Add agents to this namespace to connect them.</div>
-        ) : (
-          <svg className="graph" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-            {integrations.flatMap((it) =>
-              it.agents.map((aid) => {
-                const a = pos.get(aid), b = pos.get(it.id);
-                if (!a || !b) return null;
-                return <line key={`${it.id}-${aid}`} className="edge integration" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />;
-              }),
-            )}
-            {connections.map((c) => {
-              const a = pos.get(c.from), b = pos.get(c.to);
-              if (!a || !b) return null;
-              return (
-                <line key={c.id} className={`edge ${c.kind} ${c.status}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-              );
-            })}
-            {integrations.map((it) => {
-              const p = pos.get(it.id)!;
-              const d = kindDef(it.kind);
-              return (
-                <g key={it.id} className={`node ${selected === it.id ? "sel" : ""}`} transform={`translate(${p.x} ${p.y})`} onClick={() => clickNode(it.id)}>
-                  <rect x={-18} y={-18} width={36} height={36} rx={8} />
-                  <text textAnchor="middle" y={4} style={{ fontSize: 11 }}>{d.glyph}</text>
-                  <text textAnchor="middle" y={34} className="sub">{it.name}{it.brain ? " (brain)" : ""}</text>
-                </g>
-              );
-            })}
-            {agents.map((a) => {
-              const p = pos.get(a.id)!;
-              return (
-                <g key={a.id} className={`node ${selected === a.id ? "sel" : ""}`} transform={`translate(${p.x - NODE_W / 2} ${p.y - NODE_H / 2})`} onClick={() => clickNode(a.id)}>
-                  <rect width={NODE_W} height={NODE_H} rx={8} />
-                  <circle cx={18} cy={NODE_H / 2} r={4} fill={a.status === "running" ? "var(--ok)" : a.status === "error" ? "var(--err)" : "var(--text-3)"} />
-                  <text x={32} y={24}>{a.name}</text>
-                  <text x={32} y={41} className="sub">{a.model.replace("claude-", "")}</text>
-                </g>
-              );
-            })}
-          </svg>
-        )}
-      </div>
+      )}
 
-      <div className="card flush" style={{ marginBottom: 16 }}>
+      <div className="flow-table">
         <table className="table">
           <thead><tr><th>From</th><th>To</th><th>Kind</th><th>Protocol</th><th>Latency</th><th>Status</th><th /></tr></thead>
           <tbody>
             {connections.map((c) => (
               <tr key={c.id}>
-                <td><strong style={{ fontWeight: 600 }}>{name(c.from)}</strong></td>
-                <td><strong style={{ fontWeight: 600 }}>{name(c.to)}</strong>{c.remote && <div className="faint small mono">remote</div>}</td>
+                <td style={{ fontWeight: 500 }}>{name(c.from)}</td>
+                <td style={{ fontWeight: 500 }}>{name(c.to)}{c.remote && <div className="faint small mono">remote</div>}</td>
                 <td><span className="badge">{c.kind}</span></td>
                 <td className="mono">{c.protocol}</td>
                 <td className="mono dim">{c.status === "up" ? `${c.latencyMs} ms` : ""}</td>
                 <td><Status value={c.status} /></td>
                 <td style={{ textAlign: "right" }}>
-                  <button className="btn ghost icon danger" onClick={() => dispatch({ type: "removeConnection", id: c.id })}><Trash2 size={13} /></button>
+                  <button className="btn ghost icon danger" aria-label="Remove link" onClick={() => dispatch({ type: "removeConnection", id: c.id })}><Trash2 size={13} /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {connections.length === 0 && <div className="empty" style={{ margin: 18 }}>No links yet.</div>}
+        {connections.length === 0 && <div className="empty">No links yet.</div>}
       </div>
 
       <CodeReveal code={manifest} label="topology manifest" />
@@ -194,27 +225,36 @@ function NewConnection({ seed, onClose }: { seed: { from?: string; to?: string }
   const [protocol, setProtocol] = useState<Connection["protocol"]>(isRemote ? "mcp" : "a2a");
   const [twoWay, setTwoWay] = useState(true);
   const [test, setTest] = useState<"idle" | "running" | "ok" | "fail">("idle");
+  const { errors, check, clear } = useErrors();
 
   const changeTo = (v: string) => {
     setTo(v);
+    clear("to");
+    clear("remote");
     setTest("idle");
     setKind(v === "remote" ? "tunnel" : "direct");
     setProtocol(v === "remote" || integrations.some((i) => i.id === v) ? "mcp" : "a2a");
   };
 
-  const duplicate = !isRemote && isLinked(from, to);
-  const remoteOk = /^[\w.-]+(:\d{2,5})?$|^https?:\/\/\S+$/.test(remote.trim());
-  const error = !from ? "Pick an agent to connect from." : from === to ? "An agent can't connect to itself." : duplicate ? "These two are already linked." : isRemote && remote && !remoteOk ? "Use host:port or a URL." : "";
-  const ready = !error && (!isRemote || remoteOk);
+  const duplicate = isIntegration ? !!integrations.find((i) => i.id === to)?.agents.includes(from) : !isRemote && isLinked(from, to);
+  const validate = () => {
+    const address = remote.trim();
+    return check({
+      from: !from ? "Pick an agent to connect from." : undefined,
+      to: !to ? "Pick where to connect." : from === to ? "An agent can't connect to itself." : duplicate ? (isIntegration ? `${fromAgent?.name} already has access to this integration.` : "These two are already linked.") : undefined,
+      remote: !isRemote ? undefined : !address ? "Enter the other machine's address." : !/^[\w.-]+(:\d{2,5})?$|^https?:\/\/\S+$/.test(address) ? "Use host:port or a URL." : undefined,
+    });
+  };
   const latency = kind === "direct" ? 2 : kind === "tunnel" ? 18 : 45;
 
   const runTest = () => {
+    if (!validate()) return;
     setTest("running");
     setTimeout(() => setTest(isRemote && remote.includes("unreachable") ? "fail" : "ok"), 700);
   };
 
   const create = () => {
-    if (!ready) return;
+    if (!validate()) return;
     if (isIntegration) {
       const it = integrations.find((i) => i.id === to)!;
       if (!it.agents.includes(from)) dispatch({ type: "toggleIntegrationAgent", id: to, agentId: from });
@@ -235,12 +275,13 @@ function NewConnection({ seed, onClose }: { seed: { from?: string; to?: string }
   return (
     <Modal title="New connection" subtitle="Pick two ends. KALYPSO suggests the rest." onClose={onClose}>
       <div className="field-row">
-        <label className="field">From
-          <select className="select" value={from} onChange={(e) => { setFrom(e.target.value); setTest("idle"); }}>
+        <Field label="From" error={errors.from}>
+          <select className="select" value={from} onChange={(e) => { setFrom(e.target.value); setTest("idle"); clear("from"); clear("to"); }}>
+            {agents.length === 0 && <option value="">No agents yet</option>}
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-        </label>
-        <label className="field">To
+        </Field>
+        <Field label="To" error={errors.to}>
           <select className="select" value={to} onChange={(e) => changeTo(e.target.value)}>
             <optgroup label="Agents">
               {agents.filter((a) => a.id !== from).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -254,13 +295,13 @@ function NewConnection({ seed, onClose }: { seed: { from?: string; to?: string }
               <option value="remote">Another machine…</option>
             </optgroup>
           </select>
-        </label>
+        </Field>
       </div>
 
       {isRemote && (
-        <label className="field">Address
-          <input className="input mono" autoFocus value={remote} onChange={(e) => { setRemote(e.target.value); setTest("idle"); }} placeholder="build-box.local:7443 or https://agents.example.com" />
-        </label>
+        <Field label="Address" error={errors.remote}>
+          <input className="input mono" autoFocus value={remote} onChange={(e) => { setRemote(e.target.value); setTest("idle"); clear("remote"); }} placeholder="build-box.local:7443 or https://agents.example.com" />
+        </Field>
       )}
 
       {isIntegration ? (
@@ -300,15 +341,11 @@ function NewConnection({ seed, onClose }: { seed: { from?: string; to?: string }
       )}
 
       <div className="row small" style={{ minHeight: 26 }}>
-        {error ? <span className="field-error">{error}</span> : (
-          <>
-            <button className="btn sm" disabled={!ready || test === "running"} onClick={runTest}>
-              {test === "running" ? <Loader2 size={12} className="spin" /> : null} Test connection
-            </button>
-            {test === "ok" && <span className="dim">Reachable, {latency} ms round trip.</span>}
-            {test === "fail" && <span className="field-error">Could not reach {remote}. Check the address and firewall.</span>}
-          </>
-        )}
+        <button className="btn sm" disabled={test === "running"} onClick={runTest}>
+          {test === "running" ? <Loader2 size={12} className="spin" /> : null} Test connection
+        </button>
+        {test === "ok" && <span className="dim">Reachable, {latency} ms round trip.</span>}
+        {test === "fail" && <span className="field-error">Could not reach {remote}. Check the address and firewall.</span>}
       </div>
 
       <ModalActions onCancel={onClose} onConfirm={create} confirm={isIntegration ? "Grant access" : "Connect"} />

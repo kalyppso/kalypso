@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plug, Sparkles } from "lucide-react";
 import { useStore } from "../store";
 import { CodeReveal, PageHead, Status, Toggle } from "../components/ui";
+import "../styles/integrations.css";
 
 export function Registry() {
   const { state, dispatch } = useStore();
@@ -21,17 +22,21 @@ export function Registry() {
 
   return (
     <>
-      <PageHead title="Skills & MCP servers" subtitle="Shared catalog across namespaces. Each agent only gets what you attach to it.">
-        <div className="segmented">
-          <button className={tab === "skills" ? "active" : ""} onClick={() => setTab("skills")}><Sparkles size={14} /> Skills</button>
-          <button className={tab === "mcps" ? "active" : ""} onClick={() => setTab("mcps")}><Plug size={14} /> MCP servers</button>
-        </div>
-      </PageHead>
+      <PageHead title="Skills & MCP servers" subtitle="Shared catalog across namespaces. Each agent only gets what you attach to it." />
+
+      <div className="ptabs" role="tablist">
+        <button role="tab" aria-selected={tab === "skills"} className={`ptab ${tab === "skills" ? "active" : ""}`} onClick={() => setTab("skills")}>
+          <Sparkles size={13} /> Skills <span className="ptab-count">{state.skills.length}</span>
+        </button>
+        <button role="tab" aria-selected={tab === "mcps"} className={`ptab ${tab === "mcps" ? "active" : ""}`} onClick={() => setTab("mcps")}>
+          <Plug size={13} /> MCP servers <span className="ptab-count">{state.mcps.length}</span>
+        </button>
+      </div>
 
       {tab === "skills" ? (
-        <div className="grid cards stagger">
+        <div className="skill-grid">
           {state.skills.map((s) => (
-            <div key={s.id} className="card hover">
+            <div key={s.id} className="card">
               <div className="row">
                 <h2>{s.name}</h2>
                 <span className="badge mono">v{s.version}</span>
@@ -40,7 +45,7 @@ export function Registry() {
               </div>
               <p className="dim" style={{ margin: "8px 0" }}>{s.description}</p>
               <div className="dim mono" style={{ fontSize: 11.5, marginBottom: 8 }}>{s.source}</div>
-              <div className="chips">{usedBy("skills", s.id).map((u) => <span key={u} className="badge">{u}</span>)}</div>
+              <div className="chips">{usedBy("skills", s.id).map((u) => <span key={u} className="badge">{u}</span>)}{usedBy("skills", s.id).length === 0 && <span className="faint small">Not attached to any agent</span>}</div>
             </div>
           ))}
         </div>
