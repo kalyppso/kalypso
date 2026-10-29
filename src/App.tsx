@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errorMessage, isLive, syncNamespace, toNamespace, type CoreInfo } from "./backend";
+import { api, errorMessage, isLive, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
@@ -63,6 +63,14 @@ export function App() {
     if (!isLive() || !state.session) return;
     syncNamespace(state.ns, dispatch).catch((e) => toast(errorMessage(e), "err"));
   }, [state.ns, state.session, dispatch, toast]);
+  // Containers changed outside KALYPSO (CLI, crash, engine restart) show up without a refresh.
+  useEffect(() => {
+    if (!isLive() || !state.session) return;
+    const off = onSandboxStatus((e) => {
+      if (e.ns === state.ns) syncNamespace(state.ns, dispatch).catch(() => {});
+    });
+    return () => void off.then((unlisten) => unlisten());
+  }, [state.ns, state.session, dispatch]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

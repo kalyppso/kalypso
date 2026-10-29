@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Namespace as NsRecord } from "./bindings/Namespace";
 import type { NewSandbox } from "./bindings/NewSandbox";
 import type { SandboxRecord } from "./bindings/SandboxRecord";
+import type { SandboxStatusEvent } from "./bindings/SandboxStatusEvent";
 import type { SecretMeta } from "./bindings/SecretMeta";
 import type { Action } from "./store";
 import type { Namespace, Sandbox, Secret } from "./types";
@@ -60,3 +62,6 @@ export async function syncNamespace(ns: string, dispatch: (a: Action) => void) {
   const [secrets, sandboxes] = await Promise.all([api.secretList(ns), api.sandboxList(ns)]);
   dispatch({ type: "hydrateNs", ns, secrets: secrets.map(toSecret), sandboxes: sandboxes.map(toSandbox) });
 }
+
+/** Engine-reported sandbox changes (src-tauri/src/events.rs). Returns an unsubscribe function. */
+export const onSandboxStatus = (fn: (e: SandboxStatusEvent) => void) => listen<SandboxStatusEvent>("sandbox://status", (e) => fn(e.payload));
