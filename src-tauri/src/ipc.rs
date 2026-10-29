@@ -62,9 +62,11 @@ pub fn secret_list(s: State<'_, AppState>, ns: String) -> Result<Vec<SecretMeta>
 }
 
 #[tauri::command]
-pub fn secret_set(s: State<'_, AppState>, ns: String, key: String, value: String, scope: String) -> Result<SecretMeta> {
+pub async fn secret_set(s: State<'_, AppState>, ns: String, key: String, value: String, scope: String) -> Result<SecretMeta> {
     ensure_ns(&s, &ns)?;
-    s.vault.set(&s.db, &ns, &key, &value, &scope)
+    let meta = s.vault.set(&s.db, &ns, &key, &value, &scope)?;
+    sandbox::redeliver_running(&s.db, &s.vault, &s.rt, &ns).await;
+    Ok(meta)
 }
 
 #[tauri::command]
@@ -74,9 +76,11 @@ pub fn secret_reveal(s: State<'_, AppState>, ns: String, id: String) -> Result<S
 }
 
 #[tauri::command]
-pub fn secret_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+pub async fn secret_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
     ensure_ns(&s, &ns)?;
-    s.vault.delete(&s.db, &ns, &id)
+    s.vault.delete(&s.db, &ns, &id)?;
+    sandbox::redeliver_running(&s.db, &s.vault, &s.rt, &ns).await;
+    Ok(())
 }
 
 // ---------- Sandboxes ----------
@@ -95,7 +99,10 @@ pub async fn sandbox_create(s: State<'_, AppState>, ns: String, spec: NewSandbox
 
 #[tauri::command]
 pub async fn sandbox_start(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
-    sandbox::start(&s.db, &s.rt, &ns, &id).await
+    let rec = sandbox::start(&s.db, &s.rt, &ns, &id).await?;
+    // The secrets folder is in memory, so it is empty after every (re)start.
+    sandbox::deliver_secrets(&s.db, &s.vault, &s.rt, &ns, &id).await?;
+    Ok(rec)
 }
 
 #[tauri::command]

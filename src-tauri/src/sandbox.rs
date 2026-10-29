@@ -18,7 +18,7 @@ use ts_rs::TS;
 
 use crate::error::{KalypsoError, Result};
 use crate::store::Db;
-use crate::vault::new_id;
+use crate::vault::{new_id, Vault};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -412,6 +412,71 @@ pub async fn exec(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], detach: bool) 
     Ok((code, out))
 }
 
+/// Run a command and feed `input` to its stdin, so data never appears in the
+/// command line, the process list or `inspect` output.
+async fn exec_with_stdin(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], input: &[u8]) -> Result<i64> {
+    use tokio::io::AsyncWriteExt;
+    let docker = rt.docker()?;
+    let created = docker
+        .create_exec(
+            &container_name(ns, id),
+            CreateExecOptions {
+                cmd: Some(cmd.to_vec()),
+                attach_stdin: Some(true),
+                attach_stdout: Some(true),
+                attach_stderr: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(rt_err)?;
+    match docker.start_exec(&created.id, None).await.map_err(rt_err)? {
+        StartExecResults::Attached { mut output, input: mut stdin } => {
+            stdin.write_all(input).await?;
+            stdin.shutdown().await?;
+            while let Some(chunk) = output.next().await {
+                chunk.map_err(rt_err)?;
+            }
+        }
+        StartExecResults::Detached => return Err(KalypsoError::Runtime("exec unexpectedly detached".into())),
+    }
+    Ok(docker.inspect_exec(&created.id).await.map_err(rt_err)?.exit_code.unwrap_or(-1))
+}
+
+pub const SECRETS_DIR: &str = "/run/kalypso/secrets";
+
+/// Write the namespace's secrets into the sandbox's in-memory secrets folder,
+/// replacing whatever was there. Returns how many were delivered.
+pub async fn deliver_secrets(db: &Db, vault: &Vault, rt: &Runtime, ns: &str, id: &str) -> Result<usize> {
+    let rec = get(db, ns, id)?;
+    let secrets = vault.for_delivery(db, ns)?;
+    let (code, out) = exec(rt, ns, id, &["sh", "-c", &format!("rm -f {SECRETS_DIR}/*")], false).await?;
+    if code != 0 {
+        return Err(KalypsoError::Runtime(format!("could not clear secrets in {}: {out}", rec.name)));
+    }
+    for (key, value) in &secrets {
+        // Keys are validated as [A-Z0-9_], so they are safe as file names.
+        let script = format!("umask 077 && cat > {SECRETS_DIR}/$1");
+        let code = exec_with_stdin(rt, ns, id, &["sh", "-c", &script, "sh", key], value.as_bytes()).await?;
+        if code != 0 {
+            return Err(KalypsoError::Runtime(format!("could not write secret {key} into {}", rec.name)));
+        }
+    }
+    let keys = secrets.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(",");
+    db.audit(Some(ns), "kalypso", "secret.deliver", &format!("{}: {keys}", rec.name))?;
+    Ok(secrets.len())
+}
+
+/// Bring every running sandbox in the namespace up to date after a secret changes.
+pub async fn redeliver_running(db: &Db, vault: &Vault, rt: &Runtime, ns: &str) {
+    let Ok(all) = list(db, ns) else { return };
+    for sb in all.into_iter().filter(|s| s.status == "running") {
+        if let Err(e) = deliver_secrets(db, vault, rt, ns, &sb.id).await {
+            tracing::warn!(sandbox = %sb.name, error = %e, "could not refresh secrets");
+        }
+    }
+}
+
 /// The sandbox's address on its namespace network, if it is attached to one.
 pub async fn namespace_ip(rt: &Runtime, ns: &str, id: &str) -> Result<Option<String>> {
     let info = rt.docker()?.inspect_container(&container_name(ns, id), None::<InspectContainerOptions>).await.map_err(rt_err)?;
@@ -527,6 +592,46 @@ mod tests {
         let err = create(&db, &Runtime::none(), "work", spec("a")).await.unwrap_err();
         assert_eq!(err.code(), "runtime");
         assert!(list(&db, "work").unwrap().is_empty());
+    }
+
+    /// Namespace secrets arrive as private files; agent-scoped ones don't; values never
+    /// show up in the container's configuration.
+    #[tokio::test]
+    async fn secrets_are_delivered_as_files() {
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Db::open_in_memory().unwrap();
+        let vault = Vault::ephemeral();
+        let ns = format!("sd{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        vault.create_ns_key(&db, &ns).unwrap();
+        let token = vault.set(&db, &ns, "API_TOKEN", "tok-123 with spaces\nand a newline", "namespace").unwrap();
+        vault.set(&db, &ns, "AGENT_ONLY", "not-for-everyone", "agent").unwrap();
+
+        let sb = create(&db, &rt, &ns, spec("vaulted")).await.unwrap();
+        start(&db, &rt, &ns, &sb.id).await.unwrap();
+        assert_eq!(deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap(), 1);
+
+        let (_, body) = exec(&rt, &ns, &sb.id, &["cat", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
+        assert_eq!(body, "tok-123 with spaces\nand a newline");
+        let (_, mode) = exec(&rt, &ns, &sb.id, &["stat", "-c", "%a", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
+        assert_eq!(mode.trim(), "600");
+        let (missing, _) = exec(&rt, &ns, &sb.id, &["test", "-e", &format!("{SECRETS_DIR}/AGENT_ONLY")], false).await.unwrap();
+        assert_ne!(missing, 0, "agent-scoped secrets must not reach every sandbox");
+
+        let inspect = rt.docker().unwrap().inspect_container(&container_name(&ns, &sb.id), None::<InspectContainerOptions>).await.unwrap();
+        assert!(!serde_json::to_string(&inspect).unwrap().contains("tok-123"), "secret leaked into container config");
+
+        // Deleting the secret and redelivering removes the file.
+        vault.delete(&db, &ns, &token.id).unwrap();
+        redeliver_running(&db, &vault, &rt, &ns).await;
+        let (gone, _) = exec(&rt, &ns, &sb.id, &["test", "-e", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
+        assert_ne!(gone, 0);
+
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
+        rt.remove_network(&ns).await.unwrap();
     }
 
     /// Two sandboxes in one namespace can talk; a sandbox in another namespace cannot.
