@@ -157,18 +157,44 @@ svg.lucide { stroke-width: 1.5; flex: none; }
 .sidebar { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 14px 10px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .sidebar::-webkit-scrollbar { display: none; }
 .shell.collapsed .sidebar { visibility: hidden; }
-.nav-group { font-size: 11.5px; color: var(--text-3); padding: 12px 8px 4px; }
 /* Mixed from the sidebar background so hover and active read on every theme, including custom. */
-.sidebar { --nav-hover: color-mix(in srgb, var(--text) 6%, var(--surface-2)); --nav-active: color-mix(in srgb, var(--text) 10%, var(--surface-2)); }
-.nav-section { display: flex; flex-direction: column; gap: 2px; }
+.sidebar { --nav-hover: color-mix(in srgb, var(--text) 5%, var(--surface-2)); --nav-active: color-mix(in srgb, var(--text) 9%, var(--surface-2)); }
+.nav { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.nav-section { display: flex; flex-direction: column; gap: 1px; }
+.nav-group {
+  display: flex; align-items: center; gap: 4px; width: 100%; padding: 14px 8px 5px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; color: var(--text-3); text-align: left;
+}
+.nav-group:hover { color: var(--text-2); }
+.nav-chevron { opacity: 0; transition: opacity 0.15s, transform 0.2s var(--ease); }
+.nav-group:hover .nav-chevron, .nav-group:focus-visible .nav-chevron, .nav-group[aria-expanded="false"] .nav-chevron { opacity: 1; }
+/* The sliding highlight behind the active item, with a short accent bar on its left edge. */
+.nav-mark {
+  position: absolute; top: 0; left: 0; right: 0; border-radius: var(--radius-sm); background: var(--nav-active); pointer-events: none;
+  transition: transform 0.32s var(--ease), height 0.32s var(--ease), opacity 0.2s;
+}
+.nav-mark::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--accent-hi); }
 .nav-item {
-  display: flex; align-items: center; gap: 9px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm);
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 30px; padding: 0 8px 0 10px; border: 0; border-radius: var(--radius-sm);
   background: none; color: var(--text-2); text-align: left; cursor: pointer; transition: background 0.15s, color 0.15s;
 }
-.nav-item:hover { background: var(--nav-hover); color: var(--text); }
-.nav-item.active { background: var(--nav-active); color: var(--text); font-weight: 500; }
-.nav-item .count { margin-left: auto; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.sidebar-foot { margin-top: auto; padding-top: 12px; }
+.nav-item svg { flex: none; color: var(--text-3); transition: color 0.15s; }
+.nav-item:hover { color: var(--text); }
+.nav-item:not(.active):hover { background: var(--nav-hover); }
+.nav-item:hover svg { color: var(--text-2); }
+.nav-item.active { color: var(--text); font-weight: 500; }
+.nav-item.active svg { color: var(--accent-hi); }
+.nav-item:active { transform: scale(0.99); }
+.nav-item .count {
+  margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 11px; font-weight: 500; color: var(--text-3); background: color-mix(in srgb, var(--text) 6%, transparent); font-variant-numeric: tabular-nums;
+}
+.nav-item.active .count { color: var(--text-2); background: color-mix(in srgb, var(--text) 10%, transparent); }
+.ns-card { padding: 8px; background: var(--card); box-shadow: inset 0 0 0 1px var(--border); border-radius: 10px; }
+.ns-card:hover { background: var(--card-2); }
+.user-btn .user-avatar { position: relative; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); }
+.presence { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent-hi); box-shadow: 0 0 0 2px var(--surface-2); }
+.sidebar-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
 kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 5px; border-radius: 4px; color: var(--text-2); background: var(--card-3); }
 
 .main {

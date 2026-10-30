@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Logo } from "./Logo";
 import {
   BarChart3,
@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   Cable,
   Check,
+  ChevronDown,
   ChevronsUpDown,
   GitCommitHorizontal,
   KanbanSquare,
@@ -82,27 +83,67 @@ export function Sidebar() {
     policies: scoped.policies.filter((p) => p.enabled).length,
   };
 
+  // Folded sections, remembered per machine. The page you are on stays visible.
+  const [folded, setFolded] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const toggle = (title: string) => {
+    const next = folded.includes(title) ? folded.filter((t) => t !== title) : [...folded, title];
+    setFolded(next);
+    try { localStorage.setItem(FOLDED_KEY, JSON.stringify(next)); } catch { /* convenience only */ }
+  };
+
+  // One highlight that glides to the active item instead of each item snapping on.
+  const navRef = useRef<HTMLElement>(null);
+  const [mark, setMark] = useState<{ top: number; height: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = navRef.current?.querySelector<HTMLElement>(".nav-item.active");
+    setMark(el ? { top: el.offsetTop, height: el.offsetHeight } : null);
+  }, [state.view, folded]);
+
   return (
     <aside className="sidebar" aria-hidden={!state.sidebarOpen}>
       <NamespaceSwitcher />
-      {NAV.map((g) => (
-        <div key={g.title} className="nav-section">
-          <div className="nav-group">{g.title}</div>
-          {g.items.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={`nav-item ${state.view === id ? "active" : ""}`} onClick={() => dispatch({ type: "view", view: id })}>
-              <Icon size={15} />
-              {label}
-              {counts[id] !== undefined && <span className="count">{counts[id]}</span>}
-            </button>
-          ))}
-        </div>
-      ))}
+      <nav className="nav" ref={navRef}>
+        <span className="nav-mark" style={{ transform: `translateY(${mark?.top ?? 0}px)`, height: mark?.height ?? 0, opacity: mark ? 1 : 0 }} aria-hidden />
+        {NAV.map((g) => {
+          const isFolded = folded.includes(g.title);
+          const items = isFolded ? g.items.filter((i) => i.id === state.view) : g.items;
+          return (
+            <div key={g.title} className="nav-section">
+              <button className="nav-group" onClick={() => toggle(g.title)} aria-expanded={!isFolded}>
+                {g.title}
+                <ChevronDown size={12} className="nav-chevron" style={{ transform: isFolded ? "rotate(-90deg)" : undefined }} />
+              </button>
+              {items.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  className={`nav-item ${state.view === id ? "active" : ""}`}
+                  aria-current={state.view === id ? "page" : undefined}
+                  onClick={() => dispatch({ type: "view", view: id })}
+                >
+                  <Icon size={15} />
+                  <span className="clip">{label}</span>
+                  {!!counts[id] && <span className="count">{counts[id]}</span>}
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </nav>
       <div className="sidebar-foot">
         <UserMenu />
       </div>
     </aside>
   );
 }
+
+const FOLDED_KEY = "kalypso.nav.folded";
 
 function UserMenu() {
   const { state, dispatch } = useStore();
@@ -112,11 +153,15 @@ function UserMenu() {
   return (
     <div className="pop-wrap" ref={ref} style={{ marginTop: 4 }}>
       <button className="user-btn" onClick={() => setOpen(!open)}>
-        <span className="avatar">{user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}</span>
+        <span className="avatar user-avatar">
+          {user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
+          <i className="presence" aria-hidden />
+        </span>
         <div style={{ minWidth: 0 }}>
           <div className="clip" style={{ fontWeight: 500 }}>{user.name}</div>
           <div className="faint small clip">{user.email}</div>
         </div>
+        <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
       </button>
       {open && (
         <div className="popover" style={{ top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: "100%", minWidth: 0 }}>
@@ -161,7 +206,7 @@ function NamespaceSwitcher() {
 
   return (
     <div className="pop-wrap" ref={ref} style={{ marginBottom: 6 }}>
-      <button className="user-btn" onClick={() => setOpen(!open)} title="Switch namespace" aria-expanded={open}>
+      <button className="user-btn ns-card" onClick={() => setOpen(!open)} title="Switch namespace" aria-expanded={open}>
         <Logo size={26} />
         <div style={{ minWidth: 0 }}>
           <div className="clip" style={{ fontWeight: 500 }}>{current?.name}</div>

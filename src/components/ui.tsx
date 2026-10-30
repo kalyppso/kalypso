@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle } from "lucide-react";
 import { useStore } from "../store";
 
@@ -29,7 +30,9 @@ export function Modal({ title, subtitle, onClose, children }: { title: string; s
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  return (
+  // Rendered on <body>: inside the page, the page's entrance animation (a transform)
+  // would position the fixed overlay against the page instead of the window.
+  return createPortal(
     <div className="overlay" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="row" style={{ alignItems: "flex-start" }}>
@@ -42,7 +45,8 @@ export function Modal({ title, subtitle, onClose, children }: { title: string; s
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
