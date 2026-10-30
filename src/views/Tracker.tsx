@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { Modal, ModalActions, PageHead, PrimaryButton, initials, usd } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PrimaryButton, initials, usd, useErrors } from "../components/ui";
+import "../styles/pages.css";
 import type { Task, TaskStatus } from "../types";
 import { kindDef } from "./Integrations";
 
-const COLUMNS: { id: TaskStatus; label: string }[] = [
-  { id: "queued", label: "Queued" },
-  { id: "running", label: "Running" },
-  { id: "review", label: "In review" },
-  { id: "done", label: "Done" },
-  { id: "failed", label: "Failed" },
+const COLUMNS: { id: TaskStatus; label: string; dot: string }[] = [
+  { id: "queued", label: "Queued", dot: "var(--text-3)" },
+  { id: "running", label: "Running", dot: "var(--accent-hi)" },
+  { id: "review", label: "In review", dot: "var(--warn)" },
+  { id: "done", label: "Done", dot: "var(--ok)" },
+  { id: "failed", label: "Failed", dot: "var(--err)" },
 ];
 
 export function Tracker() {
@@ -20,7 +21,7 @@ export function Tracker() {
   const [agentFilter, setAgentFilter] = useState("all");
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<TaskStatus | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
   const [importing, setImporting] = useState(false);
   const ticketSources = useNamespaced().integrations.filter((i) => i.ticketing);
 
@@ -62,7 +63,7 @@ export function Tracker() {
         <div className="stat"><div className="stat-label">Cost today</div><div className="stat-value">{usd(tasks.reduce((s, t) => s + t.cost, 0))}</div><div className="stat-sub">{tasks.reduce((s, t) => s + t.minutes, 0)} agent minutes</div></div>
       </div>
 
-      <div className="board">
+      <div className={`board ${dragging ? "is-dragging" : ""}`}>
         {COLUMNS.map((c) => {
           const items = visible.filter((t) => t.status === c.id);
           return (
@@ -74,6 +75,7 @@ export function Tracker() {
               onDrop={() => drop(c.id)}
             >
               <div className="column-head">
+                <span className="dot" style={{ background: c.dot }} />
                 {c.label}
                 <span className="faint">{items.length}</span>
               </div>
@@ -88,7 +90,7 @@ export function Tracker() {
                   onDelete={() => dispatch({ type: "removeTask", id: t.id })}
                 />
               ))}
-              {items.length === 0 && <div className="faint small" style={{ padding: "4px 4px 8px" }}>Nothing here.</div>}
+              {items.length === 0 && <div className="column-empty">Nothing here</div>}
             </div>
           );
         })}
@@ -136,9 +138,14 @@ function NewTask({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const [priority, setPriority] = useState<Task["priority"]>("normal");
+  const { errors, check, clear } = useErrors();
 
   const create = () => {
-    if (!title.trim() || !agentId) return;
+    const ok = check({
+      title: title.trim() ? undefined : "Describe the task.",
+      agent: agentId ? undefined : agents.length ? "Pick an agent." : "Create an agent first.",
+    });
+    if (!ok) return;
     dispatch({
       type: "addTask",
       task: { id: uid("t"), ns: state.ns, title: title.trim(), agentId, status: "queued", priority, progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
@@ -149,13 +156,15 @@ function NewTask({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="New task" subtitle="The agent picks it up when it is free." onClose={onClose}>
-      <label className="field">Task<input className="input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Add pagination to the audit log API" /></label>
+      <Field label="Task" error={errors.title}>
+        <input className="input" autoFocus value={title} onChange={(e) => { setTitle(e.target.value); clear("title"); }} placeholder="Add pagination to the audit log API" />
+      </Field>
       <div className="field-row">
-        <label className="field">Agent
-          <select className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+        <Field label="Agent" error={errors.agent}>
+          <select className="select" value={agentId} onChange={(e) => { setAgentId(e.target.value); clear("agent"); }}>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-        </label>
+        </Field>
         <label className="field">Priority
           <select className="select" value={priority} onChange={(e) => setPriority(e.target.value as Task["priority"])}>
             <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option>
@@ -176,10 +185,15 @@ function ImportTickets({ onClose }: { onClose: () => void }) {
   const available = state.tickets.filter((t) => sources.some((s) => s.id === t.integrationId) && !linked.has(t.key));
   const [picked, setPicked] = useState<string[]>([]);
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
-  const toggle = (key: string) => setPicked(picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key]);
+  const { errors, check, clear } = useErrors();
+  const toggle = (key: string) => { setPicked(picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key]); clear("tickets"); };
 
   const importNow = () => {
-    if (!picked.length || !agentId) return;
+    const ok = check({
+      tickets: picked.length ? undefined : available.length ? "Pick at least one ticket." : "There is nothing left to import.",
+      agent: agentId ? undefined : "Create an agent to assign these to.",
+    });
+    if (!ok) return;
     for (const t of available.filter((x) => picked.includes(x.key))) {
       dispatch({
         type: "addTask",
@@ -211,11 +225,12 @@ function ImportTickets({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       )}
-      <label className="field">Assign to
-        <select className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+      {errors.tickets && <span className="field-error" role="alert">{errors.tickets}</span>}
+      <Field label="Assign to" error={errors.agent}>
+        <select className="select" value={agentId} onChange={(e) => { setAgentId(e.target.value); clear("agent"); }}>
           {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-      </label>
+      </Field>
       <ModalActions onCancel={onClose} onConfirm={importNow} confirm={picked.length ? `Import ${picked.length}` : "Import"} />
     </Modal>
   );

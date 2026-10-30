@@ -1,0 +1,46 @@
+/* Page-level styles for Settings, Tracker, Policies, Budget, Secrets and Sandboxes.
+   Loaded after styles.css, so equal-specificity rules here win. */
+
+/* An empty state inside a card is just text, not a second card. */
+.card .empty { background: none; border-radius: 0; }
+
+/* ---------- Settings: section menu beside the content ---------- */
+.settings { display: grid; grid-template-columns: 188px minmax(0, 720px); gap: 40px; align-items: start; }
+.subnav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px; }
+.subnav-item {
+  display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.subnav-item:hover { background: var(--card); color: var(--text); }
+.subnav-item.active { background: var(--card-2); color: var(--text); font-weight: 500; }
+.subnav-item:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+.settings-body { min-width: 0; animation: enter 0.25s var(--ease); }
+.settings-title { font-size: 15px; margin: 4px 0 16px; }
+@media (max-width: 800px) {
+  .settings { grid-template-columns: 1fr; gap: 16px; }
+  .subnav { position: static; flex-direction: row; overflow-x: auto; }
+}
+
+/* ---------- Tracker: columns are just a header and loose cards ---------- */
+.column { min-height: 120px; padding: 0; border-radius: 12px; background: none; transition: background 0.15s, box-shadow 0.15s; }
+.column-head { padding: 2px 2px 10px; }
+.column-head .dot { width: 7px; height: 7px; }
+.column-empty { padding: 14px 10px; border-radius: 10px; text-align: center; font-size: 12px; color: var(--text-3); }
+.task { margin-bottom: 8px; border-radius: 10px; background: var(--card); }
+.task:hover { background: var(--card-2); }
+/* Drop zones only show up while something is being dragged. */
+.column.drop { box-shadow: none; }
+.board.is-dragging .column { outline: 1px dashed var(--border-strong); outline-offset: 4px; }
+.board.is-dragging .column.drop { background: color-mix(in srgb, var(--accent-hi) 7%, transparent); outline-color: var(--accent-hi); }
+
+/* ---------- Policies: one row per rule ---------- */
+.policy-row { border-bottom: 1px solid var(--border); transition: opacity 0.15s; }
+.policy-row:last-child { border-bottom: 0; }
+.policy-row.off .policy-text, .policy-row.off .policy-scope { opacity: 0.5; }
+.policy-main { display: flex; align-items: center; gap: 14px; padding: 12px 16px; }
+.policy-text { display: flex; flex-direction: column; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.policy-text:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 4px; border-radius: 4px; }
+.policy-name { font-weight: 500; }
+.policy-scope { flex: none; max-width: 220px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.policy-detail { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 14px 60px; animation: enter 0.2s var(--ease); }
+@media (max-width: 1000px) { .policy-scope { display: none; } }

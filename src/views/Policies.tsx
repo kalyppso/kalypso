@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Ban, Eye, Hand, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
+import "../styles/pages.css";
 import type { Enforcement, Policy, PolicyCategory } from "../types";
 
 const ENFORCEMENT: { id: Enforcement; label: string; icon: JSX.Element; hint: string }[] = [
@@ -29,7 +30,8 @@ export function Policies() {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { policies, policyEvents, agents } = useNamespaced();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(state.compose);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const name = (id: string) => state.agents.find((a) => a.id === id)?.name ?? id;
   const active = policies.filter((p) => p.enabled);
   const unusedTemplates = TEMPLATES.filter((t) => !policies.some((p) => p.name === t.name));
@@ -71,32 +73,39 @@ export function Policies() {
         </div>
       )}
 
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", marginBottom: 24 }}>
-        {policies.map((p) => (
-          <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 12, opacity: p.enabled ? 1 : 0.55 }}>
-            <div className="row">
-              <Toggle on={p.enabled} onChange={(v) => dispatch({ type: "updatePolicy", id: p.id, patch: { enabled: v } })} label={`Enable ${p.name}`} />
-              <h2 style={{ minWidth: 0 }}>{p.name}</h2>
-              <span className="spacer" />
-              <button className="btn ghost sm icon danger" title="Delete policy" onClick={() => { dispatch({ type: "removePolicy", id: p.id }); toast(`Removed policy: ${p.name}`, "warn"); }}><Trash2 size={13} /></button>
-            </div>
-            <p className="dim" style={{ margin: 0 }}>{p.rule}</p>
-            <div className="row">
-              <div className="segmented">
-                {ENFORCEMENT.map((e) => (
-                  <button key={e.id} className={p.enforcement === e.id ? "active" : ""} onClick={() => dispatch({ type: "updatePolicy", id: p.id, patch: { enforcement: e.id } })}>
-                    {e.label}
-                  </button>
-                ))}
+      <div className="card flush" style={{ marginBottom: 24 }}>
+        {policies.map((p) => {
+          const open = expanded === p.id;
+          return (
+            <div key={p.id} className={`policy-row ${p.enabled ? "" : "off"}`}>
+              <div className="policy-main">
+                <Toggle on={p.enabled} onChange={(v) => dispatch({ type: "updatePolicy", id: p.id, patch: { enabled: v } })} label={`Enable ${p.name}`} />
+                <button className="policy-text" onClick={() => setExpanded(open ? null : p.id)} aria-expanded={open}>
+                  <span className="policy-name">{p.name}</span>
+                  <span className="dim clip">{p.rule}</span>
+                </button>
+                <span className="faint small policy-scope">
+                  {p.ns === "*" ? "All namespaces" : p.ns}, {p.appliesTo === "all" ? "all agents" : p.appliesTo.map(name).join(", ")}
+                </span>
+                <div className="segmented">
+                  {ENFORCEMENT.map((e) => (
+                    <button key={e.id} className={p.enforcement === e.id ? "active" : ""} title={e.hint} onClick={() => dispatch({ type: "updatePolicy", id: p.id, patch: { enforcement: e.id } })}>
+                      {e.label}
+                    </button>
+                  ))}
+                </div>
+                <button className="btn ghost sm icon danger" title="Delete policy" onClick={() => { dispatch({ type: "removePolicy", id: p.id }); toast(`Removed policy: ${p.name}`, "warn"); }}><Trash2 size={13} /></button>
               </div>
-              <span className="spacer" />
-              <span className="faint small" style={{ textAlign: "right" }}>
-                {p.ns === "*" ? "All namespaces" : p.ns}, {p.appliesTo === "all" ? "all agents" : p.appliesTo.map(name).join(", ")}
-              </span>
+              {open && (
+                <div className="policy-detail">
+                  <p className="dim" style={{ margin: 0 }}>{p.rule}</p>
+                  <CodeReveal code={p.spec} label="rule spec" />
+                </div>
+              )}
             </div>
-            <CodeReveal code={p.spec} label="rule spec" />
-          </div>
-        ))}
+          );
+        })}
+        {policies.length === 0 && <div className="empty">No policies yet. Add one or pick a suggestion above.</div>}
       </div>
 
       <div className="card flush">
@@ -132,11 +141,18 @@ function NewPolicy({ agents, onClose }: { agents: { id: string; name: string }[]
   const [enforcement, setEnforcement] = useState<Enforcement>("block");
   const [global, setGlobal] = useState(false);
   const [targets, setTargets] = useState<string[]>([]);
+  const { errors, check, clear } = useErrors();
 
   const create = () => {
     const r = rule.trim();
-    if (r.length < 8) return;
     const n = name.trim() || r.replace(/^never\s+/i, "No ").split(/[.,;]/)[0].slice(0, 48);
+    const ns = global ? "*" : state.ns;
+    const taken = state.policies.some((p) => (p.ns === ns || p.ns === "*" || ns === "*") && p.name.toLowerCase() === n.toLowerCase());
+    const dupe = taken ? `A policy called "${n}" already exists here.` : undefined;
+    const ruleError = !r || /^never$/i.test(r) ? "Write the rule." : r.length < 8 ? "Say a bit more, so agents know exactly what is off limits." : undefined;
+    // A generated name that clashes is reported on the rule; a typed one on the name field.
+    const ok = check({ rule: ruleError ?? (name.trim() ? undefined : dupe), name: name.trim() ? dupe : undefined });
+    if (!ok) return;
     dispatch({
       type: "addPolicy",
       policy: {
@@ -150,10 +166,12 @@ function NewPolicy({ agents, onClose }: { agents: { id: string; name: string }[]
 
   return (
     <Modal title="New policy" subtitle="Describe what agents must not do." onClose={onClose}>
-      <label className="field">Rule
-        <textarea className="textarea" autoFocus value={rule} onChange={(e) => setRule(e.target.value)} placeholder="Never push directly to main." />
-      </label>
-      <label className="field">Short name (optional)<input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Generated from the rule" /></label>
+      <Field label="Rule" error={errors.rule}>
+        <textarea className="textarea" autoFocus value={rule} onChange={(e) => { setRule(e.target.value); clear("rule"); }} placeholder="Never push directly to main." />
+      </Field>
+      <Field label="Short name (optional)" error={errors.name}>
+        <input className="input" value={name} onChange={(e) => { setName(e.target.value); clear("name"); }} placeholder="Generated from the rule" />
+      </Field>
       <div className="field-row">
         <label className="field">Category
           <select className="select" value={category} onChange={(e) => setCategory(e.target.value as PolicyCategory)}>

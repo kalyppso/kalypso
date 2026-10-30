@@ -3,6 +3,7 @@ import { Code2, CornerDownLeft, Layers, Palette, Sparkles } from "lucide-react";
 import { useStore } from "../store";
 import { themes } from "../themes";
 import { NAV } from "./Sidebar";
+import { TOOLS } from "../views/Terminal";
 
 interface Command {
   id: string;
@@ -24,6 +25,10 @@ export function CommandPalette() {
       id: `go-${id}`, group: "Go to", label, icon: <Icon size={16} />,
       run: () => dispatch({ type: "view", view: id }),
     }));
+    const tools = TOOLS.map(({ kind, label, icon: Icon }) => ({
+      id: `tool-${kind}`, group: "Tools", label: `Open ${label.toLowerCase()}`, icon: <Icon size={16} />,
+      run: () => { dispatch({ type: "openTool", tool: kind }); close(); },
+    }));
     const ns = state.namespaces.map((n) => ({
       id: `ns-${n.id}`, group: "Namespace", label: `Switch to ${n.name}`, icon: <Layers size={16} />,
       run: () => { dispatch({ type: "ns", ns: n.id }); close(); },
@@ -36,7 +41,7 @@ export function CommandPalette() {
       { id: "code", group: "Preferences", label: state.showCode ? "Hide code" : "Show code", icon: <Code2 size={16} />, run: () => { dispatch({ type: "showCode", value: !state.showCode }); close(); } },
       { id: "ambient", group: "Preferences", label: state.ambient ? "Turn off ambient background" : "Turn on ambient background", icon: <Sparkles size={16} />, run: () => { dispatch({ type: "ambient", value: !state.ambient }); close(); } },
     ];
-    return [...go, ...ns, ...th, ...misc];
+    return [...go, ...tools, ...ns, ...th, ...misc];
   }, [state.namespaces, state.showCode, state.ambient, dispatch]);
 
   const filtered = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()));

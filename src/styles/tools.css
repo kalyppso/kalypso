@@ -1,0 +1,59 @@
+/* ---------- Tools layer: terminal, browser and phone over the inset panel ---------- */
+/* Covers the top bar and page, stops above the status bar. Opening plays a spring
+   from the status bar; closing fades out, then hides so the page underneath is usable. */
+.tools {
+  position: absolute; inset: 0 0 28px 0; z-index: 5; display: flex; flex-direction: column;
+  background: var(--page-bg); transform-origin: 50% 100%;
+  opacity: 0; transform: translateY(18px) scale(0.985); visibility: hidden; pointer-events: none;
+  transition: opacity 0.16s ease-in, transform 0.2s ease-in, visibility 0s 0.2s;
+}
+.tools.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: none; animation: tools-in 0.42s var(--spring); }
+@keyframes tools-in { from { opacity: 0; transform: translateY(28px) scale(0.97); } }
+
+.tools-head { display: flex; align-items: center; gap: 4px; height: 50px; padding: 0 10px; flex: none; border-bottom: 1px solid var(--border); }
+.tools-tabs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tools-tab {
+  display: flex; align-items: center; gap: 7px; height: 30px; max-width: 220px; padding: 0 6px 0 10px; flex: none;
+  border-radius: 8px; color: var(--text-2); cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.tools-tab:hover { background: var(--card); color: var(--text); }
+.tools-tab.active { background: var(--card-2); color: var(--text); }
+.tools-tab-x { display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 5px; background: none; color: var(--text-3); cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.tools-tab:hover .tools-tab-x, .tools-tab.active .tools-tab-x { opacity: 1; }
+.tools-tab-x:hover { background: var(--card-3); color: var(--text); }
+
+.tools-body { flex: 1; min-height: 0; display: flex; padding: 8px; }
+.tools-page { flex: 1; min-width: 0; min-height: 0; }
+
+/* Panes: filled tiles with a gap between them instead of hairlines. */
+.tools .term-split { gap: 0; }
+.tools .term-divider { background: transparent; }
+.tools .term-divider.dir-row { width: 8px; }
+.tools .term-divider.dir-column { height: 8px; }
+.tools .term-divider:hover { background: color-mix(in srgb, var(--accent-hi) 35%, transparent); border-radius: 99px; }
+.tool-pane { border-radius: 12px; background: var(--card); overflow: hidden; transition: box-shadow 0.15s; }
+.tool-pane.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-hi) 45%, transparent); }
+.tool-pane .term-head { height: 40px; gap: 6px; padding: 0 8px; border-bottom: 0; }
+.tool-pane.active .term-head { box-shadow: none; }
+.tool-pane .segmented button { height: 24px; padding: 0 7px; }
+.tool-pane .term-body { background: var(--page-bg); margin: 0 6px 6px; border-radius: 8px; padding: 8px 6px 6px 10px; }
+.tool-pane .term-body .xterm, .tool-pane .term-body .xterm-viewport, .tool-pane .term-body .xterm-screen { background: var(--page-bg) !important; }
+
+/* Browser and phone fill their pane. */
+.tool-pane .browser { flex: 1; height: auto; min-height: 0; margin: 0 6px 6px; border-radius: 8px; overflow: hidden; background: var(--page-bg); }
+.tool-pane .tabs, .tool-pane .urlbar { border-bottom: 0; }
+.tool-pane .tab.active { background: var(--card-2); }
+.phone-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.phone-pane .urlbar { padding: 0 8px 8px; }
+.phone-pane .urlbar .select { flex: none; width: auto; }
+.phone-pane .phone-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: auto; padding: 8px; }
+
+/* ---------- Status bar tool buttons ---------- */
+.statusbar .spacer { flex: 1; }
+.status-tool {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; margin: 0 -6px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: none; color: var(--text-3); font: inherit; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.status-tool:hover { background: var(--card-2); color: var(--text); }
+.status-tool.active { background: var(--accent-soft); color: var(--accent-hi); }
+.status-tool:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }

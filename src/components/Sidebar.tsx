@@ -1,26 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Logo } from "./Logo";
 import {
+  BarChart3,
   Bot,
   Boxes,
   BrainCircuit,
   Cable,
-  Command,
+  Check,
+  ChevronsUpDown,
   GitCommitHorizontal,
-  Globe,
   KanbanSquare,
   KeyRound,
   LogOut,
   LayoutDashboard,
+  Plus,
   Puzzle,
   Settings,
   ShieldCheck,
-  Smartphone,
-  SquareTerminal,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { useNamespaced, useStore } from "../store";
+import { useNamespaced, useStore, useToast } from "../store";
+import { api, errorMessage, isLive, toNamespace } from "../backend";
+import { Field, Modal, ModalActions, useErrors, usePopover } from "./ui";
 import type { ViewId } from "../types";
 
 export interface NavDef {
@@ -34,6 +36,7 @@ export const NAV: { title: string; items: NavDef[] }[] = [
     title: "Workspace",
     items: [
       { id: "overview", label: "Overview", icon: LayoutDashboard },
+      { id: "analytics", label: "Analytics", icon: BarChart3 },
       { id: "agents", label: "Agents", icon: Bot },
       { id: "tracker", label: "Tracker", icon: KanbanSquare },
       { id: "git", label: "Git tracker", icon: GitCommitHorizontal },
@@ -58,13 +61,9 @@ export const NAV: { title: string; items: NavDef[] }[] = [
     ],
   },
   {
-    title: "Tools",
-    items: [
-      { id: "terminal", label: "Terminal", icon: SquareTerminal },
-      { id: "browser", label: "Browser", icon: Globe },
-      { id: "phone", label: "Phone", icon: Smartphone },
-      { id: "settings", label: "Settings", icon: Settings },
-    ],
+    // Terminal, browser and phone live in the tools layer, opened from the status bar.
+    title: "App",
+    items: [{ id: "settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -84,13 +83,10 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <Logo size={26} />
-        KALYPSO
-      </div>
+    <aside className="sidebar" aria-hidden={!state.sidebarOpen}>
+      <NamespaceSwitcher />
       {NAV.map((g) => (
-        <div key={g.title}>
+        <div key={g.title} className="nav-section">
           <div className="nav-group">{g.title}</div>
           {g.items.map(({ id, label, icon: Icon }) => (
             <button key={id} className={`nav-item ${state.view === id ? "active" : ""}`} onClick={() => dispatch({ type: "view", view: id })}>
@@ -102,12 +98,6 @@ export function Sidebar() {
         </div>
       ))}
       <div className="sidebar-foot">
-        <button className="kbd-hint" onClick={() => dispatch({ type: "palette", open: true })}>
-          <Command size={14} />
-          Commands
-          <span className="spacer" />
-          <kbd>Ctrl K</kbd>
-        </button>
         <UserMenu />
       </div>
     </aside>
@@ -116,14 +106,7 @@ export function Sidebar() {
 
 function UserMenu() {
   const { state, dispatch } = useStore();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [open]);
+  const { open, setOpen, ref } = usePopover();
   const user = state.session;
   if (!user) return null;
   return (
@@ -131,8 +114,8 @@ function UserMenu() {
       <button className="user-btn" onClick={() => setOpen(!open)}>
         <span className="avatar">{user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}</span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
-          <div className="faint small" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+          <div className="clip" style={{ fontWeight: 500 }}>{user.name}</div>
+          <div className="faint small clip">{user.email}</div>
         </div>
       </button>
       {open && (
@@ -140,6 +123,80 @@ function UserMenu() {
           <button className="pop-item" onClick={() => { dispatch({ type: "view", view: "settings" }); setOpen(false); }}><Settings size={14} /> Account and appearance</button>
           <button className="pop-item" onClick={() => dispatch({ type: "logout" })}><LogOut size={14} /> Sign out</button>
         </div>
+      )}
+    </div>
+  );
+}
+
+function NamespaceSwitcher() {
+  const { state, dispatch } = useStore();
+  const toast = useToast();
+  const { open, setOpen, ref } = usePopover();
+  const [creating, setCreating] = useState(false);
+  const [newNs, setNewNs] = useState("");
+  const { errors, check, clear } = useErrors();
+  const current = state.namespaces.find((n) => n.id === state.ns);
+  const closeModal = () => { setCreating(false); setNewNs(""); check({}); };
+
+  const createNs = () => {
+    const id = newNs.trim();
+    const valid = check({
+      name: !id ? "Give the namespace a name."
+        : !/^[a-z0-9][a-z0-9-]*$/.test(id) ? "Use lowercase letters, digits and dashes, starting with a letter or digit."
+        : id.length > 40 ? "Keep it under 40 characters."
+        : state.namespaces.some((n) => n.id === id) ? `A namespace called ${id} already exists.`
+        : undefined,
+    });
+    if (!valid) return;
+    const done = () => { toast(`Created namespace ${id}`); closeModal(); };
+    if (isLive()) {
+      api.nsCreate(id, "New isolated namespace")
+        .then((n) => { dispatch({ type: "addNamespace", ns: toNamespace(n) }); done(); })
+        .catch((e) => toast(errorMessage(e), "err"));
+      return;
+    }
+    dispatch({ type: "addNamespace", ns: { id, name: id, color: "#5b2aaa", description: "New isolated namespace" } });
+    done();
+  };
+
+  return (
+    <div className="pop-wrap" ref={ref} style={{ marginBottom: 6 }}>
+      <button className="user-btn" onClick={() => setOpen(!open)} title="Switch namespace" aria-expanded={open}>
+        <Logo size={26} />
+        <div style={{ minWidth: 0 }}>
+          <div className="clip" style={{ fontWeight: 500 }}>{current?.name}</div>
+          <div className="faint small clip">{current?.description}</div>
+        </div>
+        <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
+      </button>
+      {open && (
+        <div className="popover" style={{ left: 0, right: "auto", width: "100%", minWidth: 0, transformOrigin: "top left" }}>
+          <div className="pop-label">Namespaces</div>
+          {state.namespaces.map((n) => (
+            <button
+              key={n.id}
+              className={`pop-item ${n.id === state.ns ? "active" : ""}`}
+              onClick={() => { dispatch({ type: "ns", ns: n.id }); setOpen(false); }}
+            >
+              <div>
+                <div>{n.name}</div>
+                <div className="faint small">{n.description}</div>
+              </div>
+              {n.id === state.ns && <Check size={14} style={{ marginLeft: "auto", color: "var(--accent-hi)" }} />}
+            </button>
+          ))}
+          <button className="pop-item" onClick={() => { setCreating(true); setOpen(false); }}>
+            <Plus size={14} /> New namespace
+          </button>
+        </div>
+      )}
+      {creating && (
+        <Modal title="New namespace" subtitle="Gets its own network, secrets, budget, policies and browser profile." onClose={closeModal}>
+          <Field label="Name" error={errors.name} hint="Lowercase letters, digits and dashes.">
+            <input className="input" autoFocus value={newNs} onChange={(e) => { setNewNs(e.target.value); clear("name"); }} onKeyDown={(e) => e.key === "Enter" && createNs()} placeholder="e.g. client-acme" aria-invalid={!!errors.name} />
+          </Field>
+          <ModalActions onCancel={closeModal} onConfirm={createNs} confirm="Create namespace" />
+        </Modal>
       )}
     </div>
   );

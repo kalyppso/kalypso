@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Brain, ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Modal, ModalActions, PageHead, Status, Toggle } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, Status, Toggle, useErrors } from "../components/ui";
+import "../styles/integrations.css";
 import type { Integration, IntegrationKind } from "../types";
 
 interface KindDef {
@@ -59,91 +60,142 @@ function configFor(i: Integration) {
   ].join("\n");
 }
 
+type Group = KindDef["group"];
+const GROUPS = [...new Set(KINDS.map((k) => k.group))] as Group[];
+
+function syncLine(i: Integration) {
+  const scope = i.ticketing
+    ? `${i.ticketing.project || "All projects"}${i.ticketing.label ? `, label "${i.ticketing.label}"` : ""}, ${i.ticketing.twoWay ? "two-way sync" : "import only"}. `
+    : `${i.access === "read" ? "Read only" : "Read and write"}. `;
+  return scope + (i.status === "syncing" ? "Syncing now" : i.status === "error" ? `Error: ${i.lastSync}` : `Synced ${i.lastSync}`);
+}
+
 export function Integrations() {
-  const { dispatch } = useStore();
-  const toast = useToast();
-  const { integrations, agents } = useNamespaced();
+  const { integrations } = useNamespaced();
+  const [tab, setTab] = useState<"connected" | Group>(integrations.length ? "connected" : GROUPS[0]);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState<IntegrationKind | null>(null);
-  const groups = [...new Set(KINDS.map((k) => k.group))];
+  const open = integrations.find((i) => i.id === openId);
 
   return (
     <>
-      <PageHead title="Integrations" subtitle="Connect the tools you already use. Mark a notes app or wiki as a brain and agents can use it as shared long-term memory.">
-      </PageHead>
+      <PageHead title="Integrations" subtitle="Connect the tools you already use. Mark a notes app or wiki as a brain and agents can use it as shared long-term memory." />
 
-      {integrations.length > 0 && (
-        <div className="grid cols-2" style={{ marginBottom: 32 }}>
-          {integrations.map((i) => (
-            <div key={i.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div className="row">
-                <Logo kind={i.kind} />
-                <div style={{ minWidth: 0 }}>
-                  <h2>{i.name} <span className="faint" style={{ fontWeight: 400 }}>{kindDef(i.kind).label}</span></h2>
-                  <div className="mono faint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.target}</div>
-                </div>
-                <span className="spacer" />
-                <Status value={i.status} />
-              </div>
-              <div className="row" style={{ flexWrap: "wrap" }}>
-                <span className="faint small">
-                  {i.ticketing
-                    ? `${i.ticketing.project || "All projects"}${i.ticketing.label ? `, label "${i.ticketing.label}"` : ""}, ${i.ticketing.twoWay ? "two-way sync" : "import only"}. `
-                    : `${i.access === "read" ? "Read only" : "Read and write"}. `}
-                  {i.status === "syncing" ? "Syncing now" : i.status === "error" ? `Error: ${i.lastSync}` : `Synced ${i.lastSync}`}
-                </span>
-                <span className="spacer" />
-                <label className="row small dim" style={{ cursor: "pointer" }}>
-                  Brain
-                  <Toggle on={i.brain} onChange={() => dispatch({ type: "toggleBrain", id: i.id })} label="Use as brain" />
-                </label>
-              </div>
-              <div>
-                <div className="faint small" style={{ marginBottom: 6 }}>Agents with access</div>
-                <div className="chips">
-                  {agents.map((a) => (
-                    <button key={a.id} className={`btn sm ${i.agents.includes(a.id) ? "on" : ""}`} onClick={() => dispatch({ type: "toggleIntegrationAgent", id: i.id, agentId: a.id })}>
-                      {a.name}
-                    </button>
-                  ))}
-                  {agents.length === 0 && <span className="faint">No agents in this namespace.</span>}
-                </div>
-              </div>
-              <div className="row">
-                <button className="btn sm" onClick={() => toast(`Re-syncing ${i.name}…`, "info")}><RefreshCw size={12} /> Sync now</button>
-                <span className="spacer" />
-                <button className="btn sm danger" onClick={() => { dispatch({ type: "removeIntegration", id: i.id }); toast(`Disconnected ${i.name}`, "warn"); }}><Trash2 size={12} /> Disconnect</button>
-              </div>
-              <CodeReveal code={configFor(i)} label="connector config" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {groups.map((g) => (
-        <div key={g} style={{ marginBottom: 24 }}>
-          <div className="section-title">{g}</div>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 8 }}>
-            {KINDS.filter((k) => k.group === g).map((k) => (
-              <button key={k.kind} className="tile" onClick={() => setAdding(k.kind)}>
-                <Logo kind={k.kind} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 500 }}>{k.label}</div>
-                  <div className="faint small">{k.blurb}</div>
-                </div>
-                <span className="spacer" />
-                <Plus size={14} className="faint" />
-              </button>
+      {open ? (
+        <IntegrationDetail i={open} onBack={() => setOpenId(null)} />
+      ) : (
+        <>
+          <div className="ptabs" role="tablist">
+            <button role="tab" aria-selected={tab === "connected"} className={`ptab ${tab === "connected" ? "active" : ""}`} onClick={() => setTab("connected")}>
+              Connected <span className="ptab-count">{integrations.length}</span>
+            </button>
+            {GROUPS.map((g) => (
+              <button key={g} role="tab" aria-selected={tab === g} className={`ptab ${tab === g ? "active" : ""}`} onClick={() => setTab(g)}>{g}</button>
             ))}
           </div>
-        </div>
-      ))}
 
-      {adding && <AddIntegration kind={adding} onClose={() => setAdding(null)} />}
+          {tab === "connected" ? (
+            integrations.length === 0 ? (
+              <div className="empty">Nothing connected yet. Pick a tool from one of the other tabs.</div>
+            ) : (
+              <div className="rows">
+                {integrations.map((i) => (
+                  <button key={i.id} className="row-link" onClick={() => setOpenId(i.id)}>
+                    <Logo kind={i.kind} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="clip"><strong style={{ fontWeight: 500 }}>{i.name}</strong> <span className="faint">{kindDef(i.kind).label}</span></div>
+                      <div className="mono faint small clip">{i.target}</div>
+                    </div>
+                    {i.brain && <span className="badge accent" title="Agents use this as long-term memory"><Brain size={11} /> brain</span>}
+                    <span className="faint small" style={{ minWidth: 70, textAlign: "right" }}>{i.agents.length} agent{i.agents.length === 1 ? "" : "s"}</span>
+                    <Status value={i.status} />
+                    <ChevronRight size={14} className="chev" />
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 8 }}>
+              {KINDS.filter((k) => k.group === tab).map((k) => (
+                <button key={k.kind} className="tile" onClick={() => setAdding(k.kind)}>
+                  <Logo kind={k.kind} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500 }}>{k.label}</div>
+                    <div className="faint small">{k.blurb}</div>
+                  </div>
+                  <span className="spacer" />
+                  <Plus size={14} className="faint" />
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {adding && <AddIntegration kind={adding} onClose={() => setAdding(null)} onAdded={(id) => { setTab("connected"); setOpenId(id); }} />}
     </>
   );
 }
 
-function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () => void }) {
+function IntegrationDetail({ i, onBack }: { i: Integration; onBack: () => void }) {
+  const { dispatch } = useStore();
+  const toast = useToast();
+  const { agents } = useNamespaced();
+  return (
+    <>
+      <button className="btn ghost sm back" onClick={onBack}><ArrowLeft size={13} /> All integrations</button>
+      <div className="detail">
+        <div className="row">
+          <Logo kind={i.kind} />
+          <div style={{ minWidth: 0 }}>
+            <h2>{i.name} <span className="faint" style={{ fontWeight: 400 }}>{kindDef(i.kind).label}</span></h2>
+            <div className="mono faint clip">{i.target}</div>
+          </div>
+          <span className="spacer" />
+          <Status value={i.status} />
+        </div>
+        <div className="faint small">{syncLine(i)}</div>
+        <div className="row">
+          <div>
+            <div>Use as a brain</div>
+            <div className="faint small">Agents can recall from and write notes to it as shared long-term memory.</div>
+          </div>
+          <span className="spacer" />
+          <Toggle on={i.brain} onChange={() => dispatch({ type: "toggleBrain", id: i.id })} label="Use as brain" />
+        </div>
+        <div className="detail-section">
+          <div className="detail-label">Agents with access</div>
+          <div className="chips">
+            {agents.map((a) => (
+              <button key={a.id} className={`btn sm ${i.agents.includes(a.id) ? "on" : ""}`} aria-pressed={i.agents.includes(a.id)} onClick={() => dispatch({ type: "toggleIntegrationAgent", id: i.id, agentId: a.id })}>
+                {a.name}
+              </button>
+            ))}
+            {agents.length === 0 && <span className="faint">No agents in this namespace.</span>}
+          </div>
+        </div>
+        <CodeReveal code={configFor(i)} label="connector config" />
+        <div className="row">
+          <button className="btn sm" onClick={() => toast(`Re-syncing ${i.name}…`, "info")}><RefreshCw size={12} /> Sync now</button>
+          <span className="spacer" />
+          <button className="btn sm danger" onClick={() => { dispatch({ type: "removeIntegration", id: i.id }); toast(`Disconnected ${i.name}`, "warn"); onBack(); }}><Trash2 size={12} /> Disconnect</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Loose host[/path] check for targets that are URLs; the scheme is optional except for raw HTTP APIs.
+const HOST = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/i;
+function targetError(d: KindDef, target: string) {
+  const t = target.trim();
+  if (!t) return `${d.targetLabel} is required.`;
+  if (d.kind === "rest" && !/^https?:\/\//i.test(t)) return "Start the base URL with http:// or https://.";
+  if (/URL|Site|Subdomain|Repository|Workspace$/.test(d.targetLabel) && !HOST.test(t)) return `That doesn't look like a valid address, e.g. ${d.placeholder}.`;
+  return undefined;
+}
+
+function AddIntegration({ kind, onClose, onAdded }: { kind: IntegrationKind; onClose: () => void; onAdded: (id: string) => void }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { agents, secrets } = useNamespaced();
@@ -158,24 +210,33 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
   const [project, setProject] = useState("");
   const [label, setLabel] = useState("agent");
   const [twoWay, setTwoWay] = useState(true);
+  const { errors, check, clear } = useErrors();
+  const projectRequired = !!d.ticketing && d.ticketing.projectPlaceholder !== "Optional";
 
   const connect = () => {
-    if (!target.trim()) return;
+    const ok = check({
+      target: targetError(d, target),
+      token: d.token && !secretId && !token.trim() ? "Paste a token or pick a stored credential." : undefined,
+      project: projectRequired && !project.trim() ? `${d.ticketing!.projectLabel} is required.` : undefined,
+    });
+    if (!ok) return;
     let sid: string | null = secretId || null;
     if (d.token && !sid && token) {
       sid = uid("s");
       dispatch({ type: "addSecret", secret: { id: sid, ns: state.ns, key: `${kind.toUpperCase()}_TOKEN`, value: token, scope: "agent", updatedAt: new Date().toISOString().slice(0, 10) } });
     }
+    const id = uid("i");
     dispatch({
       type: "addIntegration",
       integration: {
-        id: uid("i"), ns: state.ns, kind, name: name.trim() || d.label, target: target.trim(), access, brain, secretId: sid,
+        id, ns: state.ns, kind, name: name.trim() || d.label, target: target.trim(), access, brain, secretId: sid,
         agents: granted, status: "connected", lastSync: "just now",
         ticketing: d.ticketing ? { project: project.trim(), label: label.trim(), twoWay } : undefined,
       },
     });
     toast(`Connected ${d.label}`);
     onClose();
+    onAdded(id);
   };
 
   return (
@@ -188,16 +249,22 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
           </select>
         </label>
       </div>
-      <label className="field">{d.targetLabel}<input className="input mono" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={d.placeholder} /></label>
+      <Field label={d.targetLabel} error={errors.target}>
+        <input className="input mono" value={target} onChange={(e) => { setTarget(e.target.value); clear("target"); }} placeholder={d.placeholder} />
+      </Field>
       {d.token && (
         <div className="field-row">
           <label className="field">Credential
-            <select className="select" value={secretId} onChange={(e) => setSecretId(e.target.value)}>
+            <select className="select" value={secretId} onChange={(e) => { setSecretId(e.target.value); clear("token"); }}>
               <option value="">New token…</option>
               {secrets.map((s) => <option key={s.id} value={s.id}>{s.key}</option>)}
             </select>
           </label>
-          {!secretId && <label className="field">Token<input className="input mono" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="stored in the vault" /></label>}
+          {!secretId && (
+            <Field label="Token" error={errors.token}>
+              <input className="input mono" type="password" value={token} onChange={(e) => { setToken(e.target.value); clear("token"); }} placeholder="stored in the vault" />
+            </Field>
+          )}
         </div>
       )}
       <div className="row">
@@ -211,7 +278,9 @@ function AddIntegration({ kind, onClose }: { kind: IntegrationKind; onClose: () 
       {d.ticketing && (
         <>
           <div className="field-row">
-            <label className="field">{d.ticketing.projectLabel}<input className="input" value={project} onChange={(e) => setProject(e.target.value)} placeholder={d.ticketing.projectPlaceholder} /></label>
+            <Field label={d.ticketing.projectLabel} error={errors.project}>
+              <input className="input" value={project} onChange={(e) => { setProject(e.target.value); clear("project"); }} placeholder={d.ticketing.projectPlaceholder} />
+            </Field>
             <label className="field">Only tickets labelled<input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Empty: every ticket assigned to an agent" /></label>
           </div>
           <div className="row">

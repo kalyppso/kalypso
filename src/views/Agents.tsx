@@ -1,18 +1,20 @@
-import { useState } from "react";
-import { Play, Plus, Square } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, ChevronRight, Play, Plus, Square } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Modal, ModalActions, PageHead, PrimaryButton, Status, initials } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, initials, useErrors } from "../components/ui";
+import type { Agent } from "../types";
+import "../styles/agents.css";
 
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 
 export function Agents() {
-  const { state, dispatch } = useStore();
-  const toast = useToast();
-  const { agents, sandboxes, secrets, policies, integrations } = useNamespaced();
-  const [creating, setCreating] = useState(false);
+  const { state } = useStore();
+  const { agents, sandboxes } = useNamespaced();
+  const [creating, setCreating] = useState(state.compose);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = agents.find((a) => a.id === openId);
 
-  const label = (ids: string[], list: { id: string; name?: string; key?: string }[]) =>
-    ids.map((id) => list.find((x) => x.id === id)).filter(Boolean).map((x) => x!.name ?? x!.key);
+  if (open) return <AgentDetail agent={open} onBack={() => setOpenId(null)} />;
 
   return (
     <>
@@ -22,46 +24,22 @@ export function Agents() {
 
       {agents.length === 0 && <div className="empty">No agents in this namespace yet.</div>}
 
-      <div className="grid cards">
+      <div className="agent-list">
         {agents.map((a) => {
           const sb = sandboxes.find((s) => s.id === a.sandboxId);
-          const live = a.status === "running" || a.status === "idle";
-          const guards = policies.filter((p) => p.enabled && (p.appliesTo === "all" || p.appliesTo.includes(a.id)));
-          const linked = integrations.filter((i) => i.agents.includes(a.id));
           return (
-            <div key={a.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div className="row">
-                <span className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>{initials(a.name)}</span>
-                <div>
-                  <h2>{a.name}</h2>
-                  <div className="faint small">{a.role}</div>
-                </div>
-                <span className="spacer" />
-                <Status value={a.status} />
-              </div>
-              <Meta k="Model" v={<span className="mono">{a.model}</span>} />
-              <Meta k="Sandbox" v={sb ? sb.name : <span style={{ color: "var(--err)" }}>none</span>} />
-              <Meta k="Skills" v={<Chips items={label(a.skills, state.skills)} />} />
-              <Meta k="MCPs" v={<Chips items={label(a.mcps, state.mcps)} />} />
-              <Meta k="Secrets" v={<Chips items={label(a.secrets, secrets)} mono />} />
-              <Meta k="Linked" v={linked.length ? <div className="chips">{linked.map((b) => <span key={b.id} className="badge">{b.name}{b.brain ? " (brain)" : ""}</span>)}</div> : <span className="faint">None</span>} />
-              <div className="row" style={{ marginTop: 2 }}>
-                <span className="faint small">{guards.length} policies apply</span>
-                <span className="spacer" />
-                <button
-                  className="btn sm"
-                  disabled={!sb}
-                  title={sb ? undefined : "Assign a sandbox first"}
-                  onClick={() => {
-                    dispatch({ type: "agentStatus", id: a.id, status: live ? "stopped" : "running" });
-                    toast(live ? `${a.name} stopped` : `${a.name} is running`, live ? "warn" : "ok");
-                  }}
-                >
-                  {live ? <><Square size={12} /> Stop</> : <><Play size={12} /> Start</>}
-                </button>
-              </div>
-              <CodeReveal code={a.config} />
-            </div>
+            <button key={a.id} className="agent-row" onClick={() => setOpenId(a.id)}>
+              <span className={`agent-avatar ${a.status}`}>{initials(a.name)}</span>
+              <span className="agent-main">
+                <span className="agent-name">{a.name}</span>
+                <span className="faint small clip">{a.role}</span>
+              </span>
+              <span className="agent-meta mono small dim clip">{a.model}</span>
+              <span className="agent-meta small faint clip">{sb ? sb.name : "No sandbox"}</span>
+              <span className="agent-meta small faint">{a.skills.length + a.mcps.length} tools</span>
+              <Status value={a.status} />
+              <ChevronRight size={15} className="agent-chevron" />
+            </button>
           );
         })}
       </div>
@@ -71,12 +49,76 @@ export function Agents() {
   );
 }
 
-function Meta({ k, v }: { k: string; v: React.ReactNode }) {
+function AgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void }) {
+  const { state, dispatch } = useStore();
+  const toast = useToast();
+  const { sandboxes, secrets, policies, integrations } = useNamespaced();
+  const sb = sandboxes.find((s) => s.id === a.sandboxId);
+  const live = a.status === "running" || a.status === "idle";
+  const guards = policies.filter((p) => p.enabled && (p.appliesTo === "all" || p.appliesTo.includes(a.id)));
+  const linked = integrations.filter((i) => i.agents.includes(a.id));
+  const label = (ids: string[], list: { id: string; name?: string; key?: string }[]) =>
+    ids.map((id) => list.find((x) => x.id === id)).filter(Boolean).map((x) => x!.name ?? x!.key);
+
   return (
-    <div className="row" style={{ alignItems: "flex-start", fontSize: 13 }}>
-      <span className="faint" style={{ width: 66, flex: "none", fontSize: 12 }}>{k}</span>
-      <div style={{ minWidth: 0 }}>{v}</div>
+    <>
+      <button className="btn ghost sm agent-back" onClick={onBack}><ArrowLeft size={13} /> Agents</button>
+      <div className="agent-head">
+        <span className={`agent-avatar lg ${a.status}`}>{initials(a.name)}</span>
+        <div style={{ minWidth: 0 }}>
+          <div className="row"><h1>{a.name}</h1><Status value={a.status} /></div>
+          <p className="dim" style={{ margin: "4px 0 0" }}>{a.role}</p>
+        </div>
+        <span className="spacer" />
+        <button
+          className={`btn ${live ? "" : "primary"}`}
+          disabled={!sb}
+          title={sb ? undefined : "Assign a sandbox first"}
+          onClick={() => {
+            dispatch({ type: "agentStatus", id: a.id, status: live ? "stopped" : "running" });
+            toast(live ? `${a.name} stopped` : `${a.name} is running`, live ? "warn" : "ok");
+          }}
+        >
+          {live ? <><Square size={13} /> Stop</> : <><Play size={13} /> Start</>}
+        </button>
+      </div>
+
+      <div className="agent-facts">
+        <Fact k="Model" v={<span className="mono">{a.model}</span>} />
+        <Fact k="Sandbox" v={sb ? sb.name : <span className="faint">None assigned</span>} />
+        <Fact k="Policies" v={`${guards.length} apply`} />
+        <Fact k="Integrations" v={`${linked.length} linked`} />
+      </div>
+
+      <Section title="Skills"><Chips items={label(a.skills, state.skills)} /></Section>
+      <Section title="MCP servers"><Chips items={label(a.mcps, state.mcps)} /></Section>
+      <Section title="Secrets"><Chips items={label(a.secrets, secrets)} mono /></Section>
+      <Section title="Linked integrations">
+        <Chips items={linked.map((b) => `${b.name}${b.brain ? " (brain)" : ""}`)} />
+      </Section>
+      <Section title="Policies">
+        <Chips items={guards.map((p) => p.name)} />
+      </Section>
+      <Section title="Configuration"><CodeReveal code={a.config} /></Section>
+    </>
+  );
+}
+
+function Fact({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="agent-fact">
+      <div className="faint small">{k}</div>
+      <div className="clip" style={{ marginTop: 4, fontWeight: 500 }}>{v}</div>
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="agent-section">
+      <h3>{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -88,15 +130,22 @@ function Chips({ items, mono }: { items: (string | undefined)[]; mono?: boolean 
 function NewAgent({ onClose }: { onClose: () => void }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const { sandboxes } = useNamespaced();
+  const { agents, sandboxes } = useNamespaced();
+  const { errors, check, clear } = useErrors();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [model, setModel] = useState(MODELS[1]);
   const [sandboxId, setSandboxId] = useState(sandboxes[0]?.id ?? "");
 
   const create = () => {
-    if (!name.trim()) return;
     const n = name.trim();
+    const ok = check({
+      name: !n ? "Give the agent a name."
+        : !/^[a-zA-Z0-9-]+$/.test(n) ? "Use letters, digits and dashes only."
+        : agents.some((a) => a.name.toLowerCase() === n.toLowerCase()) ? `An agent called ${n} already exists here.`
+        : undefined,
+    });
+    if (!ok) return;
     dispatch({
       type: "addAgent",
       agent: {
@@ -111,7 +160,9 @@ function NewAgent({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="New agent" subtitle={`Created in ${state.ns}. Namespace policies apply automatically.`} onClose={onClose}>
-      <label className="field">Name<input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="scout" /></label>
+      <Field label="Name" error={errors.name}>
+        <input className="input" autoFocus value={name} onChange={(e) => { setName(e.target.value); clear("name"); }} onKeyDown={(e) => e.key === "Enter" && create()} placeholder="scout" />
+      </Field>
       <label className="field">Role<input className="input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="What does this agent do?" /></label>
       <div className="field-row">
         <label className="field">Model

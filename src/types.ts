@@ -5,10 +5,10 @@ export type ThemeId = "black" | "white" | "custom";
 
 export type ViewId =
   | "overview"
+  | "analytics"
   | "agents"
   | "tracker"
   | "git"
-  | "terminal"
   | "sandboxes"
   | "secrets"
   | "connections"
@@ -16,8 +16,6 @@ export type ViewId =
   | "registry"
   | "integrations"
   | "policies"
-  | "browser"
-  | "phone"
   | "settings";
 
 export interface Namespace {
@@ -256,11 +254,16 @@ export interface PullRequest {
   updated: string;
 }
 
-// Terminal layout: a binary tree of panes. Each split divides its area
-// between two children at `ratio` (0..1, share of the first child).
+// Tools layer (terminal, browser, phone). Each tab is a binary tree of panes;
+// each split divides its area between two children at `ratio` (0..1, share of the first child).
+export type ToolKind = "terminal" | "browser" | "phone";
 export type PaneNode =
-  | { kind: "pane"; id: string; sandboxId: string | null }
+  | { kind: "pane"; id: string; tool?: ToolKind; sandboxId: string | null } // no tool = terminal (older saved layouts)
   | { kind: "split"; id: string; dir: "row" | "column"; ratio: number; a: PaneNode; b: PaneNode };
+export interface ToolTab {
+  id: string;
+  layout: PaneNode;
+}
 
 // Ticketing integrations: which tickets come into the Tracker, and whether
 // status changes flow back to the ticketing tool.
