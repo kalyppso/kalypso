@@ -220,12 +220,14 @@ function TaskPanel({ task, onClose }: { task: Task; onClose: () => void }) {
   const ticketSource = task.ticket && state.integrations.find((i) => i.id === task.ticket?.integrationId);
   const update = (patch: Partial<Pick<Task, "title" | "description" | "agentId" | "priority">>) => dispatch({ type: "updateTask", id: task.id, patch });
 
-  // The main area shrinks to make room, so nothing ends up under the panel.
+  // The panel lives inside the main area, beside the content, which narrows to make room.
   const anchor = useRef<HTMLSpanElement>(null);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    const shell = anchor.current?.closest(".shell");
-    shell?.classList.add("with-panel");
-    return () => shell?.classList.remove("with-panel");
+    const main = anchor.current?.closest<HTMLElement>(".main") ?? null;
+    main?.classList.add("with-panel");
+    setHost(main);
+    return () => main?.classList.remove("with-panel");
   }, []);
 
   useEffect(() => {
@@ -239,7 +241,7 @@ function TaskPanel({ task, onClose }: { task: Task; onClose: () => void }) {
   return (
     <>
       <span ref={anchor} hidden />
-      {createPortal(
+      {host && createPortal(
         <aside className="side-panel" aria-label="Task details">
           <div className="side-panel-head">
             <span className="dot" style={{ background: column?.dot }} />
@@ -326,7 +328,7 @@ function TaskPanel({ task, onClose }: { task: Task; onClose: () => void }) {
             </button>
           </div>
         </aside>,
-        document.body,
+        host,
       )}
     </>
   );
