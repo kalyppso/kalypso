@@ -87,6 +87,7 @@ export type Action =
   | { type: "addTask"; task: Task }
   | { type: "moveTask"; id: string; status: TaskStatus }
   | { type: "removeTask"; id: string }
+  | { type: "updateTask"; id: string; patch: Partial<Pick<Task, "title" | "description" | "agentId" | "priority">> }
   | { type: "toolTabs"; ns: string; tabs: ToolTab[] }
   | { type: "openTool"; tool: ToolKind; fresh?: boolean } // fresh: always open a new tab
   | { type: "tools"; open: boolean; tab?: string }
@@ -209,6 +210,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, appearance: { ...s.appearance, ...a.patch } };
     case "addTask":
       return { ...s, tasks: [...s.tasks, a.task] };
+    case "updateTask":
+      return { ...s, tasks: s.tasks.map((t) => (t.id === a.id ? { ...t, ...a.patch } : t)) };
     case "moveTask":
       return {
         ...s,
