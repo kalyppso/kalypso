@@ -11,6 +11,7 @@ use crate::sandbox::SandboxStatusEvent;
 
 pub const SANDBOX_STATUS: &str = "sandbox://status";
 pub const USAGE: &str = "usage://event";
+pub const BUDGET_ALERT: &str = "budget://alert";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
@@ -54,6 +55,27 @@ pub fn spawn_usage_events(app: AppHandle, mut rx: tokio::sync::broadcast::Receiv
             match rx.recv().await {
                 Ok(ev) => {
                     let _ = app.emit(USAGE, &ev);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
+}
+
+/// Budget alerts become desktop notifications, and an event so open views refresh.
+pub fn spawn_budget_alerts(app: AppHandle, mut rx: tokio::sync::broadcast::Receiver<crate::gateway::BudgetAlert>) {
+    use tauri_plugin_notification::NotificationExt;
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(alert) => {
+                    tracing::info!(ns = %alert.ns, message = %alert.message, "budget alert");
+                    if let Err(e) = app.notification().builder().title(format!("KALYPSO budget, {}", alert.ns)).body(&alert.message).show()
+                    {
+                        tracing::warn!(error = %e, "could not show a desktop notification");
+                    }
+                    let _ = app.emit(BUDGET_ALERT, &alert);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return,

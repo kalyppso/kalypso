@@ -1,6 +1,12 @@
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
+import type { Budget as BudgetRecord } from "./bindings/Budget";
+import type { BudgetAlert } from "./bindings/BudgetAlert";
+import type { BudgetOverview } from "./bindings/BudgetOverview";
+import type { BudgetRule as BudgetRuleRecord } from "./bindings/BudgetRule";
+import type { NewBudgetRule } from "./bindings/NewBudgetRule";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { GatewayKey } from "./bindings/GatewayKey";
 import type { MintedKey } from "./bindings/MintedKey";
@@ -42,6 +48,11 @@ export const api = {
   gatewayKeyList: (ns: string) => invoke<GatewayKey[]>("gateway_key_list", { ns }),
   gatewayKeyCreate: (ns: string, label: string) => invoke<MintedKey>("gateway_key_create", { ns, label }),
   gatewayKeyRevoke: (ns: string, id: string) => invoke<void>("gateway_key_revoke", { ns, id }),
+  pricingModels: () => invoke<string[]>("pricing_models"),
+  budgetOverview: (ns: string) => invoke<BudgetOverview>("budget_overview", { ns }),
+  budgetSet: (ns: string, monthlyLimit: number, alertAt: number) => invoke<BudgetRecord>("budget_set", { ns, monthlyLimit, alertAt }),
+  budgetRuleCreate: (ns: string, rule: NewBudgetRule) => invoke<BudgetRuleRecord>("budget_rule_create", { ns, rule }),
+  budgetRuleDelete: (ns: string, id: string) => invoke<void>("budget_rule_delete", { ns, id }),
   usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),
   sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
@@ -88,3 +99,21 @@ export const onSandboxStatus = (fn: (e: SandboxStatusEvent) => void) => listen<S
 
 /** Every model request metered by the gateway (src-tauri/src/events.rs). */
 export const onUsage = (fn: (e: UsageEvent) => void) => listen<UsageEvent>("usage://event", (e) => fn(e.payload));
+
+/** Budget caps reached or crossed (src-tauri/src/budget.rs). Also shown as desktop notifications. */
+export const onBudgetAlert = (fn: (e: BudgetAlert) => void) => listen<BudgetAlert>("budget://alert", (e) => fn(e.payload));
+
+/** The namespace's budget from the core, refreshed when spend or alerts arrive. Null outside the desktop app. */
+export function useBudgetOverview(ns: string) {
+  const [overview, setOverview] = useState<BudgetOverview | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!isLive()) return;
+    let gone = false;
+    const load = () => api.budgetOverview(ns).then((o) => { if (!gone) setOverview(o); }).catch(() => {});
+    load();
+    const offs = [onUsage((e) => e.ns === ns && load()), onBudgetAlert((e) => e.ns === ns && load())];
+    return () => { gone = true; offs.forEach((p) => p.then((f) => f())); };
+  }, [ns, tick]);
+  return { overview, reload: () => setTick((t) => t + 1) };
+}

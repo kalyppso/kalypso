@@ -153,7 +153,7 @@ A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes thro
 - **Keys.** Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `<PROVIDER>_API_KEY`) are namespace secrets with the `gateway` scope: the gateway decrypts them per request and they are never delivered into a sandbox. Callers present a KALYPSO virtual key (`kx_…`, stored only as a SHA-256 hash) in `x-api-key` or `Authorization: Bearer`; the gateway resolves it to its namespace and swaps in the real key.
 - **Sandboxes.** On every start (and secret refresh) a sandbox gets a fresh key in `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`; the previous one is revoked. On Linux engines the socket folder is bind-mounted read-only at `/run/kalypso/gateway`, so even a sandbox with no network can call `http://gateway.kalypso/anthropic/v1/messages` with `curl --unix-socket /run/kalypso/gateway/gateway.sock`. SDKs that only speak TCP need a loopback shim inside the sandbox; the agent image (#14) is planned to ship one. VM-backed engines (Docker Desktop on macOS and Windows) cannot pass sockets through, so they are not mounted there yet.
 - **Metering.** Responses stream back unchanged while the gateway reads `usage`: JSON bodies; Anthropic SSE `message_start` and `message_delta` (running totals); OpenAI `usage` chunks (the gateway sets `stream_options.include_usage` on streamed Chat Completions) and Responses `response.completed`. Input, output, cache-write (5-minute and 1-hour) and cache-read tokens are priced from `<app data>/pricing.toml` (created with defaults, re-read when it changes) and written to `usage_events` with the namespace, source (sandbox or key label), model, status and latency. Models without a price are counted and flagged as unpriced.
-- **Budgets (#17).** Before a request is forwarded, the gateway will check the namespace and agent budgets. When a budget is exceeded the request is rejected with HTTP 402, and the supervisor marks the agent `paused:budget`. Alerts fire at `alert_at` (for example 80%) as a desktop notification.
+- **Budgets.** Before forwarding, the gateway checks the namespace's monthly limit and every budget rule that applies to the request's key (§4.14). A paused request gets HTTP 402 with `budget_exceeded` and a message saying which cap was hit and when requests resume; it is recorded in `usage_events` but never forwarded. A downgrade rewrites the request's `model`. Alerts and hits become desktop notifications, once per period.
 
 ### 4.6 Connections and tunnels (mesh)
 - **Direct:** NATS subjects `ns.X.agent.<id>.inbox`. Each link is an ACL entry allowing A to publish to B's inbox (and the reverse, if two-way). Protocol envelopes cover A2A and MCP-over-NATS, plus an HTTP bridge.
@@ -227,13 +227,13 @@ An integration connects an outside tool to a namespace. It always reaches agents
 - **Credentials** are vault secrets with `agent` scope, given only to the integration's MCP process, never to the agent itself.
 
 ### 4.14 Budget rules
-These caps stack on top of the namespace's monthly limit:
+`src-tauri/src/budget.rs`. Caps stack on top of the namespace's monthly limit (`budgets`, with a heads-up at `alert_at`, 80% by default):
 
-- **Applies to:** the whole namespace, or one agent.
-- **Period:** `per-run`, `daily` or `monthly`.
-- **When hit:** `pause`, `alert` or `downgrade`. Downgrade switches the agent to a cheaper model tier until the period resets.
+- **Applies to:** the whole namespace, one sandbox or one gateway key (one agent once agents exist, #13).
+- **Period:** a UTC day, a calendar month, or a run. A sandbox's run is the time since it last started, because every start mints a new gateway key; a key's run is its whole life.
+- **When hit:** `pause` (HTTP 402 until the period resets), `downgrade` (the request is sent with a cheaper model) or `alert` (a notification only).
 
-The gateway (§4.5) checks the tightest applicable rule before forwarding each request.
+The gateway (§4.5) checks the applicable caps before forwarding each request; when several are hit, the tightest one names the reason. Checks happen before a request is sent, so one request can take spend past a cap and the next one is stopped. Each hit and the monthly heads-up notify once per period (`budget_alerts`). The Overview and Budget page list everything currently paused and why.
 
 ### 4.15 Experience principles
 - **Command menu (⌘/Ctrl-K)** for every navigation and action. Every action also has a keyboard path.

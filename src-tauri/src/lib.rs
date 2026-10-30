@@ -1,6 +1,7 @@
 // KALYPSO core. Phase 1 services: SQLite store, namespaces, secrets vault and
 // sandboxes on Docker or Podman. See docs/ARCHITECTURE.md and the Roadmap issue.
 
+pub mod budget;
 pub mod error;
 pub mod events;
 pub mod forward;
@@ -62,6 +63,11 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::gateway_key_create,
         ipc::gateway_key_revoke,
         ipc::usage_summary,
+        ipc::pricing_models,
+        ipc::budget_overview,
+        ipc::budget_set,
+        ipc::budget_rule_create,
+        ipc::budget_rule_delete,
         ipc::sandbox_providers,
         ipc::sandbox_list,
         ipc::sandbox_create,
@@ -77,7 +83,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    register(tauri::Builder::default())
+    register(tauri::Builder::default().plugin(tauri_plugin_notification::init()))
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -113,6 +119,7 @@ pub fn run() {
                 }
             });
             events::spawn_usage_events(app.handle().clone(), gw.subscribe());
+            events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
             app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
