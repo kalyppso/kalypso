@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { Field, Modal, ModalActions, PageHead, PrimaryButton, initials, usd, useErrors } from "../components/ui";
 import "../styles/pages.css";
@@ -89,8 +90,9 @@ export function Tracker() {
                   dragging={dragging === t.id}
                   onDragStart={() => setDragging(t.id)}
                   onDragEnd={() => { setDragging(null); setOver(null); }}
-                  onDelete={() => dispatch({ type: "removeTask", id: t.id })}
+                  onDelete={() => { dispatch({ type: "removeTask", id: t.id }); if (openId === t.id) setOpenId(null); }}
                   onOpen={() => setOpenId(t.id)}
+                  selected={openId === t.id}
                 />
               ))}
               {items.length === 0 && <div className="column-empty">Nothing here</div>}
@@ -100,18 +102,19 @@ export function Tracker() {
       </div>
 
       {creating && <NewTask onClose={() => setCreating(false)} />}
-      {opened && <TaskDetails task={opened} onClose={() => setOpenId(null)} />}
+      {opened && <TaskPanel key={opened.id} task={opened} onClose={() => setOpenId(null)} />}
       {importing && <ImportTickets onClose={() => setImporting(false)} />}
     </>
   );
 }
 
-function TaskCard({ task: t, agent, dragging, onDragStart, onDragEnd, onDelete, onOpen }: {
-  task: Task; agent: string; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDelete: () => void; onOpen: () => void;
+function TaskCard({ task: t, agent, dragging, selected, onDragStart, onDragEnd, onDelete, onOpen }: {
+  task: Task; agent: string; dragging: boolean; selected: boolean; onDragStart: () => void; onDragEnd: () => void; onDelete: () => void; onOpen: () => void;
 }) {
   return (
     <div
-      className={`task ${dragging ? "dragging" : ""}`}
+      className={`task ${dragging ? "dragging" : ""} ${selected ? "selected" : ""}`}
+      aria-pressed={selected}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -207,70 +210,134 @@ function NewTask({ onClose }: { onClose: () => void }) {
 
 const MAX_DESCRIPTION = 4000;
 
-/** Read and edit one task. Opened by clicking its card. */
-function TaskDetails({ task, onClose }: { task: Task; onClose: () => void }) {
+/** One task in a panel on the right. Changes save as you type; the board stays usable beside it. */
+function TaskPanel({ task, onClose }: { task: Task; onClose: () => void }) {
   const { state, dispatch } = useStore();
-  const toast = useToast();
   const { agents } = useNamespaced();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
-  const [agentId, setAgentId] = useState(task.agentId);
-  const [priority, setPriority] = useState(task.priority);
-  const { errors, check, clear } = useErrors();
   const column = COLUMNS.find((c) => c.id === task.status);
   const ticketSource = task.ticket && state.integrations.find((i) => i.id === task.ticket?.integrationId);
+  const update = (patch: Partial<Pick<Task, "title" | "description" | "agentId" | "priority">>) => dispatch({ type: "updateTask", id: task.id, patch });
 
-  const save = () => {
-    const ok = check({
-      title: title.trim() ? undefined : "Give the task a title.",
-      description: description.length > MAX_DESCRIPTION ? `Keep the description under ${MAX_DESCRIPTION} characters.` : undefined,
-    });
-    if (!ok) return;
-    dispatch({ type: "updateTask", id: task.id, patch: { title: title.trim(), description: description.trim() || undefined, agentId, priority } });
-    toast("Task updated");
-    onClose();
-  };
+  // The main area shrinks to make room, so nothing ends up under the panel.
+  const anchor = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const shell = anchor.current?.closest(".shell");
+    shell?.classList.add("with-panel");
+    return () => shell?.classList.remove("with-panel");
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const tooLong = description.length > MAX_DESCRIPTION;
 
   return (
-    <Modal title="Task" subtitle={`${column?.label ?? task.status}${task.startedAt ? `, ${task.minutes} min, ${usd(task.cost)}` : ""}`} onClose={onClose}>
-      <Field label="Title" error={errors.title}>
-        <input className="input" value={title} onChange={(e) => { setTitle(e.target.value); clear("title"); }} />
-      </Field>
-      <Field label="Description" error={errors.description}>
-        <textarea
-          className="textarea"
-          rows={7}
-          autoFocus={!task.description}
-          value={description}
-          onChange={(e) => { setDescription(e.target.value); clear("description"); }}
-          placeholder="What done looks like, links, constraints."
-        />
-      </Field>
-      <div className="field-row">
-        <label className="field">Agent
-          <select className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </label>
-        <label className="field">Priority
-          <select className="select" value={priority} onChange={(e) => setPriority(e.target.value as Task["priority"])}>
-            <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option>
-          </select>
-        </label>
-      </div>
-      {(task.ticket || task.pr) && (
-        <div className="row small dim" style={{ gap: 12 }}>
-          {task.ticket && (
-            <a href={task.ticket.url} target="_blank" rel="noreferrer" className="row" style={{ gap: 4 }}>
-              <TicketIcon size={12} /> {task.ticket.key}{ticketSource ? ` in ${ticketSource.name}` : ""}
-            </a>
-          )}
-          {task.pr && <span className="row" style={{ gap: 4 }}><GitPullRequest size={12} /> {task.pr}</span>}
-        </div>
+    <>
+      <span ref={anchor} hidden />
+      {createPortal(
+        <aside className="side-panel" aria-label="Task details">
+          <div className="side-panel-head">
+            <span className="dot" style={{ background: column?.dot }} />
+            <select className="side-panel-status" value={task.status} onChange={(e) => dispatch({ type: "moveTask", id: task.id, status: e.target.value as TaskStatus })} aria-label="Status">
+              {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+            <span className="spacer" />
+            <span className="faint small mono">{task.id}</span>
+            <button className="btn ghost icon" onClick={onClose} aria-label="Close" title="Close (Esc)"><X size={16} /></button>
+          </div>
+
+          <div className="side-panel-body">
+            <textarea
+              className="side-panel-title"
+              rows={1}
+              value={title}
+              aria-label="Title"
+              onChange={(e) => {
+                const v = e.target.value.replace(/\n/g, " ");
+                setTitle(v);
+                if (v.trim()) update({ title: v.trim() });
+              }}
+              onBlur={() => !title.trim() && setTitle(task.title)}
+              ref={autosize}
+            />
+            {task.status === "running" && <div className="bar"><span style={{ width: `${task.progress * 100}%` }} /></div>}
+
+            <div>
+              <textarea
+                className="side-panel-desc"
+                value={description}
+                aria-label="Description"
+                placeholder="Add a description: what done looks like, links, constraints."
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (e.target.value.length <= MAX_DESCRIPTION) update({ description: e.target.value.trim() || undefined });
+                }}
+                ref={autosize}
+              />
+              {tooLong && <span className="field-error" role="alert">Keep the description under {MAX_DESCRIPTION} characters; changes past that aren't saved.</span>}
+            </div>
+
+            <dl className="props">
+              <dt>Agent</dt>
+              <dd>
+                <select className="select" value={task.agentId} onChange={(e) => update({ agentId: e.target.value })}>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </dd>
+              <dt>Priority</dt>
+              <dd>
+                <select className="select" value={task.priority} onChange={(e) => update({ priority: e.target.value as Task["priority"] })}>
+                  <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option>
+                </select>
+              </dd>
+              <dt>Started</dt>
+              <dd className="dim">{task.startedAt || "Not yet"}</dd>
+              <dt>Time and cost</dt>
+              <dd className="dim">{task.minutes} min, {usd(task.cost)}</dd>
+              {task.ticket && (
+                <>
+                  <dt>Ticket</dt>
+                  <dd>
+                    <a href={task.ticket.url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6 }}>
+                      <TicketIcon size={13} /> {task.ticket.key}{ticketSource ? <span className="faint">in {ticketSource.name}</span> : null}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {task.pr && (
+                <>
+                  <dt>Pull request</dt>
+                  <dd className="row" style={{ gap: 6 }}><GitPullRequest size={13} /> {task.pr}</dd>
+                </>
+              )}
+            </dl>
+          </div>
+
+          <div className="side-panel-foot">
+            <span className="faint small">Changes save automatically</span>
+            <span className="spacer" />
+            <button className="btn ghost sm danger" onClick={() => { dispatch({ type: "removeTask", id: task.id }); onClose(); }}>
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        </aside>,
+        document.body,
       )}
-      <ModalActions onCancel={onClose} onConfirm={save} confirm="Save" />
-    </Modal>
+    </>
   );
+}
+
+/** Grow a textarea to fit its text. */
+function autosize(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  const fit = () => { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; };
+  fit();
+  el.oninput = fit;
 }
 
 function ImportTickets({ onClose }: { onClose: () => void }) {
