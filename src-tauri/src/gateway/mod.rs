@@ -323,6 +323,15 @@ pub struct Gateway {
     http: reqwest::Client,
     addr: Mutex<Option<SocketAddr>>,
     events: tokio::sync::broadcast::Sender<UsageEvent>,
+    alerts: tokio::sync::broadcast::Sender<BudgetAlert>,
+}
+
+/// A budget notification for the user.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct BudgetAlert {
+    pub ns: String,
+    pub message: String,
 }
 
 /// Where the gateway listens, for the UI and for local tools.
@@ -337,11 +346,23 @@ pub struct GatewayInfo {
 impl Gateway {
     pub fn new(db: Arc<Db>, vault: Arc<Vault>, pricing: Pricing) -> Arc<Self> {
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(15)).build().expect("HTTP client builds");
-        Arc::new(Self { db, vault, pricing, http, addr: Mutex::new(None), events: tokio::sync::broadcast::channel(256).0 })
+        Arc::new(Self {
+            db,
+            vault,
+            pricing,
+            http,
+            addr: Mutex::new(None),
+            events: tokio::sync::broadcast::channel(256).0,
+            alerts: tokio::sync::broadcast::channel(64).0,
+        })
     }
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<UsageEvent> {
         self.events.subscribe()
+    }
+
+    pub fn subscribe_alerts(&self) -> tokio::sync::broadcast::Receiver<BudgetAlert> {
+        self.alerts.subscribe()
     }
 
     pub fn info(&self) -> GatewayInfo {
@@ -409,12 +430,14 @@ impl Gateway {
 
 /// An error in the shape the caller's SDK expects, so it surfaces a readable message.
 fn fail(format: Format, status: StatusCode, message: &str) -> Response {
+    let kind = match status {
+        StatusCode::UNAUTHORIZED => "authentication_error",
+        StatusCode::PAYMENT_REQUIRED => "budget_exceeded",
+        _ => "invalid_request_error",
+    };
     let body = match format {
-        Format::Anthropic => serde_json::json!({
-            "type": "error",
-            "error": { "type": if status == StatusCode::UNAUTHORIZED { "authentication_error" } else { "invalid_request_error" }, "message": message },
-        }),
-        Format::OpenAi => serde_json::json!({ "error": { "message": message, "type": "invalid_request_error", "code": status.as_u16() } }),
+        Format::Anthropic => serde_json::json!({ "type": "error", "error": { "type": kind, "message": message } }),
+        Format::OpenAi => serde_json::json!({ "error": { "message": message, "type": kind, "code": status.as_u16() } }),
     };
     (status, axum::Json(body)).into_response()
 }
@@ -517,6 +540,15 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         Err(e) => return fail(format, StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
 
+    // Budgets: refuse, switch model, or notify, before anything is spent.
+    let decision = match crate::budget::check(&gw.db, &ns, &key_id) {
+        Ok(d) => d,
+        Err(e) => return fail(format, StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    for message in decision.alerts {
+        let _ = gw.alerts.send(BudgetAlert { ns: ns.clone(), message });
+    }
+
     let prefix = secret_prefix(provider);
     let lookup = |key: String| gw.vault.lookup(&gw.db, &ns, &key);
     let base = match lookup(format!("{prefix}_BASE_URL")) {
@@ -553,9 +585,18 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
             model = m.to_string();
         }
         stream = json.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+        let mut changed = false;
+        if let (Some(to), true) = (&decision.downgrade, json.get("model").is_some()) {
+            json["model"] = serde_json::Value::String(to.clone());
+            model = to.clone();
+            changed = true;
+        }
         // Chat Completions streams only report usage when asked to.
         if stream && format == Format::OpenAi && rest.ends_with("chat/completions") {
             json["stream_options"]["include_usage"] = serde_json::Value::Bool(true);
+            changed = true;
+        }
+        if changed {
             bytes = serde_json::to_vec(&json).unwrap_or_default().into();
         }
     }
@@ -585,6 +626,10 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
     }
 
     let call = Call { gw: gw.clone(), key_id, ns, source, provider: provider.to_string(), model, stream, started: Instant::now() };
+    if let Some(msg) = decision.block {
+        call.finish(402, None, None);
+        return fail(format, StatusCode::PAYMENT_REQUIRED, &msg);
+    }
     let upstream = match gw.http.request(parts.method.clone(), &url).headers(headers).body(bytes).send().await {
         Ok(r) => r,
         Err(e) => {

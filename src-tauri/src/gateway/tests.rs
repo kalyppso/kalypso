@@ -225,3 +225,70 @@ fn sandbox_keys_rotate() {
     db.with(|c| Ok(c.execute("DELETE FROM sandboxes WHERE id = 'sb-1'", [])?)).unwrap();
     assert!(list_keys(&db, "work").unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn budgets_pause_and_downgrade_before_forwarding() {
+    let mut e = env().await;
+    let minted = mint(&e.db, "work", None, "laptop").unwrap();
+    let post = |model: &str| {
+        reqwest::Client::new()
+            .post(format!("{}/anthropic/v1/messages", e.gw))
+            .header("x-api-key", &minted.token)
+            .json(&serde_json::json!({"model": model, "max_tokens": 16}))
+            .send()
+    };
+
+    // Over $1 for the day switches this key to Haiku; the first call costs $6.
+    let mut rule = crate::budget::NewBudgetRule {
+        target: format!("key:{}", minted.key.id),
+        period: "day".into(),
+        cap: 1_000_000,
+        action: "downgrade".into(),
+        downgrade_to: Some("claude-haiku-5-5".into()),
+    };
+    crate::budget::create_rule(&e.db, "work", rule.clone()).unwrap();
+    assert_eq!(post("claude-opus-5-5").await.unwrap().status(), 200);
+    e.events.recv().await.unwrap();
+    assert_eq!(post("claude-opus-5-5").await.unwrap().status(), 200);
+    e.events.recv().await.unwrap();
+    assert_eq!(e.seen.lock().unwrap().body["model"], "claude-haiku-5-5", "the second request is downgraded");
+
+    // A $10 monthly cap that pauses: the next request never reaches the provider.
+    rule.period = "month".into();
+    rule.cap = 10_000_000;
+    rule.action = "pause".into();
+    rule.downgrade_to = None;
+    crate::budget::create_rule(&e.db, "work", rule).unwrap();
+    e.seen.lock().unwrap().path.clear();
+    let res = post("claude-opus-5-5").await.unwrap();
+    assert_eq!(res.status(), 402);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["error"]["type"], "budget_exceeded");
+    assert!(body["error"]["message"].as_str().unwrap().contains("monthly cap"), "{body}");
+    assert_eq!(e.seen.lock().unwrap().path, "", "a paused request must not be forwarded");
+    let ev = e.events.recv().await.unwrap();
+    assert_eq!((ev.status, ev.cost_micros), (402, Some(0)));
+}
+
+#[tokio::test]
+async fn budget_alerts_reach_subscribers_once() {
+    let e = env().await;
+    let gw = Gateway::new(e.db.clone(), e.vault.clone(), Pricing::builtin());
+    let mut alerts = gw.subscribe_alerts();
+    let addr = gw.listen_tcp(0).await.unwrap();
+    let token = mint(&e.db, "work", None, "laptop").unwrap().token;
+    crate::budget::set(&e.db, "work", 1_000_000, 0.5).unwrap();
+    for _ in 0..3 {
+        reqwest::Client::new()
+            .post(format!("http://{addr}/anthropic/v1/messages"))
+            .header("x-api-key", &token)
+            .json(&serde_json::json!({"model": "claude-opus-5-5"}))
+            .send()
+            .await
+            .unwrap();
+    }
+    // The first call ($6) jumps straight past the $1 limit: one "paused" alert, no heads-up, no repeats.
+    let first = alerts.recv().await.unwrap();
+    assert!(first.message.contains("monthly limit") && first.message.contains("paused"), "{}", first.message);
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(200), alerts.recv()).await.is_err(), "no repeats");
+}

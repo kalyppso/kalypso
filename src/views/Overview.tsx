@@ -2,6 +2,8 @@ import { Bot, Boxes, Cable, KanbanSquare, KeyRound, ShieldCheck, SquareTerminal,
 import { useNamespaced, useStore } from "../store";
 import { PageHead } from "../components/ui";
 import { ContributionGraph } from "../components/ContributionGraph";
+import { useBudgetOverview } from "../backend";
+import { BudgetBlocks } from "./Budget";
 import type { ViewId } from "../types";
 
 // Quick actions open the target page with its create form already showing.
@@ -20,10 +22,12 @@ export function Overview() {
   const { namespace, repos } = useNamespaced();
   const repoIds = new Set(repos.map((r) => r.id));
   const nsCommits = state.commits.filter((c) => repoIds.has(c.repoId));
+  const { overview: budget } = useBudgetOverview(state.ns);
 
   return (
     <>
       <PageHead title="Overview" subtitle={namespace?.description} />
+      <BudgetBlocks overview={budget} />
 
       <div className="actions">
         {ACTIONS.map(({ view, label, hint, icon: Icon, compose }) => (

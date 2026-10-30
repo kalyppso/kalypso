@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, isLive, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
+import { api, errorMessage, isLive, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
@@ -95,6 +95,13 @@ export function App() {
     });
     return () => void off.then((unlisten) => unlisten());
   }, [state.ns, state.session, dispatch]);
+
+  // Budget alerts are desktop notifications too; inside the app they show as a notice.
+  useEffect(() => {
+    if (!isLive() || !state.session) return;
+    const off = onBudgetAlert((e) => toast(e.message, "warn"));
+    return () => void off.then((unlisten) => unlisten());
+  }, [state.session, toast]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

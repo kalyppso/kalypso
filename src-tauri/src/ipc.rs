@@ -6,6 +6,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::State;
 
+use crate::budget::{self, Budget, BudgetOverview, BudgetRule, NewBudgetRule};
 use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
 use crate::gateway::{self, Gateway, GatewayInfo, GatewayKey, MintedKey, UsageSummary};
@@ -141,6 +142,39 @@ pub fn usage_summary(s: State<'_, AppState>, ns: Option<String>, days: Option<u3
         ensure_ns(&s, ns)?;
     }
     gateway::summary(&s.db, ns.as_deref(), days.unwrap_or(30))
+}
+
+/// Models with a price in pricing.toml, for picking a downgrade target.
+#[tauri::command]
+pub fn pricing_models(s: State<'_, AppState>) -> Vec<String> {
+    s.gateway.pricing.table().models()
+}
+
+// ---------- Budgets ----------
+
+#[tauri::command]
+pub fn budget_overview(s: State<'_, AppState>, ns: String) -> Result<BudgetOverview> {
+    ensure_ns(&s, &ns)?;
+    budget::overview(&s.db, &ns)
+}
+
+/// `monthly_limit` in millionths of a dollar (0 for none); `alert_at` as a fraction.
+#[tauri::command]
+pub fn budget_set(s: State<'_, AppState>, ns: String, monthly_limit: i64, alert_at: f64) -> Result<Budget> {
+    ensure_ns(&s, &ns)?;
+    budget::set(&s.db, &ns, monthly_limit, alert_at)
+}
+
+#[tauri::command]
+pub fn budget_rule_create(s: State<'_, AppState>, ns: String, rule: NewBudgetRule) -> Result<BudgetRule> {
+    ensure_ns(&s, &ns)?;
+    budget::create_rule(&s.db, &ns, rule)
+}
+
+#[tauri::command]
+pub fn budget_rule_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    budget::delete_rule(&s.db, &ns, &id)
 }
 
 // ---------- Sandboxes ----------

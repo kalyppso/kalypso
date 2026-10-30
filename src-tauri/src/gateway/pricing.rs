@@ -54,6 +54,11 @@ impl Table {
         Ok(Self { models: f.models })
     }
 
+    /// Names as written in the file, including `prefix*` entries.
+    pub fn models(&self) -> Vec<String> {
+        self.models.keys().cloned().collect()
+    }
+
     /// Exact name first, then the longest `prefix*` entry that matches.
     pub fn find(&self, model: &str) -> Option<&Price> {
         self.models.get(model).or_else(|| {
