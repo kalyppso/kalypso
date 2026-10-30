@@ -1,7 +1,7 @@
 // Domain model shared by every view. Mirrors the Rust core's records
 // (see docs/ARCHITECTURE.md §5) so the mock store can be swapped for IPC.
 
-export type ThemeId = "black" | "white" | "custom";
+export type ThemeId = "black" | "white" | "blossom" | "custom";
 
 export type ViewId =
   | "overview"

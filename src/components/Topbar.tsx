@@ -1,6 +1,6 @@
 import { Check, Code2, Palette, PanelLeft, Search } from "lucide-react";
 import { useStore } from "../store";
-import { themes } from "../themes";
+import { themePatch, themes } from "../themes";
 import { viewLabel } from "./Sidebar";
 import { Toggle, modKey, usePopover } from "./ui";
 
@@ -48,7 +48,7 @@ export function Topbar() {
               <button
                 key={t.id}
                 className={`pop-item ${t.id === state.appearance.theme ? "active" : ""}`}
-                onClick={() => { dispatch({ type: "theme", theme: t.id }); themePop.setOpen(false); }}
+                onClick={() => { dispatch({ type: "appearance", patch: themePatch(t.id) }); themePop.setOpen(false); }}
               >
                 <span className="swatch">{t.swatch.map((c) => <span key={c} style={{ background: c }} />)}</span>
                 <div>

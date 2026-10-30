@@ -4,13 +4,12 @@ import type { AuditEntry } from "../bindings/AuditEntry";
 import { Check, Palette, RefreshCw, ScrollText, SlidersHorizontal, User } from "lucide-react";
 import "../styles/pages.css";
 import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
-import { themes } from "../themes";
+import { themePatch, themes } from "../themes";
 import { ACCENTS, FONTS, contrast, fontFamily } from "../appearance";
 import { PageHead, Toggle } from "../components/ui";
+import { ColorPicker } from "../components/ColorPicker";
 import { BrandIcon, providerIcon, providerLabel } from "./Auth";
 import type { Appearance, AuthProvider } from "../types";
-
-const HEX = /^#[0-9a-fA-F]{6}$/;
 
 const SECTIONS = [
   { id: "account", label: "Account", icon: User },
@@ -90,9 +89,9 @@ function AppearanceSection() {
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <div className="field">
         Theme
-        <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {[...themes, { id: "custom" as const, label: "Custom", hint: "Your own colours", swatch: [a.bg, a.text, a.accent] as [string, string, string] }].map((t) => (
-            <button key={t.id} className="tile" onClick={() => set({ theme: t.id })} style={{ borderColor: a.theme === t.id ? "var(--accent-hi)" : undefined }}>
+            <button key={t.id} className="tile" onClick={() => set(t.id === "custom" ? { theme: "custom" } : themePatch(t.id))} style={{ borderColor: a.theme === t.id ? "var(--accent-hi)" : undefined }}>
               <span className="swatch">{t.swatch.map((c, i) => <span key={i} style={{ background: c, width: 12 }} />)}</span>
               <div>
                 <div style={{ fontWeight: 500, color: "var(--text)" }}>{t.label}</div>
@@ -127,7 +126,7 @@ function AppearanceSection() {
               style={{ width: 26, height: 26, borderRadius: 8, background: c, cursor: "pointer", border: 0, outline: a.accent.toLowerCase() === c ? "2px solid var(--text)" : "none", outlineOffset: 2 }}
             />
           ))}
-          <ColorInput value={a.accent} onChange={(accent) => set({ accent })} />
+          <ColorPicker value={a.accent} onChange={(accent) => set({ accent })} />
         </div>
       </div>
 
@@ -214,32 +213,14 @@ function Account() {
   );
 }
 
+// Backgrounds and text want near-neutrals, not accents.
+const SURFACES = ["#000000", "#0f0f12", "#17121f", "#3d1029", "#e5e5e5", "#f7f6f3", "#fdf1f5", "#ffffff"];
+
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="field">
       {label}
-      <ColorInput value={value} onChange={onChange} />
-    </div>
-  );
-}
-
-// Native picker plus a hex box; the hex box only commits valid colours.
-function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  return (
-    <div className="row" style={{ gap: 6 }}>
-      <input type="color" value={value} onChange={(e) => { onChange(e.target.value); setDraft(e.target.value); }} style={{ width: 32, height: 32, padding: 0, border: "1px solid var(--border-strong)", borderRadius: 6, background: "none", cursor: "pointer" }} />
-      <input
-        className="input mono"
-        style={{ width: 96 }}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          if (HEX.test(e.target.value)) onChange(e.target.value.toLowerCase());
-        }}
-        onBlur={() => setDraft(value)}
-      />
+      <ColorPicker value={value} onChange={onChange} presets={SURFACES} />
     </div>
   );
 }

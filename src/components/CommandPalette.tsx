@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Code2, CornerDownLeft, Layers, Palette, Sparkles } from "lucide-react";
 import { useStore } from "../store";
-import { themes } from "../themes";
+import { themePatch, themes } from "../themes";
 import { NAV } from "./Sidebar";
 import { TOOLS } from "../views/Terminal";
 
@@ -35,7 +35,7 @@ export function CommandPalette() {
     }));
     const th = themes.map((t) => ({
       id: `th-${t.id}`, group: "Theme", label: `Theme: ${t.label}`, icon: <Palette size={16} />,
-      run: () => { dispatch({ type: "theme", theme: t.id }); close(); },
+      run: () => { dispatch({ type: "appearance", patch: themePatch(t.id) }); close(); },
     }));
     const misc = [
       { id: "code", group: "Preferences", label: state.showCode ? "Hide code" : "Show code", icon: <Code2 size={16} />, run: () => { dispatch({ type: "showCode", value: !state.showCode }); close(); } },
