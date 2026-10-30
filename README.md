@@ -15,7 +15,10 @@
   <a href="docs/ARCHITECTURE.md">Architecture</a>
 </p>
 
-![KALYPSO overview: agents, sandboxes, spend, policy stops, a year of commits, activity and policy events](docs/images/overview.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/overview-light.png">
+  <img src="docs/images/overview-dark.png" alt="KALYPSO Overview: quick actions for agents, tasks, sandboxes, secrets, policies and connections, above a year of commits">
+</picture>
 
 ## What it does
 
@@ -28,6 +31,35 @@
 - **Observe.** A tracker board, a Git tracker with agent and human commits told apart, and live monitoring.
 - **Tools.** Split terminals into sandboxes, a browser and a phone preview.
 - **Code only when you ask.** Configs, specs and diffs stay folded until you open them.
+
+## Screenshots
+
+**Themes.** Black, White and Blossom, or your own background, text and accent colours and font.
+
+<table>
+  <tr>
+    <td><img src="docs/images/overview-dark.png" alt="Overview in the Black theme"></td>
+    <td><img src="docs/images/overview-light.png" alt="Overview in the White theme"></td>
+    <td><img src="docs/images/overview-blossom.png" alt="Overview in the Blossom theme"></td>
+  </tr>
+  <tr>
+    <td align="center">Black</td>
+    <td align="center">White</td>
+    <td align="center">Blossom</td>
+  </tr>
+</table>
+
+**Tracker.** What each agent is working on, with time, cost and the pull request it opened. Drag a task to change its status; click it to open the details beside the board.
+
+![Tracker board with queued, running, in review, done and failed tasks](docs/images/tracker.png)
+
+**Split terminals.** Shells into sandboxes, split right or down as many times as you like.
+
+![Four terminals in a two-by-two split, each connected to a sandbox](docs/images/terminals.png)
+
+**Browser and phone preview.** A browser and a phone-sized preview side by side, with common device sizes.
+
+![A browser pane and a phone preview of the same page, with the device picker open](docs/images/browser-phone.png)
 
 ## Status
 
