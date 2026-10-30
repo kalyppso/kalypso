@@ -12,7 +12,7 @@ export const FONTS: { id: string; label: string; family: string }[] = [
   { id: "jetbrains-mono", label: "JetBrains Mono", family: '"JetBrains Mono Variable"' },
 ];
 
-export const ACCENTS = ["#5b2aaa", "#301365", "#7c3aed", "#9d174d", "#1d4ed8", "#047857", "#b45309", "#ffffff"];
+export const ACCENTS = ["#5b2aaa", "#301365", "#7c3aed", "#c2185b", "#9d174d", "#1d4ed8", "#047857", "#b45309", "#ffffff"];
 
 const SIZES: Record<Appearance["size"], number> = { compact: 0.92, default: 1, large: 1.1 };
 
@@ -66,7 +66,7 @@ export function sanitizeAppearance(x: unknown): Partial<Appearance> {
   if (!x || typeof x !== "object") return {};
   const o = x as Record<string, unknown>;
   const out: Partial<Appearance> = {};
-  if (o.theme === "black" || o.theme === "white" || o.theme === "custom") out.theme = o.theme;
+  if (o.theme === "black" || o.theme === "white" || o.theme === "blossom" || o.theme === "custom") out.theme = o.theme;
   for (const k of ["bg", "text", "accent"] as const) if (typeof o[k] === "string" && HEX.test(o[k] as string)) out[k] = (o[k] as string).toLowerCase();
   if (typeof o.font === "string" && o.font.length <= 80 && (o.font.startsWith("system:") || FONTS.some((f) => f.id === o.font))) out.font = o.font;
   if (o.size === "compact" || o.size === "default" || o.size === "large") out.size = o.size;

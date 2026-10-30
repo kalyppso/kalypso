@@ -53,6 +53,29 @@
   --pop-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.2);
 }
 
+/* Blossom: a soft pink page with plum text and a rose accent. Still flat: tints, no gradients. */
+[data-theme="blossom"] {
+  color-scheme: light;
+  --bg: #fdf1f5;
+  --surface: #fdf1f5;
+  --surface-2: #f9e4ec;
+  --hover: #f6dbe5;
+  --border: #f0d0dc;
+  --border-strong: #e5b8c9;
+  --text: #3d1029;
+  --text-2: #7a4560;
+  --text-3: #b0849a;
+  --accent: #c2185b;
+  --accent-fg: #ffffff;
+  --ok: var(--accent-hi);
+  --warn: #8a6274;
+  --err: #3d1029;
+  --web: 194 24 91;
+  --page-bg: var(--bg);
+  --overlay: rgba(61, 16, 41, 0.22);
+  --pop-shadow: 0 16px 40px -20px rgba(61, 16, 41, 0.25);
+}
+
 /* Cards are filled, not outlined: a tint of the text colour over the page, so every theme gets them for free. */
 :root, [data-theme] {
   --card: color-mix(in srgb, var(--text) 5%, var(--page-bg));
@@ -432,3 +455,25 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Colour picker ---------- */
+.cp { position: relative; display: inline-flex; }
+.cp-trigger { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 5px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--card); color: var(--text); font-size: 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.cp-trigger:hover { background: var(--card-2); }
+.cp-trigger[aria-expanded="true"] { border-color: var(--accent-hi); }
+.cp-chip { width: 22px; height: 22px; border-radius: 5px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent); flex: none; }
+.cp-chip.lg { width: 32px; height: 32px; border-radius: var(--radius-sm); }
+.cp-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: 248px; padding: 12px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--pop-shadow); animation: pop-in 0.18s var(--spring); transform-origin: top left; }
+/* The square: hue underneath, white fading in from the left, black from the bottom. */
+.cp-area { position: relative; height: 150px; border-radius: 8px; cursor: crosshair; touch-action: none; outline: none; }
+.cp-area::before, .cp-area::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.cp-area::before { background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0)); }
+.cp-area::after { background: linear-gradient(to top, #000, rgba(0, 0, 0, 0)); }
+.cp-hue { position: relative; flex: 1; height: 12px; border-radius: 6px; cursor: pointer; touch-action: none; outline: none;
+  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%); }
+.cp-thumb { position: absolute; z-index: 1; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.3); transform: translate(-50%, -50%); pointer-events: none; }
+.cp-area:focus-visible .cp-thumb, .cp-hue:focus-visible .cp-thumb { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 4px var(--accent-soft); }
+.cp-pop .input { flex: 1; min-width: 0; height: 32px; text-transform: uppercase; }
+.cp-swatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
+.cp-swatch { aspect-ratio: 1; border-radius: 6px; border: 0; cursor: pointer; display: grid; place-items: center; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 15%, transparent); transition: transform 0.12s var(--ease); }
+.cp-swatch:hover { transform: scale(1.08); }
