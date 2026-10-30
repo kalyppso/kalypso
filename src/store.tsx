@@ -115,6 +115,8 @@ export type Action =
   | { type: "addBudgetRule"; rule: BudgetRule }
   | { type: "removeBudgetRule"; id: string }
   | { type: "toggleSkill"; id: string }
+  | { type: "addSkill"; skill: Skill }
+  | { type: "removeSkill"; id: string }
   | { type: "toggleMcp"; id: string }
   | { type: "addIntegration"; integration: Integration }
   | { type: "removeIntegration"; id: string }
@@ -302,6 +304,10 @@ function reducer(s: State, a: Action): State {
       return { ...s, budgetRules: [...s.budgetRules, a.rule] };
     case "removeBudgetRule":
       return { ...s, budgetRules: s.budgetRules.filter((r) => r.id !== a.id) };
+    case "addSkill":
+      return { ...s, skills: [...s.skills, a.skill] };
+    case "removeSkill":
+      return { ...s, skills: s.skills.filter((x) => x.id !== a.id), agents: s.agents.map((ag) => ({ ...ag, skills: ag.skills.filter((id) => id !== a.id) })) };
     case "toggleSkill":
       return { ...s, skills: mapIf(s.skills, a.id, (x) => ({ ...x, enabled: !x.enabled })) };
     case "toggleMcp":

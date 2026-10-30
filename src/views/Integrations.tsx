@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { ArrowLeft, Brain, ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Brain, ChevronRight, FolderOpen, Hash, LifeBuoy, Plus, RefreshCw, Trash2, Webhook, type LucideIcon } from "lucide-react";
+import {
+  siAsana, siConfluence, siGithub, siGitlab, siGoogledrive, siJira, siLinear, siLogseq, siModelcontextprotocol, siNotion, siObsidian, siZendesk,
+  type SimpleIcon,
+} from "simple-icons";
+import { luminance } from "../appearance";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { CodeReveal, Field, Modal, ModalActions, PageHead, Status, Toggle, useErrors } from "../components/ui";
 import "../styles/integrations.css";
@@ -41,9 +46,36 @@ export const KINDS: KindDef[] = [
 
 export const kindDef = (k: IntegrationKind) => KINDS.find((d) => d.kind === k)!;
 
-export function Logo({ kind }: { kind: IntegrationKind }) {
-  const d = kindDef(kind);
-  return <span className="logo" style={{ fontSize: d.glyph.length > 2 ? 10 : 12 }}>{d.glyph}</span>;
+// Brand marks from simple-icons. Slack and ServiceNow asked to be removed from it,
+// so they get a neutral icon rather than a hand-drawn copy of their logo.
+const BRANDS: Partial<Record<IntegrationKind, SimpleIcon>> = {
+  obsidian: siObsidian, notion: siNotion, logseq: siLogseq, confluence: siConfluence, gdrive: siGoogledrive,
+  jira: siJira, linear: siLinear, "github-issues": siGithub, "gitlab-issues": siGitlab, zendesk: siZendesk, asana: siAsana,
+  github: siGithub, mcp: siModelcontextprotocol,
+};
+const NEUTRAL: Partial<Record<IntegrationKind, LucideIcon>> = { slack: Hash, servicenow: LifeBuoy, rest: Webhook, folder: FolderOpen };
+
+/** Near-black and near-white marks follow the theme's text colour so they stay visible. */
+const brandFill = (hex: string) => {
+  const l = luminance(`#${hex}`);
+  return l < 0.04 || l > 0.8 ? "currentColor" : `#${hex}`;
+};
+
+export function Logo({ kind, size = 18 }: { kind: IntegrationKind; size?: number }) {
+  const brand = BRANDS[kind];
+  const Icon = NEUTRAL[kind];
+  const box = Math.round(size * 1.8);
+  return (
+    <span className="logo" style={{ width: box, height: box }} aria-hidden>
+      {brand ? (
+        <svg viewBox="0 0 24 24" width={size} height={size} fill={brandFill(brand.hex)} role="img" aria-label={brand.title}><path d={brand.path} /></svg>
+      ) : Icon ? (
+        <Icon size={size} strokeWidth={1.75} />
+      ) : (
+        <span style={{ fontSize: 11 }}>{kindDef(kind).glyph}</span>
+      )}
+    </span>
+  );
 }
 
 function configFor(i: Integration) {
@@ -72,7 +104,7 @@ function syncLine(i: Integration) {
 
 export function Integrations() {
   const { integrations } = useNamespaced();
-  const [tab, setTab] = useState<"connected" | Group>(integrations.length ? "connected" : GROUPS[0]);
+  const [tab, setTab] = useState<"connected" | "browse">(integrations.length ? "connected" : "browse");
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState<IntegrationKind | null>(null);
   const open = integrations.find((i) => i.id === openId);
@@ -89,14 +121,14 @@ export function Integrations() {
             <button role="tab" aria-selected={tab === "connected"} className={`ptab ${tab === "connected" ? "active" : ""}`} onClick={() => setTab("connected")}>
               Connected <span className="ptab-count">{integrations.length}</span>
             </button>
-            {GROUPS.map((g) => (
-              <button key={g} role="tab" aria-selected={tab === g} className={`ptab ${tab === g ? "active" : ""}`} onClick={() => setTab(g)}>{g}</button>
-            ))}
+            <button role="tab" aria-selected={tab === "browse"} className={`ptab ${tab === "browse" ? "active" : ""}`} onClick={() => setTab("browse")}>
+              Add an integration
+            </button>
           </div>
 
           {tab === "connected" ? (
             integrations.length === 0 ? (
-              <div className="empty">Nothing connected yet. Pick a tool from one of the other tabs.</div>
+              <div className="empty">Nothing connected yet. Pick a tool under Add an integration.</div>
             ) : (
               <div className="rows">
                 {integrations.map((i) => (
@@ -115,17 +147,24 @@ export function Integrations() {
               </div>
             )
           ) : (
-            <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 8 }}>
-              {KINDS.filter((k) => k.group === tab).map((k) => (
-                <button key={k.kind} className="tile" onClick={() => setAdding(k.kind)}>
-                  <Logo kind={k.kind} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 500 }}>{k.label}</div>
-                    <div className="faint small">{k.blurb}</div>
+            <div className="logo-wall">
+              {GROUPS.map((g) => (
+                <section key={g}>
+                  <div className="section-title">{g}</div>
+                  <div className="logo-grid">
+                    {KINDS.filter((k) => k.group === g).map((k) => {
+                      const connected = integrations.filter((i) => i.kind === k.kind).length;
+                      return (
+                        <button key={k.kind} className="logo-tile" onClick={() => setAdding(k.kind)} title={`${k.label}: ${k.blurb}`}>
+                          <Logo kind={k.kind} size={26} />
+                          <span className="logo-tile-name">{k.label}</span>
+                          <span className="faint small clip">{connected ? `${connected} connected` : k.blurb}</span>
+                          <Plus size={13} className="logo-tile-add" />
+                        </button>
+                      );
+                    })}
                   </div>
-                  <span className="spacer" />
-                  <Plus size={14} className="faint" />
-                </button>
+                </section>
               ))}
             </div>
           )}

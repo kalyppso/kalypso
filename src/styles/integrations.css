@@ -25,3 +25,23 @@
 .detail-label { font-size: 12px; color: var(--text-3); }
 .back { margin-left: -9px; margin-bottom: 12px; }
 .skill-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* Add an integration: a wall of logos, grouped. */
+.logo-wall { display: flex; flex-direction: column; gap: 24px; }
+.logo-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.logo-tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 14px;
+  border: 0; border-radius: 12px; background: var(--card); color: inherit; font: inherit; text-align: left; cursor: pointer;
+  transition: background 0.15s, transform 0.15s var(--ease);
+}
+.logo-tile:hover { background: var(--card-2); }
+.logo-tile:active { transform: scale(0.98); }
+.logo-tile:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
+.logo-tile .logo { margin-bottom: 4px; background: var(--card-3); }
+.logo-tile-name { font-weight: 500; }
+.logo-tile > .faint { width: 100%; }
+.logo-tile-add { position: absolute; top: 12px; right: 12px; color: var(--text-3); opacity: 0; transition: opacity 0.15s; }
+.logo-tile:hover .logo-tile-add, .logo-tile:focus-visible .logo-tile-add { opacity: 1; }
+.clamp-2, .clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp-2 { -webkit-line-clamp: 2; }
+.clamp-3 { -webkit-line-clamp: 3; }

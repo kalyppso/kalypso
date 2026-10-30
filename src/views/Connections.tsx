@@ -5,14 +5,14 @@ import "../styles/connections.css";
 import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
-import { kindDef } from "./Integrations";
-import type { Agent, Connection, ConnectionKind } from "../types";
+import { Logo } from "./Integrations";
+import type { Agent, Connection, ConnectionKind, IntegrationKind } from "../types";
 
 const W = 960;
 const H = 460;
 
 type AgentNodeData = { agent: Agent; sel: boolean };
-type ToolNodeData = { glyph: string; name: string; brain: boolean; sel: boolean };
+type ToolNodeData = { kind: IntegrationKind; name: string; brain: boolean; sel: boolean };
 
 function AgentNode({ data }: NodeProps<Node<AgentNodeData>>) {
   const { agent, sel } = data;
@@ -33,7 +33,7 @@ function ToolNode({ data }: NodeProps<Node<ToolNodeData>>) {
   return (
     <div className={`flow-tool ${data.sel ? "sel" : ""}`}>
       <Handle type="target" position={Position.Top} />
-      <span className="logo">{data.glyph}</span>
+      <Logo kind={data.kind} />
       <div className="flow-sub">{data.name}{data.brain ? " (brain)" : ""}</div>
     </div>
   );
@@ -67,7 +67,7 @@ export function Connections() {
     ...integrations.map((it, i): Node<ToolNodeData> => {
       const span = Math.min(integrations.length - 1, 4) || 1;
       const t = integrations.length === 1 ? 0.5 : i / span;
-      return { id: it.id, type: "tool", position: { x: 80 + t * (W - 240), y: H - 40 }, data: { glyph: kindDef(it.kind).glyph, name: it.name, brain: it.brain, sel: selected === it.id } };
+      return { id: it.id, type: "tool", position: { x: 80 + t * (W - 240), y: H - 40 }, data: { kind: it.kind, name: it.name, brain: it.brain, sel: selected === it.id } };
     }),
   ];
   const sig = JSON.stringify(base.map((n) => [n.id, n.data]));

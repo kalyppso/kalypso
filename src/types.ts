@@ -99,6 +99,8 @@ export interface Skill {
   description: string;
   source: string;
   enabled: boolean;
+  /** Set for skills added from GitHub: the repository page. */
+  url?: string;
 }
 
 export interface McpServer {
