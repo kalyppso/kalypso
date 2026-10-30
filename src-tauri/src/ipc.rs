@@ -11,6 +11,7 @@ use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
 use crate::gateway::{self, Gateway, GatewayInfo, GatewayKey, MintedKey, UsageSummary};
 use crate::ns::{self, Namespace};
+use crate::policy::{self, ApprovalRequest, NewPolicy, Policy, PolicyEvent, PolicyPatch};
 use crate::sandbox::{self, NewSandbox, ProviderInfo, Runtime, SandboxRecord};
 use crate::store::{AuditEntry, Db};
 use crate::vault::{KeySource, SecretMeta, Vault};
@@ -175,6 +176,55 @@ pub fn budget_rule_create(s: State<'_, AppState>, ns: String, rule: NewBudgetRul
 pub fn budget_rule_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
     ensure_ns(&s, &ns)?;
     budget::delete_rule(&s.db, &ns, &id)
+}
+
+// ---------- Policies ----------
+
+/// The namespace's policies and the ones that apply everywhere.
+#[tauri::command]
+pub fn policy_list(s: State<'_, AppState>, ns: String) -> Result<Vec<Policy>> {
+    ensure_ns(&s, &ns)?;
+    policy::list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn policy_create(s: State<'_, AppState>, ns: String, policy: NewPolicy) -> Result<Policy> {
+    ensure_ns(&s, &ns)?;
+    policy::create(&s.db, &ns, policy)
+}
+
+#[tauri::command]
+pub fn policy_update(s: State<'_, AppState>, ns: String, id: String, patch: PolicyPatch) -> Result<Policy> {
+    ensure_ns(&s, &ns)?;
+    policy::update(&s.db, &ns, &id, patch)
+}
+
+#[tauri::command]
+pub fn policy_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    policy::delete(&s.db, &ns, &id)
+}
+
+/// Newest first.
+#[tauri::command]
+pub fn policy_events(s: State<'_, AppState>, ns: String, limit: Option<u32>) -> Result<Vec<PolicyEvent>> {
+    ensure_ns(&s, &ns)?;
+    policy::events(&s.db, &ns, limit.unwrap_or(200))
+}
+
+/// Calls waiting for the user's decision.
+#[tauri::command]
+pub fn policy_pending(s: State<'_, AppState>, ns: String) -> Result<Vec<ApprovalRequest>> {
+    ensure_ns(&s, &ns)?;
+    Ok(s.gateway.approvals.pending(&ns))
+}
+
+/// Answer a waiting call. `remember` approves the same policy for the rest of the run.
+#[tauri::command]
+pub fn policy_decide(s: State<'_, AppState>, ns: String, id: String, approve: bool, remember: Option<bool>) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    s.gateway.approvals.decide(&ns, &id, approve, remember.unwrap_or(false))?;
+    s.db.audit(Some(&ns), "user", if approve { "policy.approve" } else { "policy.deny" }, &id)
 }
 
 // ---------- Sandboxes ----------

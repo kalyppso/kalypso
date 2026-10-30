@@ -52,6 +52,7 @@ pub async fn create(db: &Db, vault: &Vault, rt: &Runtime, id: &str, description:
     }
     db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name, description) VALUES (?1, ?1, ?2)", (id, description))?))?;
     vault.create_ns_key(db, id)?;
+    crate::policy::seed_defaults(db, id)?;
     if rt.available() {
         if let Err(e) = rt.ensure_network(id).await {
             tracing::warn!(ns = id, error = %e, "could not create namespace network; it will be retried on first sandbox");
@@ -73,6 +74,7 @@ pub async fn delete(db: &Db, rt: &Runtime, id: &str) -> Result<()> {
         rt.remove_network(id).await?;
     }
     db.with(|c| Ok(c.execute("DELETE FROM namespaces WHERE id = ?1", [id])?))?;
+    crate::policy::delete_namespace(db, id)?;
     db.audit(None, "user", "namespace.delete", id)
 }
 

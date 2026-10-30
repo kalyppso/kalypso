@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ApprovalPrompt } from "./components/ApprovalPrompt";
 import { api, errorMessage, isLive, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
@@ -171,6 +172,7 @@ export function App() {
       </div>
       {state.paletteOpen && <CommandPalette />}
       <Toasts />
+      <ApprovalPrompt />
     </>
   );
 }

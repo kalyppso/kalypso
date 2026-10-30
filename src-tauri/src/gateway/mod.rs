@@ -21,12 +21,12 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use futures_util::StreamExt;
 use rand::RngCore;
 use rusqlite::OptionalExtension;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
@@ -324,6 +324,10 @@ pub struct Gateway {
     addr: Mutex<Option<SocketAddr>>,
     events: tokio::sync::broadcast::Sender<UsageEvent>,
     alerts: tokio::sync::broadcast::Sender<BudgetAlert>,
+    pub approvals: crate::policy::Approvals,
+    approval_timeout: std::time::Duration,
+    /// The namespace whose policy log just changed.
+    policy_log: tokio::sync::broadcast::Sender<String>,
 }
 
 /// A budget notification for the user.
@@ -354,6 +358,9 @@ impl Gateway {
             addr: Mutex::new(None),
             events: tokio::sync::broadcast::channel(256).0,
             alerts: tokio::sync::broadcast::channel(64).0,
+            approvals: Default::default(),
+            approval_timeout: crate::policy::APPROVAL_TIMEOUT,
+            policy_log: tokio::sync::broadcast::channel(64).0,
         })
     }
 
@@ -363,6 +370,10 @@ impl Gateway {
 
     pub fn subscribe_alerts(&self) -> tokio::sync::broadcast::Receiver<BudgetAlert> {
         self.alerts.subscribe()
+    }
+
+    pub fn subscribe_policy_log(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.policy_log.subscribe()
     }
 
     pub fn info(&self) -> GatewayInfo {
@@ -376,6 +387,8 @@ impl Gateway {
     pub fn router(self: &Arc<Self>) -> Router {
         Router::new()
             .route("/health", get(|| async { "ok" }))
+            // "_" can't start a provider name, so this never shadows a provider route.
+            .route("/_kalypso/policy/check", post(policy_check))
             .fallback(proxy)
             .layer(DefaultBodyLimit::max(MAX_REQUEST))
             .with_state(self.clone())
@@ -518,6 +531,103 @@ impl Drop for Metered {
         let (usage, model) = self.meter.take().map(Meter::finish).unwrap_or((None, None));
         self.call.finish(self.status, usage, model);
     }
+}
+
+/// The answer to a policy check. `deny` comes with the reason to show the agent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
+pub struct PolicyDecision {
+    /// "allow" or "deny".
+    pub decision: String,
+    pub policy: Option<String>,
+    pub reason: Option<String>,
+    /// Warn-level policies the call tripped; it still goes ahead.
+    pub warnings: Vec<String>,
+}
+
+/// `POST /_kalypso/policy/check` with a [`crate::policy::ToolCall`]: an agent runtime asks
+/// before each tool call. Approve-level policies hold the response until the user answers.
+async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    use crate::policy::{self, Answer};
+    let err = |status: StatusCode, msg: &str| (status, axum::Json(serde_json::json!({ "error": msg }))).into_response();
+    let Some(tok) = token(&headers) else { return err(StatusCode::UNAUTHORIZED, "missing KALYPSO gateway key") };
+    let (key_id, ns, source) = match resolve(&gw.db, tok) {
+        Ok(Some(k)) => k,
+        Ok(None) => return err(StatusCode::UNAUTHORIZED, "unknown or revoked KALYPSO gateway key"),
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    let call: policy::ToolCall = match serde_json::from_slice(&body) {
+        Ok(c) => c,
+        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("expected a tool call: {e}")),
+    };
+    let policies = match policy::applicable(&gw.db, &ns, &key_id) {
+        Ok(p) => p,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    let secrets = if policies.iter().any(|p| p.spec == policy::Spec::Secrets) {
+        match gw.vault.values_for_scan(&gw.db, &ns) {
+            Ok(s) => s,
+            // Can't check for leaks: fail closed.
+            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+        }
+    } else {
+        Vec::new()
+    };
+    let action = policy::describe(&call, &secrets);
+    let log = |p: &policy::Policy, outcome: &str| {
+        if let Err(e) = policy::log(&gw.db, &ns, p, &source, &action, outcome) {
+            tracing::error!(error = %e, "could not record a policy decision");
+        }
+        let _ = gw.policy_log.send(ns.clone());
+    };
+    let deny = |p: &policy::Policy, reason: String| {
+        let d = PolicyDecision { decision: "deny".into(), policy: Some(p.name.clone()), reason: Some(reason), warnings: vec![] };
+        axum::Json(d).into_response()
+    };
+
+    let hits = policy::evaluate(&policies, &call, &secrets);
+    if let Some(h) = hits.iter().find(|h| h.policy.enforcement == "block") {
+        log(&h.policy, "blocked");
+        return deny(&h.policy, format!("Blocked by policy \"{}\": {}. {}", h.policy.name, h.reason, h.policy.rule));
+    }
+    for h in hits.iter().filter(|h| h.policy.enforcement == "approve") {
+        if policy::granted(&gw.db, &key_id, &h.policy.id).unwrap_or(false) {
+            continue;
+        }
+        log(&h.policy, "asked");
+        let req = policy::ApprovalRequest {
+            id: crate::vault::new_id("ap"),
+            ns: ns.clone(),
+            policy_id: h.policy.id.clone(),
+            policy: h.policy.name.clone(),
+            rule: h.policy.rule.clone(),
+            reason: h.reason.clone(),
+            source: source.clone(),
+            action: action.clone(),
+        };
+        match gw.approvals.ask(req, gw.approval_timeout).await {
+            Answer::Approved { remember } => {
+                log(&h.policy, "approved");
+                if remember {
+                    let _ = policy::grant(&gw.db, &key_id, &h.policy.id);
+                }
+            }
+            Answer::Denied => {
+                log(&h.policy, "denied");
+                return deny(&h.policy, format!("Denied by the user (policy \"{}\": {}).", h.policy.name, h.reason));
+            }
+            Answer::TimedOut => {
+                log(&h.policy, "denied");
+                return deny(&h.policy, format!("No answer in time, so denied (policy \"{}\": {}).", h.policy.name, h.reason));
+            }
+        }
+    }
+    let mut warnings = Vec::new();
+    for h in hits.iter().filter(|h| h.policy.enforcement == "warn") {
+        log(&h.policy, "warned");
+        warnings.push(format!("{}: {}", h.policy.name, h.reason));
+    }
+    axum::Json(PolicyDecision { decision: "allow".into(), policy: None, reason: None, warnings }).into_response()
 }
 
 async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {

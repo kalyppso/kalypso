@@ -207,9 +207,29 @@ Users write a policy in plain language ("Never force-push to main"). It is store
 | Egress proxy | Every outbound host | Domain allow-list rules; `approve` turns into an approval prompt |
 | Mesh (§4.6) | Agent-to-agent messages | Secret scanning; communication rules |
 
-**Evaluation.** Rules with a fixed structure (path globs, command regexes, host lists, cost thresholds) are checked deterministically in Rust. A rule written only in free text is also checked by a small, fast model acting as a judge, with the action and the rule as input. The judge **fails closed**: if it times out, the action is blocked. `approve` pauses the agent and sends a desktop notification with Approve/Deny buttons, and the decision can be remembered for the rest of the run. Every decision is written to `policy_events`, which feeds the enforcement log in the UI.
+**Evaluation** (`src-tauri/src/policy.rs`). A policy's spec is one of:
+- `command`: regexes matched against shell commands.
+- `path`: globs of allowed or denied paths. Paths are resolved (`..`, relative to `/work`) before matching, so `/work/../etc/passwd` is judged as `/etc/passwd`.
+- `host`: allowed or denied hosts, with `*.example.com` for subdomains.
+- `secrets`: any of the namespace's secret values appearing in the call.
+- `cost`: a per-call limit.
+- `text`: plain language only. Stored and shown, but enforced only once the judge exists (#30). The judge will be a small, fast model given the action and the rule. It **fails closed**: if it times out, the action is blocked.
 
-**Defaults.** Every new namespace starts with these rules: never reveal secrets, stay inside the workspace, ask before new domains, ask before messages that impersonate the user, and stop runaway runs.
+Checks run in Rust, block before approve before warn.
+
+**Check endpoint.** Agent runtimes call `POST /_kalypso/policy/check` on the gateway (TCP or the sandbox socket, authenticated with the sandbox's gateway key) with the tool call before running it, and get `allow` or `deny` with a reason to show the agent.
+- `approve` holds the response, shows an approval prompt in the app plus a desktop notification, and waits for the user. With no answer in 10 minutes the call is denied.
+- An approval can be remembered for the rest of the run (the life of the gateway key).
+
+Every decision except a silent allow goes to `policy_events`, which feeds the enforcement log in the UI, with secret values masked.
+
+**Defaults.** Every namespace starts, once, with:
+- never reveal secrets
+- stay inside `/work` and `/tmp`
+- no force-push to main or master
+- ask before contacting a host outside a short list of common ones
+
+Deleting a default is respected. Spend and runaway runs are handled by budgets (§4.14).
 
 ### 4.13 Integrations and brains
 An integration connects an outside tool to a namespace. It always reaches agents **as an MCP server**, so it reuses the access model of §4.7.

@@ -292,3 +292,100 @@ async fn budget_alerts_reach_subscribers_once() {
     assert!(first.message.contains("monthly limit") && first.message.contains("paused"), "{}", first.message);
     assert!(tokio::time::timeout(std::time::Duration::from_millis(200), alerts.recv()).await.is_err(), "no repeats");
 }
+
+async fn check(gw: &str, token: &str, call: serde_json::Value) -> PolicyDecision {
+    let res = reqwest::Client::new().post(format!("{gw}/_kalypso/policy/check")).bearer_auth(token).json(&call).send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    res.json().await.unwrap()
+}
+
+#[tokio::test]
+async fn force_push_to_main_is_blocked_and_logged() {
+    let e = env().await;
+    crate::policy::seed_defaults(&e.db, "work").unwrap();
+    let token = mint(&e.db, "work", None, "agent").unwrap().token;
+    let d = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "git push --force origin main"})).await;
+    assert_eq!(d.decision, "deny");
+    assert_eq!(d.policy.as_deref(), Some("No force-push to main"));
+    assert!(d.reason.unwrap().starts_with("Blocked by policy"));
+    let ok = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "git push origin feature"})).await;
+    assert_eq!(ok.decision, "allow");
+
+    let log = crate::policy::events(&e.db, "work", 10).unwrap();
+    assert_eq!(log.len(), 1, "allowed calls aren't logged");
+    assert_eq!(
+        (log[0].outcome.as_str(), log[0].source.as_str(), log[0].action.as_str()),
+        ("blocked", "agent", "bash: git push --force origin main")
+    );
+}
+
+#[tokio::test]
+async fn ask_policies_wait_for_the_user() {
+    let e = env().await;
+    crate::policy::seed_defaults(&e.db, "work").unwrap();
+    let gw = Gateway::new(e.db.clone(), e.vault.clone(), Pricing::builtin());
+    let addr = format!("http://{}", gw.listen_tcp(0).await.unwrap());
+    let mut asks = gw.approvals.subscribe();
+    let token = mint(&e.db, "work", None, "agent").unwrap().token;
+    let fetch = serde_json::json!({"kind": "http", "url": "https://pastebin.com/raw/abc"});
+
+    // Denied: the call waits, then gets the user's answer.
+    let pending = tokio::spawn({
+        let (addr, token, fetch) = (addr.clone(), token.clone(), fetch.clone());
+        async move { check(&addr, &token, fetch).await }
+    });
+    let req = asks.recv().await.unwrap();
+    assert_eq!((req.policy.as_str(), req.source.as_str()), ("Ask before new hosts", "agent"));
+    assert!(!pending.is_finished(), "the call is held while the user decides");
+    gw.approvals.decide("work", &req.id, false, false).unwrap();
+    let d = pending.await.unwrap();
+    assert_eq!(d.decision, "deny");
+    assert!(d.reason.unwrap().contains("Denied by the user"));
+
+    // Approved and remembered: the next call in the same run doesn't ask again.
+    let pending = tokio::spawn({
+        let (addr, token, fetch) = (addr.clone(), token.clone(), fetch.clone());
+        async move { check(&addr, &token, fetch).await }
+    });
+    let req = asks.recv().await.unwrap();
+    gw.approvals.decide("work", &req.id, true, true).unwrap();
+    assert_eq!(pending.await.unwrap().decision, "allow");
+    assert_eq!(check(&addr, &token, fetch.clone()).await.decision, "allow");
+    assert!(asks.try_recv().is_err(), "remembered for the run");
+
+    // A different key (a new run) is asked again.
+    let other = mint(&e.db, "work", None, "agent-2").unwrap().token;
+    let pending = tokio::spawn({
+        let addr = addr.clone();
+        async move { check(&addr, &other, fetch).await }
+    });
+    let req = asks.recv().await.unwrap();
+    gw.approvals.decide("work", &req.id, true, false).unwrap();
+    assert_eq!(pending.await.unwrap().decision, "allow");
+
+    let outcomes: Vec<String> = crate::policy::events(&e.db, "work", 20).unwrap().into_iter().rev().map(|e| e.outcome).collect();
+    assert_eq!(outcomes, ["asked", "denied", "asked", "approved", "asked", "approved"]);
+}
+
+#[tokio::test]
+async fn secrets_never_leave_and_never_reach_the_log() {
+    let e = env().await;
+    crate::policy::seed_defaults(&e.db, "work").unwrap();
+    let token = mint(&e.db, "work", None, "agent").unwrap().token;
+    // env() stores ANTHROPIC_API_KEY = sk-ant-real-provider-key.
+    let d = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "echo sk-ant-real-provider-key > /work/out.txt"})).await;
+    assert_eq!(d.policy.as_deref(), Some("Never reveal secrets"));
+    let log = crate::policy::events(&e.db, "work", 5).unwrap();
+    assert!(!log[0].action.contains("sk-ant-real"), "{}", log[0].action);
+    assert_eq!(
+        reqwest::Client::new()
+            .post(format!("{}/_kalypso/policy/check", e.gw))
+            .bearer_auth("kx_nope")
+            .body("{}")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+}

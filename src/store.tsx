@@ -93,6 +93,7 @@ export type Action =
   | { type: "tools"; open: boolean; tab?: string }
   | { type: "hydrateNamespaces"; namespaces: Namespace[] }
   | { type: "hydrateNs"; ns: string; secrets: Secret[]; sandboxes: Sandbox[] }
+  | { type: "hydratePolicies"; ns: string; policies: Policy[] }
   | { type: "view"; view: ViewId; compose?: boolean }
   | { type: "ns"; ns: string }
   | { type: "showCode"; value: boolean }
@@ -228,6 +229,9 @@ function reducer(s: State, a: Action): State {
       const missing = a.namespaces.filter((n) => !s.budgets.some((b) => b.ns === n.id)).map((n) => ({ ns: n.id, monthlyLimit: 25, alertAt: 0.8 }));
       return { ...s, namespaces: a.namespaces, budgets: [...s.budgets, ...missing], ns: ids.has(s.ns) ? s.ns : a.namespaces[0]?.id ?? s.ns };
     }
+    case "hydratePolicies":
+      // Replace what applies in this namespace: its own policies and the shared ones.
+      return { ...s, policies: [...s.policies.filter((p) => p.ns !== a.ns && p.ns !== "*"), ...a.policies] };
     case "hydrateNs":
       return {
         ...s,
