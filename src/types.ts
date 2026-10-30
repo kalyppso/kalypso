@@ -209,6 +209,8 @@ export interface Task {
   id: string;
   ns: string;
   title: string;
+  /** The brief the agent works from: what done looks like, links, constraints. */
+  description?: string;
   agentId: string;
   status: TaskStatus;
   priority: "low" | "normal" | "high";
@@ -283,6 +285,7 @@ export interface Ticket {
   integrationId: string;
   key: string;
   title: string;
+  description?: string;
   status: string;
   priority: "low" | "normal" | "high";
   url: string;

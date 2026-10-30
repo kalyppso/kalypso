@@ -23,6 +23,8 @@ export function Tracker() {
   const [over, setOver] = useState<TaskStatus | null>(null);
   const [creating, setCreating] = useState(state.compose);
   const [importing, setImporting] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const opened = state.tasks.find((t) => t.id === openId);
   const ticketSources = useNamespaced().integrations.filter((i) => i.ticketing);
 
   const visible = tasks.filter((t) => agentFilter === "all" || t.agentId === agentFilter);
@@ -88,6 +90,7 @@ export function Tracker() {
                   onDragStart={() => setDragging(t.id)}
                   onDragEnd={() => { setDragging(null); setOver(null); }}
                   onDelete={() => dispatch({ type: "removeTask", id: t.id })}
+                  onOpen={() => setOpenId(t.id)}
                 />
               ))}
               {items.length === 0 && <div className="column-empty">Nothing here</div>}
@@ -97,21 +100,33 @@ export function Tracker() {
       </div>
 
       {creating && <NewTask onClose={() => setCreating(false)} />}
+      {opened && <TaskDetails task={opened} onClose={() => setOpenId(null)} />}
       {importing && <ImportTickets onClose={() => setImporting(false)} />}
     </>
   );
 }
 
-function TaskCard({ task: t, agent, dragging, onDragStart, onDragEnd, onDelete }: {
-  task: Task; agent: string; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDelete: () => void;
+function TaskCard({ task: t, agent, dragging, onDragStart, onDragEnd, onDelete, onOpen }: {
+  task: Task; agent: string; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDelete: () => void; onOpen: () => void;
 }) {
   return (
-    <div className={`task ${dragging ? "dragging" : ""}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <div
+      className={`task ${dragging ? "dragging" : ""}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onOpen}
+      onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}
+      tabIndex={0}
+      role="button"
+      aria-label={`Open ${t.title}`}
+    >
       <div className="row" style={{ alignItems: "flex-start" }}>
         <span className="task-title">{t.title}</span>
         <span className="spacer" />
-        <button className="btn ghost sm icon" title="Delete task" onClick={onDelete}><Trash2 size={12} /></button>
+        <button className="btn ghost sm icon" title="Delete task" onClick={(e) => { e.stopPropagation(); onDelete(); }}><Trash2 size={12} /></button>
       </div>
+      {t.description && <p className="task-desc">{t.description}</p>}
       {t.status === "running" && <div className="bar"><span style={{ width: `${t.progress * 100}%` }} /></div>}
       <div className="row small">
         <span className="avatar" style={{ width: 20, height: 20, fontSize: 9 }}>{initials(agent)}</span>
@@ -136,19 +151,24 @@ function NewTask({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const { agents } = useNamespaced();
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const [priority, setPriority] = useState<Task["priority"]>("normal");
   const { errors, check, clear } = useErrors();
 
   const create = () => {
     const ok = check({
-      title: title.trim() ? undefined : "Describe the task.",
+      title: title.trim() ? undefined : "Give the task a title.",
+      description: description.length > MAX_DESCRIPTION ? `Keep the description under ${MAX_DESCRIPTION} characters.` : undefined,
       agent: agentId ? undefined : agents.length ? "Pick an agent." : "Create an agent first.",
     });
     if (!ok) return;
     dispatch({
       type: "addTask",
-      task: { id: uid("t"), ns: state.ns, title: title.trim(), agentId, status: "queued", priority, progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
+      task: {
+        id: uid("t"), ns: state.ns, title: title.trim(), description: description.trim() || undefined, agentId, status: "queued", priority,
+        progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null,
+      },
     });
     toast("Task queued");
     onClose();
@@ -156,8 +176,17 @@ function NewTask({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="New task" subtitle="The agent picks it up when it is free." onClose={onClose}>
-      <Field label="Task" error={errors.title}>
+      <Field label="Title" error={errors.title}>
         <input className="input" autoFocus value={title} onChange={(e) => { setTitle(e.target.value); clear("title"); }} placeholder="Add pagination to the audit log API" />
+      </Field>
+      <Field label="Description" error={errors.description} hint="Optional. The agent works from this: what done looks like, links, constraints.">
+        <textarea
+          className="textarea"
+          rows={5}
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); clear("description"); }}
+          placeholder="Cursor-based, 50 per page by default. Keep the old response shape behind ?legacy=1."
+        />
       </Field>
       <div className="field-row">
         <Field label="Agent" error={errors.agent}>
@@ -172,6 +201,74 @@ function NewTask({ onClose }: { onClose: () => void }) {
         </label>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Queue task" />
+    </Modal>
+  );
+}
+
+const MAX_DESCRIPTION = 4000;
+
+/** Read and edit one task. Opened by clicking its card. */
+function TaskDetails({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { state, dispatch } = useStore();
+  const toast = useToast();
+  const { agents } = useNamespaced();
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description ?? "");
+  const [agentId, setAgentId] = useState(task.agentId);
+  const [priority, setPriority] = useState(task.priority);
+  const { errors, check, clear } = useErrors();
+  const column = COLUMNS.find((c) => c.id === task.status);
+  const ticketSource = task.ticket && state.integrations.find((i) => i.id === task.ticket?.integrationId);
+
+  const save = () => {
+    const ok = check({
+      title: title.trim() ? undefined : "Give the task a title.",
+      description: description.length > MAX_DESCRIPTION ? `Keep the description under ${MAX_DESCRIPTION} characters.` : undefined,
+    });
+    if (!ok) return;
+    dispatch({ type: "updateTask", id: task.id, patch: { title: title.trim(), description: description.trim() || undefined, agentId, priority } });
+    toast("Task updated");
+    onClose();
+  };
+
+  return (
+    <Modal title="Task" subtitle={`${column?.label ?? task.status}${task.startedAt ? `, ${task.minutes} min, ${usd(task.cost)}` : ""}`} onClose={onClose}>
+      <Field label="Title" error={errors.title}>
+        <input className="input" value={title} onChange={(e) => { setTitle(e.target.value); clear("title"); }} />
+      </Field>
+      <Field label="Description" error={errors.description}>
+        <textarea
+          className="textarea"
+          rows={7}
+          autoFocus={!task.description}
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); clear("description"); }}
+          placeholder="What done looks like, links, constraints."
+        />
+      </Field>
+      <div className="field-row">
+        <label className="field">Agent
+          <select className="select" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+            {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </label>
+        <label className="field">Priority
+          <select className="select" value={priority} onChange={(e) => setPriority(e.target.value as Task["priority"])}>
+            <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option>
+          </select>
+        </label>
+      </div>
+      {(task.ticket || task.pr) && (
+        <div className="row small dim" style={{ gap: 12 }}>
+          {task.ticket && (
+            <a href={task.ticket.url} target="_blank" rel="noreferrer" className="row" style={{ gap: 4 }}>
+              <TicketIcon size={12} /> {task.ticket.key}{ticketSource ? ` in ${ticketSource.name}` : ""}
+            </a>
+          )}
+          {task.pr && <span className="row" style={{ gap: 4 }}><GitPullRequest size={12} /> {task.pr}</span>}
+        </div>
+      )}
+      <ModalActions onCancel={onClose} onConfirm={save} confirm="Save" />
     </Modal>
   );
 }
@@ -198,7 +295,7 @@ function ImportTickets({ onClose }: { onClose: () => void }) {
       dispatch({
         type: "addTask",
         task: {
-          id: uid("t"), ns: state.ns, title: t.title, agentId, status: "queued", priority: t.priority, progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null,
+          id: uid("t"), ns: state.ns, title: t.title, description: t.description, agentId, status: "queued", priority: t.priority, progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null,
           ticket: { integrationId: t.integrationId, key: t.key, url: t.url },
         },
       });

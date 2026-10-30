@@ -222,12 +222,12 @@ export const activity: Activity[] = [
 ];
 
 export const tasks: Task[] = [
-  { id: "t1", ns: "work", title: "Retry webhooks with exponential backoff", agentId: "a-coder", status: "review", priority: "high", progress: 1, startedAt: "11:02", minutes: 64, cost: 3.12, pr: "#482" },
+  { id: "t1", ns: "work", title: "Retry webhooks with exponential backoff", description: "Webhook deliveries fail permanently after one 5xx. Retry up to 6 times with exponential backoff (1s base, 2x, full jitter), then move the event to the dead-letter queue. Add tests for the retry schedule.", agentId: "a-coder", status: "review", priority: "high", progress: 1, startedAt: "11:02", minutes: 64, cost: 3.12, pr: "#482" },
   { id: "t2", ns: "work", title: "Review PR #482", agentId: "a-reviewer", status: "running", priority: "high", progress: 0.6, startedAt: "12:05", minutes: 18, cost: 0.41, pr: "#482" },
-  { id: "t3", ns: "work", title: "Bump Node to 22 in CI images", agentId: "a-coder", status: "running", priority: "normal", progress: 0.35, startedAt: "12:14", minutes: 9, cost: 0.58, pr: null },
-  { id: "t4", ns: "work", title: "Investigate kubernetes MCP disconnects", agentId: "a-ops", status: "failed", priority: "normal", progress: 0.2, startedAt: "12:09", minutes: 3, cost: 0.04, pr: null },
-  { id: "t5", ns: "work", title: "Add rate limiting to public API", agentId: "a-coder", status: "queued", priority: "normal", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null, ticket: { integrationId: "i-jira", key: "ENG-142", url: "https://acme.atlassian.net/browse/ENG-142" } },
-  { id: "t6", ns: "work", title: "Write runbook for webhook outages", agentId: "a-ops", status: "queued", priority: "low", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
+  { id: "t3", ns: "work", title: "Bump Node to 22 in CI images", description: "Update the base image in .github/workflows and the Dockerfiles from Node 20 to 22. Run the full test suite and note anything that breaks.", agentId: "a-coder", status: "running", priority: "normal", progress: 0.35, startedAt: "12:14", minutes: 9, cost: 0.58, pr: null },
+  { id: "t4", ns: "work", title: "Investigate kubernetes MCP disconnects", description: "The kubernetes MCP server drops its connection every few minutes. Find out whether it is the idle timeout on the proxy or the server itself, and propose a fix.", agentId: "a-ops", status: "failed", priority: "normal", progress: 0.2, startedAt: "12:09", minutes: 3, cost: 0.04, pr: null },
+  { id: "t5", ns: "work", title: "Add rate limiting to public API", description: "Limit unauthenticated requests to 60 per minute per IP and authenticated ones to 600 per key. Return 429 with Retry-After. Limits must be configurable per environment.", agentId: "a-coder", status: "queued", priority: "normal", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null, ticket: { integrationId: "i-jira", key: "ENG-142", url: "https://acme.atlassian.net/browse/ENG-142" } },
+  { id: "t6", ns: "work", title: "Write runbook for webhook outages", description: "Step-by-step runbook for when webhook deliveries back up: how to spot it, how to drain the queue safely, who to page. Put it in docs/runbooks/.", agentId: "a-ops", status: "queued", priority: "low", progress: 0, startedAt: "", minutes: 0, cost: 0, pr: null },
   { id: "t7", ns: "work", title: "Fix flaky billing integration test", agentId: "a-coder", status: "done", priority: "normal", progress: 1, startedAt: "09:20", minutes: 41, cost: 1.87, pr: "#479" },
   { id: "t8", ns: "work", title: "Review PR #479", agentId: "a-reviewer", status: "done", priority: "normal", progress: 1, startedAt: "10:05", minutes: 12, cost: 0.33, pr: "#479" },
   { id: "t9", ns: "personal", title: "Research agent memory approaches", agentId: "a-researcher", status: "running", priority: "normal", progress: 0.7, startedAt: "11:15", minutes: 52, cost: 0.92, pr: null },
@@ -289,8 +289,8 @@ export const pullRequests: PullRequest[] = [
 // Open tickets in connected ticketing tools that match their filters.
 export const tickets: Ticket[] = [
   { integrationId: "i-jira", key: "ENG-142", title: "Add rate limiting to public API", status: "To Do", priority: "normal", url: "https://acme.atlassian.net/browse/ENG-142" },
-  { integrationId: "i-jira", key: "ENG-151", title: "Audit log API returns 500 on empty filters", status: "To Do", priority: "high", url: "https://acme.atlassian.net/browse/ENG-151" },
-  { integrationId: "i-jira", key: "ENG-153", title: "Paginate the webhooks list endpoint", status: "To Do", priority: "normal", url: "https://acme.atlassian.net/browse/ENG-153" },
+  { integrationId: "i-jira", key: "ENG-151", title: "Audit log API returns 500 on empty filters", description: "GET /audit?action= with an empty value throws in the query builder. Empty filters should be ignored. Add a regression test.", status: "To Do", priority: "high", url: "https://acme.atlassian.net/browse/ENG-151" },
+  { integrationId: "i-jira", key: "ENG-153", title: "Paginate the webhooks list endpoint", description: "Cursor-based pagination, 50 per page by default, max 200. Keep the old response shape behind ?legacy=1 for one release.", status: "To Do", priority: "normal", url: "https://acme.atlassian.net/browse/ENG-153" },
   { integrationId: "i-jira", key: "ENG-157", title: "Upgrade Postgres driver to 3.x", status: "Backlog", priority: "low", url: "https://acme.atlassian.net/browse/ENG-157" },
   { integrationId: "i-jira", key: "ENG-160", title: "Flaky test: invoices_timezone_spec", status: "To Do", priority: "high", url: "https://acme.atlassian.net/browse/ENG-160" },
 ];
