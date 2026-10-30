@@ -8,6 +8,7 @@ pub mod forward;
 pub mod gateway;
 pub mod ipc;
 pub mod ns;
+pub mod policy;
 pub mod sandbox;
 pub mod store;
 pub mod vault;
@@ -68,6 +69,13 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::budget_set,
         ipc::budget_rule_create,
         ipc::budget_rule_delete,
+        ipc::policy_list,
+        ipc::policy_create,
+        ipc::policy_update,
+        ipc::policy_delete,
+        ipc::policy_events,
+        ipc::policy_pending,
+        ipc::policy_decide,
         ipc::sandbox_providers,
         ipc::sandbox_list,
         ipc::sandbox_create,
@@ -99,6 +107,10 @@ pub fn run() {
                     tauri::async_runtime::block_on(ns::create(&db, &vault, &rt, id, desc))?;
                 }
             }
+            // Namespaces made before policies existed get the defaults once.
+            for n in ns::list(&db)? {
+                policy::seed_defaults(&db, &n.id)?;
+            }
             // Networks can vanish (engine reset, manual cleanup); make sure every namespace has one.
             if rt.available() {
                 for n in ns::list(&db)? {
@@ -120,6 +132,7 @@ pub fn run() {
             });
             events::spawn_usage_events(app.handle().clone(), gw.subscribe());
             events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
+            events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
             app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())

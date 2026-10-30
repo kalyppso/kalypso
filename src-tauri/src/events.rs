@@ -12,6 +12,8 @@ use crate::sandbox::SandboxStatusEvent;
 pub const SANDBOX_STATUS: &str = "sandbox://status";
 pub const USAGE: &str = "usage://event";
 pub const BUDGET_ALERT: &str = "budget://alert";
+pub const POLICY_APPROVAL: &str = "policy://approval";
+pub const POLICY_LOG: &str = "policy://log";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
@@ -76,6 +78,43 @@ pub fn spawn_budget_alerts(app: AppHandle, mut rx: tokio::sync::broadcast::Recei
                         tracing::warn!(error = %e, "could not show a desktop notification");
                     }
                     let _ = app.emit(BUDGET_ALERT, &alert);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
+}
+
+/// A call waiting for approval becomes a desktop notification and an in-app prompt;
+/// every logged decision tells open views to refresh.
+pub fn spawn_policy_events(
+    app: AppHandle,
+    mut approvals: tokio::sync::broadcast::Receiver<crate::policy::ApprovalRequest>,
+    mut log: tokio::sync::broadcast::Receiver<String>,
+) {
+    use tauri_plugin_notification::NotificationExt;
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match approvals.recv().await {
+                Ok(req) => {
+                    let body = format!("{} wants to run {}. Open KALYPSO to approve or deny.", req.source, req.action);
+                    if let Err(e) = handle.notification().builder().title(format!("Approval needed: {}", req.policy)).body(body).show() {
+                        tracing::warn!(error = %e, "could not show a desktop notification");
+                    }
+                    let _ = handle.emit(POLICY_APPROVAL, &req);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match log.recv().await {
+                Ok(ns) => {
+                    let _ = app.emit(POLICY_LOG, &ns);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return,

@@ -539,3 +539,12 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .side-panel-foot { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-top: 1px solid var(--border); }
 .task.selected { box-shadow: inset 0 0 0 1px var(--accent-hi); background: var(--card-3); }
 @media (max-width: 900px) { .main.with-panel .content { margin-right: 0; } .side-panel { width: 100%; } }
+
+/* ---------- Approval prompt ---------- */
+/* Top right, under the top bar, above everything but dialogs: a held agent is waiting on it. */
+.approval {
+  position: fixed; top: 64px; right: 20px; z-index: 55; width: min(400px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface);
+  border: 1px solid var(--accent-hi); border-radius: 12px; box-shadow: var(--pop-shadow); animation: pop-in 0.22s var(--spring);
+}
+.approval-action { display: block; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--card-2); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }

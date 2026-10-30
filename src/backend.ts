@@ -7,6 +7,11 @@ import type { BudgetAlert } from "./bindings/BudgetAlert";
 import type { BudgetOverview } from "./bindings/BudgetOverview";
 import type { BudgetRule as BudgetRuleRecord } from "./bindings/BudgetRule";
 import type { NewBudgetRule } from "./bindings/NewBudgetRule";
+import type { ApprovalRequest } from "./bindings/ApprovalRequest";
+import type { NewPolicy } from "./bindings/NewPolicy";
+import type { Policy as PolicyRecord } from "./bindings/Policy";
+import type { PolicyEvent as PolicyEventRecord } from "./bindings/PolicyEvent";
+import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { GatewayKey } from "./bindings/GatewayKey";
 import type { MintedKey } from "./bindings/MintedKey";
@@ -20,7 +25,7 @@ import type { SandboxRecord } from "./bindings/SandboxRecord";
 import type { SandboxStatusEvent } from "./bindings/SandboxStatusEvent";
 import type { SecretMeta } from "./bindings/SecretMeta";
 import type { Action } from "./store";
-import type { Namespace, Sandbox, Secret } from "./types";
+import type { Namespace, Policy, Sandbox, Secret } from "./types";
 
 // Calls into the Rust core (src-tauri/src/ipc.rs). In a plain browser
 // (`npm run dev`) there is no core, and the app runs on mock data instead.
@@ -53,6 +58,13 @@ export const api = {
   budgetSet: (ns: string, monthlyLimit: number, alertAt: number) => invoke<BudgetRecord>("budget_set", { ns, monthlyLimit, alertAt }),
   budgetRuleCreate: (ns: string, rule: NewBudgetRule) => invoke<BudgetRuleRecord>("budget_rule_create", { ns, rule }),
   budgetRuleDelete: (ns: string, id: string) => invoke<void>("budget_rule_delete", { ns, id }),
+  policyList: (ns: string) => invoke<PolicyRecord[]>("policy_list", { ns }),
+  policyCreate: (ns: string, policy: NewPolicy) => invoke<PolicyRecord>("policy_create", { ns, policy }),
+  policyUpdate: (ns: string, id: string, patch: PolicyPatch) => invoke<PolicyRecord>("policy_update", { ns, id, patch }),
+  policyDelete: (ns: string, id: string) => invoke<void>("policy_delete", { ns, id }),
+  policyEvents: (ns: string, limit = 200) => invoke<PolicyEventRecord[]>("policy_events", { ns, limit }),
+  policyPending: (ns: string) => invoke<ApprovalRequest[]>("policy_pending", { ns }),
+  policyDecide: (ns: string, id: string, approve: boolean, remember: boolean) => invoke<void>("policy_decide", { ns, id, approve, remember }),
   usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),
   sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
@@ -90,9 +102,15 @@ export const toSandbox = (r: SandboxRecord): Sandbox => ({
 
 /** Reload one namespace's secrets and sandboxes from the core into the store. */
 export async function syncNamespace(ns: string, dispatch: (a: Action) => void) {
-  const [secrets, sandboxes] = await Promise.all([api.secretList(ns), api.sandboxList(ns)]);
+  const [secrets, sandboxes, policies] = await Promise.all([api.secretList(ns), api.sandboxList(ns), api.policyList(ns)]);
   dispatch({ type: "hydrateNs", ns, secrets: secrets.map(toSecret), sandboxes: sandboxes.map(toSandbox) });
+  dispatch({ type: "hydratePolicies", ns, policies: policies.map(toPolicy) });
 }
+
+export const toPolicy = (p: PolicyRecord): Policy => ({
+  id: p.id, ns: p.ns, name: p.name, rule: p.rule, category: p.category as Policy["category"], enforcement: p.enforcement as Policy["enforcement"],
+  appliesTo: p.applies_to ?? "all", enabled: p.enabled, spec: JSON.stringify(p.spec, null, 2),
+});
 
 /** Engine-reported sandbox changes (src-tauri/src/events.rs). Returns an unsubscribe function. */
 export const onSandboxStatus = (fn: (e: SandboxStatusEvent) => void) => listen<SandboxStatusEvent>("sandbox://status", (e) => fn(e.payload));
@@ -117,3 +135,8 @@ export function useBudgetOverview(ns: string) {
   }, [ns, tick]);
   return { overview, reload: () => setTick((t) => t + 1) };
 }
+
+/** A tool call waiting for the user (src-tauri/src/policy.rs). */
+export const onPolicyApproval = (fn: (e: ApprovalRequest) => void) => listen<ApprovalRequest>("policy://approval", (e) => fn(e.payload));
+/** A policy decision was logged in this namespace. */
+export const onPolicyLog = (fn: (ns: string) => void) => listen<string>("policy://log", (e) => fn(e.payload));

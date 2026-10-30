@@ -169,6 +169,21 @@ impl Vault {
             .collect()
     }
 
+    /// Every secret value in the namespace, any scope, for the policy engine's leak check.
+    /// Never logged or returned to the UI.
+    pub fn values_for_scan(&self, db: &Db, ns: &str) -> Result<Vec<String>> {
+        let rows: Vec<(Vec<u8>, Vec<u8>)> = db.with(|c| {
+            let mut st = c.prepare("SELECT ciphertext, nonce FROM secrets WHERE ns = ?1")?;
+            let rows = st.query_map([ns], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        })?;
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = self.ns_key(db, ns)?;
+        rows.into_iter().map(|(ct, nonce)| Ok(String::from_utf8_lossy(&open(&key, &ct, &nonce)?).into_owned())).collect()
+    }
+
     /// Decrypt one secret by key, for the model gateway. Not a user reveal, so not audited
     /// per call; the gateway records each request in `usage_events` instead.
     pub fn lookup(&self, db: &Db, ns: &str, key: &str) -> Result<Option<String>> {
