@@ -10,6 +10,7 @@ use crate::ipc::AppState;
 use crate::sandbox::SandboxStatusEvent;
 
 pub const SANDBOX_STATUS: &str = "sandbox://status";
+pub const USAGE: &str = "usage://event";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
@@ -44,4 +45,19 @@ fn forward(app: &AppHandle, ev: SandboxStatusEvent) {
         Ok(false) => {} // Already known, or a sandbox this database no longer has.
         Err(e) => tracing::warn!(error = %e, "could not record sandbox status"),
     }
+}
+
+/// Tell the UI about every metered model request, so spend updates live.
+pub fn spawn_usage_events(app: AppHandle, mut rx: tokio::sync::broadcast::Receiver<crate::gateway::UsageEvent>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(ev) => {
+                    let _ = app.emit(USAGE, &ev);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
 }

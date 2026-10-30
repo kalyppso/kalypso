@@ -1,20 +1,21 @@
-use std::collections::HashMap;
-#[cfg(unix)]
-use std::path::PathBuf;
+//! Sandboxes: KALYPSO's records and rules, independent of the engine.
+//! Engine work goes through a [`SandboxProvider`]; see `provider.rs`.
 
-use bollard::container::{
-    Config, CreateContainerOptions, InspectContainerOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
-};
-use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::image::CreateImageOptions;
-use bollard::models::{HostConfig, Mount, MountTypeEnum};
-use bollard::network::CreateNetworkOptions;
-use bollard::system::EventsOptions;
-use bollard::Docker;
-use futures_util::{Stream, StreamExt, TryStreamExt};
+pub mod oci;
+pub mod provider;
+
+use std::sync::Arc;
+
+use futures_util::stream::{self, BoxStream};
+use futures_util::StreamExt;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+#[cfg(test)]
+pub(crate) use oci::container_name;
+pub use oci::network_name;
+pub use provider::{ExecStream, ProviderInfo, SandboxProvider};
 
 use crate::error::{KalypsoError, Result};
 use crate::store::Db;
@@ -26,6 +27,7 @@ pub struct SandboxRecord {
     pub id: String,
     pub ns: String,
     pub name: String,
+    /// Which provider runs it ("docker", "podman", …).
     pub runtime: String,
     pub image: String,
     pub cpu: f64,
@@ -46,156 +48,109 @@ pub struct NewSandbox {
     #[ts(type = "number")]
     pub mem_mb: i64,
     pub network: String,
+    /// Provider kind; the default provider when omitted.
+    #[serde(default)]
+    #[ts(optional)]
+    pub provider: Option<String>,
 }
 
-/// The container engine. Podman is driven through its Docker-compatible API,
-/// so one code path serves both.
+/// A sandbox changed state in its backend, whoever caused it.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct SandboxStatusEvent {
+    pub ns: String,
+    pub id: String,
+    pub status: String,
+}
+
+/// The sandbox providers available on this machine. The first is the default.
 pub struct Runtime {
-    docker: Option<Docker>,
+    providers: Vec<Arc<dyn SandboxProvider>>,
+    /// Kind of the default provider, or "none".
     pub kind: String,
 }
 
 impl Runtime {
-    /// Find a reachable engine: `DOCKER_HOST` first, then the usual places Docker,
-    /// Podman, OrbStack and Colima put their sockets (named pipes on Windows).
     pub async fn detect() -> Self {
-        for (endpoint, kind) in candidates() {
-            let Some(docker) = connect(&endpoint) else { continue };
-            if docker.ping().await.is_ok() {
-                tracing::info!(kind, endpoint, "container runtime connected");
-                return Self { docker: Some(docker), kind: kind.into() };
-            }
+        let mut providers: Vec<Arc<dyn SandboxProvider>> = Vec::new();
+        if let Some(p) = oci::OciProvider::detect().await {
+            providers.push(Arc::new(p));
         }
-        tracing::warn!("no container runtime found; sandboxes are disabled");
-        Self { docker: None, kind: "none".into() }
+        if providers.is_empty() {
+            tracing::warn!("no sandbox provider found; sandboxes are disabled");
+        }
+        Self::with(providers)
     }
 
     pub fn none() -> Self {
-        Self { docker: None, kind: "none".into() }
+        Self::with(Vec::new())
+    }
+
+    pub fn with(providers: Vec<Arc<dyn SandboxProvider>>) -> Self {
+        let kind = providers.first().map(|p| p.info().kind).unwrap_or_else(|| "none".into());
+        Self { providers, kind }
     }
 
     pub fn available(&self) -> bool {
-        self.docker.is_some()
+        !self.providers.is_empty()
     }
 
-    pub(crate) fn docker(&self) -> Result<&Docker> {
-        self.docker.as_ref().ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found. Start one and restart KALYPSO.".into()))
+    pub fn infos(&self) -> Vec<ProviderInfo> {
+        self.providers.iter().map(|p| p.info()).collect()
     }
 
-    /// The namespace's internal network: sandboxes on it can reach each other but nothing else.
+    fn default_provider(&self) -> Result<Arc<dyn SandboxProvider>> {
+        self.providers
+            .first()
+            .cloned()
+            .ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found. Start one and restart KALYPSO.".into()))
+    }
+
+    /// The provider that owns sandboxes of this kind.
+    pub fn provider(&self, kind: &str) -> Result<Arc<dyn SandboxProvider>> {
+        self.providers
+            .iter()
+            .find(|p| p.handles(kind))
+            .cloned()
+            .ok_or_else(|| KalypsoError::Runtime(format!("the {kind} provider isn't available on this machine")))
+    }
+
+    /// The Docker client, when a Docker/Podman provider is present. Engine-specific test checks only.
+    #[cfg(test)]
+    pub(crate) fn docker(&self) -> Result<&bollard::Docker> {
+        self.providers
+            .iter()
+            .find_map(|p| p.as_any().downcast_ref::<oci::OciProvider>())
+            .map(|o| o.docker())
+            .ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found".into()))
+    }
+
+    /// Prepare the namespace on every provider (e.g. its internal network).
     pub async fn ensure_network(&self, ns: &str) -> Result<()> {
-        let docker = self.docker()?;
-        let name = network_name(ns);
-        if docker.inspect_network::<String>(&name, None).await.is_ok() {
-            return Ok(());
+        if !self.available() {
+            return Err(self.default_provider().err().unwrap());
         }
-        docker
-            .create_network(CreateNetworkOptions {
-                name: name.clone(),
-                driver: "bridge".into(),
-                internal: true,
-                labels: HashMap::from([("kalypso.ns".to_string(), ns.to_string())]),
-                ..Default::default()
-            })
-            .await
-            .map_err(rt_err)?;
+        for p in &self.providers {
+            p.prepare_namespace(ns).await?;
+        }
         Ok(())
     }
 
     pub async fn remove_network(&self, ns: &str) -> Result<()> {
-        match self.docker()?.remove_network(&network_name(ns)).await {
-            Ok(()) => Ok(()),
-            Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(()),
-            Err(e) => Err(rt_err(e)),
+        for p in &self.providers {
+            p.teardown_namespace(ns).await?;
         }
-    }
-
-    async fn pull(&self, image: &str) -> Result<()> {
-        let docker = self.docker()?;
-        if docker.inspect_image(image).await.is_ok() {
-            return Ok(());
-        }
-        tracing::info!(image, "pulling image");
-        docker
-            .create_image(Some(CreateImageOptions { from_image: image, ..Default::default() }), None, None)
-            .try_collect::<Vec<_>>()
-            .await
-            .map_err(rt_err)?;
         Ok(())
     }
-}
 
-fn kind_of(endpoint: &str) -> &'static str {
-    if endpoint.contains("podman") {
-        "podman"
-    } else {
-        "docker"
-    }
-}
-
-/// Where engines listen, most specific first. Missing ones are skipped cheaply.
-fn candidates() -> Vec<(String, &'static str)> {
-    let mut out: Vec<(String, &'static str)> = Vec::new();
-    if let Ok(host) = std::env::var("DOCKER_HOST") {
-        let kind = kind_of(&host);
-        out.push((host, kind));
-    }
-    #[cfg(unix)]
-    {
-        let mut socks: Vec<PathBuf> = Vec::new();
-        if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-            socks.push(PathBuf::from(dir).join("podman/podman.sock"));
+    /// Status changes from every provider, merged. Ends when all of them disconnect.
+    pub fn watch(&self) -> Result<BoxStream<'static, SandboxStatusEvent>> {
+        if !self.available() {
+            return Err(self.default_provider().err().unwrap());
         }
-        if let Ok(home) = std::env::var("HOME") {
-            let home = PathBuf::from(home);
-            socks.push(home.join(".docker/run/docker.sock")); // Docker Desktop (per-user)
-            socks.push(home.join(".orbstack/run/docker.sock"));
-            socks.push(home.join(".colima/default/docker.sock"));
-            socks.push(home.join(".local/share/containers/podman/machine/podman.sock"));
-            // Podman machine (macOS)
-        }
-        socks.push("/var/run/docker.sock".into());
-        socks.push("/run/podman/podman.sock".into());
-        out.extend(socks.into_iter().filter(|p| p.exists()).map(|p| {
-            let s = format!("unix://{}", p.display());
-            let kind = kind_of(&s);
-            (s, kind)
-        }));
+        let streams = self.providers.iter().map(|p| p.watch()).collect::<Result<Vec<_>>>()?;
+        Ok(stream::select_all(streams).boxed())
     }
-    #[cfg(windows)]
-    {
-        out.push((r"npipe:////./pipe/docker_engine".into(), "docker"));
-        out.push((r"npipe:////./pipe/podman-machine-default".into(), "podman"));
-    }
-    out
-}
-
-fn connect(endpoint: &str) -> Option<Docker> {
-    let v = bollard::API_DEFAULT_VERSION;
-    #[cfg(unix)]
-    if let Some(path) = endpoint.strip_prefix("unix://") {
-        return Docker::connect_with_unix(path, 120, v).ok();
-    }
-    #[cfg(windows)]
-    if let Some(pipe) = endpoint.strip_prefix("npipe://") {
-        return Docker::connect_with_named_pipe(pipe, 120, v).ok();
-    }
-    if endpoint.starts_with("tcp://") || endpoint.starts_with("http://") {
-        return Docker::connect_with_http(endpoint, 120, v).ok();
-    }
-    None
-}
-
-pub fn network_name(ns: &str) -> String {
-    format!("kalypso-ns-{ns}")
-}
-
-pub(crate) fn container_name(ns: &str, id: &str) -> String {
-    format!("kalypso-{ns}-{id}")
-}
-
-fn rt_err(e: bollard::errors::Error) -> KalypsoError {
-    KalypsoError::Runtime(e.to_string())
 }
 
 pub fn list(db: &Db, ns: &str) -> Result<Vec<SandboxRecord>> {
@@ -268,15 +223,22 @@ pub fn validate(spec: &NewSandbox) -> Result<()> {
     Ok(())
 }
 
-/// Create a hardened container for the sandbox. It is created stopped.
+/// Create a sandbox with the requested (or default) provider. It is created stopped.
 pub async fn create(db: &Db, rt: &Runtime, ns: &str, spec: NewSandbox) -> Result<SandboxRecord> {
     validate(&spec)?;
-    let docker = rt.docker()?;
+    let provider = match &spec.provider {
+        Some(kind) => rt.provider(kind)?,
+        None => rt.default_provider()?,
+    };
+    let info = provider.info();
+    if !info.network_modes.contains(&spec.network) {
+        return Err(KalypsoError::Invalid(format!("{} sandboxes don't support the {} network mode", info.label, spec.network)));
+    }
     let id = new_id("sb");
     db.with(|c| {
         c.execute(
             "INSERT INTO sandboxes (id, ns, name, runtime, image, cpu, mem_mb, network, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'creating')",
-            (&id, ns, &spec.name, &rt.kind, &spec.image, spec.cpu, spec.mem_mb, &spec.network),
+            (&id, ns, &spec.name, &info.kind, &spec.image, spec.cpu, spec.mem_mb, &spec.network),
         )
         .map_err(|e| match e {
             rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => KalypsoError::Conflict(format!("sandbox {}", spec.name)),
@@ -285,60 +247,9 @@ pub async fn create(db: &Db, rt: &Runtime, ns: &str, spec: NewSandbox) -> Result
         Ok(())
     })?;
 
-    let result: Result<String> = async {
-        rt.pull(&spec.image).await?;
-        let network_mode = match spec.network.as_str() {
-            "isolated" => "none".to_string(),
-            "namespace" => {
-                rt.ensure_network(ns).await?;
-                network_name(ns)
-            }
-            // TODO(#33): route through the egress proxy with the namespace allow-list.
-            _ => "bridge".to_string(),
-        };
-        let labels = HashMap::from([("kalypso.ns".to_string(), ns.to_string()), ("kalypso.sandbox".to_string(), id.clone())]);
-        let host = |limits: bool| HostConfig {
-            // A tiny init as PID 1 so stop signals are handled and containers stop promptly.
-            init: Some(true),
-            readonly_rootfs: Some(true),
-            cap_drop: Some(vec!["ALL".into()]),
-            security_opt: Some(vec!["no-new-privileges".into()]),
-            network_mode: Some(network_mode.clone()),
-            nano_cpus: limits.then_some((spec.cpu * 1e9) as i64),
-            memory: limits.then(|| spec.mem_mb * 1024 * 1024),
-            tmpfs: Some(HashMap::from([
-                ("/tmp".to_string(), "rw,size=256m".to_string()),
-                ("/run/kalypso/secrets".to_string(), "rw,size=1m,mode=0700".to_string()),
-            ])),
-            // Anonymous volume: removed together with the container.
-            mounts: Some(vec![Mount { target: Some("/work".into()), typ: Some(MountTypeEnum::VOLUME), ..Default::default() }]),
-            ..Default::default()
-        };
-        let config = |limits: bool| Config {
-            image: Some(spec.image.clone()),
-            cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
-            working_dir: Some("/work".into()),
-            labels: Some(labels.clone()),
-            host_config: Some(host(limits)),
-            ..Default::default()
-        };
-        let opts = || Some(CreateContainerOptions { name: container_name(ns, &id), platform: None });
-        let created = match docker.create_container(opts(), config(true)).await {
-            Ok(r) => r,
-            // Rootless engines without cgroup delegation reject resource limits.
-            Err(e) if e.to_string().contains("cgroup") => {
-                tracing::warn!(error = %e, "resource limits unsupported here; creating without them");
-                docker.create_container(opts(), config(false)).await.map_err(rt_err)?
-            }
-            Err(e) => return Err(rt_err(e)),
-        };
-        Ok(created.id)
-    }
-    .await;
-
-    match result {
-        Ok(container_id) => {
-            set_status(db, &id, "stopped", Some(&container_id))?;
+    match provider.create(ns, &id, &spec).await {
+        Ok(handle) => {
+            set_status(db, &id, "stopped", Some(&handle))?;
             db.audit(Some(ns), "user", "sandbox.create", &spec.name)?;
             get(db, ns, &id)
         }
@@ -349,99 +260,56 @@ pub async fn create(db: &Db, rt: &Runtime, ns: &str, spec: NewSandbox) -> Result
     }
 }
 
+/// The provider that runs this sandbox.
+fn provider_for(rt: &Runtime, rec: &SandboxRecord) -> Result<Arc<dyn SandboxProvider>> {
+    rt.provider(&rec.runtime)
+}
+
 pub async fn start(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
     let rec = get(db, ns, id)?;
-    let name = container_name(ns, id);
-    let docker = rt.docker()?;
+    let p = provider_for(rt, &rec)?;
     if rec.status == "paused" {
-        docker.unpause_container(&name).await.map_err(rt_err)?;
+        p.resume(ns, id).await?;
     } else {
-        docker.start_container(&name, None::<StartContainerOptions<String>>).await.map_err(rt_err)?;
+        p.start(ns, id).await?;
     }
     refresh(db, rt, ns, id).await
 }
 
 pub async fn pause(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
-    get(db, ns, id)?;
-    rt.docker()?.pause_container(&container_name(ns, id)).await.map_err(rt_err)?;
+    let rec = get(db, ns, id)?;
+    provider_for(rt, &rec)?.pause(ns, id).await?;
     refresh(db, rt, ns, id).await
 }
 
 pub async fn stop(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
-    get(db, ns, id)?;
-    rt.docker()?.stop_container(&container_name(ns, id), Some(StopContainerOptions { t: 5 })).await.map_err(rt_err)?;
+    let rec = get(db, ns, id)?;
+    provider_for(rt, &rec)?.stop(ns, id).await?;
     refresh(db, rt, ns, id).await
 }
 
 pub async fn remove(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<()> {
     let rec = get(db, ns, id)?;
-    if rt.available() {
-        let res = rt
-            .docker()?
-            .remove_container(&container_name(ns, id), Some(RemoveContainerOptions { force: true, v: true, ..Default::default() }))
-            .await;
-        match res {
-            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
-            Err(e) => return Err(rt_err(e)),
-        }
+    // If the provider is gone (engine uninstalled), still let the record be deleted.
+    if let Ok(p) = provider_for(rt, &rec) {
+        p.remove(ns, id).await?;
     }
     db.with(|c| Ok(c.execute("DELETE FROM sandboxes WHERE id = ?1", [id])?))?;
     db.audit(Some(ns), "user", "sandbox.delete", &rec.name)
 }
 
-/// Run a command inside a running sandbox and collect its output.
-/// With `detach`, start it in the background and return immediately.
-pub async fn exec(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], detach: bool) -> Result<(i64, String)> {
-    let docker = rt.docker()?;
-    let created = docker
-        .create_exec(
-            &container_name(ns, id),
-            CreateExecOptions { cmd: Some(cmd.to_vec()), attach_stdout: Some(!detach), attach_stderr: Some(!detach), ..Default::default() },
-        )
-        .await
-        .map_err(rt_err)?;
-    let mut out = String::new();
-    match docker.start_exec(&created.id, Some(StartExecOptions { detach, ..Default::default() })).await.map_err(rt_err)? {
-        StartExecResults::Attached { mut output, .. } => {
-            while let Some(chunk) = output.next().await {
-                out.push_str(&chunk.map_err(rt_err)?.to_string());
-            }
-        }
-        StartExecResults::Detached => return Ok((0, out)),
-    }
-    let code = docker.inspect_exec(&created.id).await.map_err(rt_err)?.exit_code.unwrap_or(-1);
-    Ok((code, out))
+/// Read the real state from the provider and store it.
+pub async fn refresh(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
+    let rec = get(db, ns, id)?;
+    let status = provider_for(rt, &rec)?.status(ns, id).await?;
+    set_status(db, id, status, None)?;
+    get(db, ns, id)
 }
 
-/// Run a command and feed `input` to its stdin, so data never appears in the
-/// command line, the process list or `inspect` output.
-async fn exec_with_stdin(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], input: &[u8]) -> Result<i64> {
-    use tokio::io::AsyncWriteExt;
-    let docker = rt.docker()?;
-    let created = docker
-        .create_exec(
-            &container_name(ns, id),
-            CreateExecOptions {
-                cmd: Some(cmd.to_vec()),
-                attach_stdin: Some(true),
-                attach_stdout: Some(true),
-                attach_stderr: Some(true),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(rt_err)?;
-    match docker.start_exec(&created.id, None).await.map_err(rt_err)? {
-        StartExecResults::Attached { mut output, input: mut stdin } => {
-            stdin.write_all(input).await?;
-            stdin.shutdown().await?;
-            while let Some(chunk) = output.next().await {
-                chunk.map_err(rt_err)?;
-            }
-        }
-        StartExecResults::Detached => return Err(KalypsoError::Runtime("exec unexpectedly detached".into())),
-    }
-    Ok(docker.inspect_exec(&created.id).await.map_err(rt_err)?.exit_code.unwrap_or(-1))
+/// Run a command in a sandbox of the default provider and collect its output.
+/// Code that has the record uses its provider directly.
+pub async fn exec(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], detach: bool) -> Result<(i64, String)> {
+    rt.default_provider()?.exec(ns, id, cmd, detach).await
 }
 
 pub const SECRETS_DIR: &str = "/run/kalypso/secrets";
@@ -450,15 +318,18 @@ pub const SECRETS_DIR: &str = "/run/kalypso/secrets";
 /// replacing whatever was there. Returns how many were delivered.
 pub async fn deliver_secrets(db: &Db, vault: &Vault, rt: &Runtime, ns: &str, id: &str) -> Result<usize> {
     let rec = get(db, ns, id)?;
-    let secrets = vault.for_delivery(db, ns)?;
-    let (code, out) = exec(rt, ns, id, &["sh", "-c", &format!("rm -f {SECRETS_DIR}/*")], false).await?;
+    let p = provider_for(rt, &rec)?;
+    let mut secrets = vault.for_delivery(db, ns)?;
+    // Model keys stay with the gateway; the sandbox gets a key that only works through it.
+    secrets.push(("KALYPSO_GATEWAY_KEY".to_string(), crate::gateway::mint_for_sandbox(db, ns, id, &rec.name)?));
+    let (code, out) = p.exec(ns, id, &["sh", "-c", &format!("rm -f {SECRETS_DIR}/*")], false).await?;
     if code != 0 {
         return Err(KalypsoError::Runtime(format!("could not clear secrets in {}: {out}", rec.name)));
     }
     for (key, value) in &secrets {
         // Keys are validated as [A-Z0-9_], so they are safe as file names.
         let script = format!("umask 077 && cat > {SECRETS_DIR}/$1");
-        let code = exec_with_stdin(rt, ns, id, &["sh", "-c", &script, "sh", key], value.as_bytes()).await?;
+        let code = p.exec_with_stdin(ns, id, &["sh", "-c", &script, "sh", key], value.as_bytes()).await?;
         if code != 0 {
             return Err(KalypsoError::Runtime(format!("could not write secret {key} into {}", rec.name)));
         }
@@ -480,66 +351,10 @@ pub async fn redeliver_running(db: &Db, vault: &Vault, rt: &Runtime, ns: &str) {
 
 /// The sandbox's address on its namespace network, if it is attached to one.
 pub async fn namespace_ip(rt: &Runtime, ns: &str, id: &str) -> Result<Option<String>> {
-    let info = rt.docker()?.inspect_container(&container_name(ns, id), None::<InspectContainerOptions>).await.map_err(rt_err)?;
-    Ok(info
-        .network_settings
-        .and_then(|n| n.networks)
-        .and_then(|mut nets| nets.remove(&network_name(ns)))
-        .and_then(|n| n.ip_address)
-        .filter(|ip| !ip.is_empty()))
+    rt.default_provider()?.address(ns, id).await
 }
 
-/// A sandbox changed state in the engine, whoever caused it.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
-#[ts(export)]
-pub struct SandboxStatusEvent {
-    pub ns: String,
-    pub id: String,
-    pub status: String,
-}
-
-/// Map a container event action to the status KALYPSO shows. `None` for actions that don't change it.
-pub fn status_for_action(action: &str) -> Option<&'static str> {
-    match action {
-        "start" | "unpause" | "restart" => Some("running"),
-        "pause" => Some("paused"),
-        "die" | "stop" | "kill" => Some("stopped"),
-        "destroy" | "remove" => Some("missing"),
-        _ => None,
-    }
-}
-
-impl Runtime {
-    /// Container events for KALYPSO sandboxes only. Ends when the engine connection drops.
-    pub fn watch(&self) -> Result<impl Stream<Item = SandboxStatusEvent> + Send + 'static> {
-        let docker = self.docker()?.clone();
-        let filters = HashMap::from([
-            ("type".to_string(), vec!["container".to_string()]),
-            ("label".to_string(), vec!["kalypso.sandbox".to_string()]),
-        ]);
-        // The request is only sent on first poll, so ask the engine to replay from now:
-        // nothing that happens between this call and the first read is lost.
-        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).ok();
-        Ok(docker.events(Some(EventsOptions::<String> { since, filters, ..Default::default() })).filter_map(|msg| async move {
-            let msg = match msg {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::warn!(error = %e, "unreadable container event");
-                    return None;
-                }
-            };
-            let status = status_for_action(msg.action.as_deref()?)?;
-            let attrs = msg.actor?.attributes?;
-            Some(SandboxStatusEvent {
-                ns: attrs.get("kalypso.ns")?.clone(),
-                id: attrs.get("kalypso.sandbox")?.clone(),
-                status: status.to_string(),
-            })
-        }))
-    }
-}
-
-/// Record a status reported by the engine. Unknown ids (already deleted here) are ignored.
+/// Record a status reported by a provider. Unknown ids (already deleted here) are ignored.
 pub fn apply_event(db: &Db, ev: &SandboxStatusEvent) -> Result<bool> {
     let n = db.with(|c| {
         Ok(c.execute("UPDATE sandboxes SET status = ?3 WHERE id = ?1 AND ns = ?2 AND status != ?3", (&ev.id, &ev.ns, &ev.status))?)
@@ -547,35 +362,120 @@ pub fn apply_event(db: &Db, ev: &SandboxStatusEvent) -> Result<bool> {
     Ok(n > 0)
 }
 
-/// Read the real state from the engine and store it.
-pub async fn refresh(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<SandboxRecord> {
-    get(db, ns, id)?;
-    let info = rt.docker()?.inspect_container(&container_name(ns, id), None::<InspectContainerOptions>).await.map_err(rt_err)?;
-    let state = info.state.unwrap_or_default();
-    let status = if state.paused == Some(true) {
-        "paused"
-    } else if state.running == Some(true) {
-        "running"
-    } else {
-        "stopped"
-    };
-    set_status(db, id, status, None)?;
-    get(db, ns, id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bollard::container::{InspectContainerOptions, StartContainerOptions};
 
     fn spec(name: &str) -> NewSandbox {
-        NewSandbox { name: name.into(), image: "docker.io/library/alpine:3.20".into(), cpu: 1.0, mem_mb: 256, network: "namespace".into() }
+        NewSandbox {
+            name: name.into(),
+            image: "docker.io/library/alpine:3.20".into(),
+            cpu: 1.0,
+            mem_mb: 256,
+            network: "namespace".into(),
+            provider: None,
+        }
     }
 
-    #[test]
-    fn endpoint_kinds() {
-        assert_eq!(kind_of("unix:///run/user/1000/podman/podman.sock"), "podman");
-        assert_eq!(kind_of("npipe:////./pipe/docker_engine"), "docker");
-        assert!(connect("ftp://nope").is_none());
+    /// A provider that keeps sandboxes in memory: proves a new backend plugs in
+    /// through the trait alone, with no changes to records, IPC or namespaces.
+    #[derive(Default)]
+    struct FakeProvider {
+        boxes: std::sync::Mutex<std::collections::HashMap<String, &'static str>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SandboxProvider for FakeProvider {
+        fn info(&self) -> ProviderInfo {
+            ProviderInfo {
+                kind: "fake".into(),
+                label: "Fake".into(),
+                isolation: "microvm".into(),
+                network_modes: vec!["isolated".into()],
+                resource_limits: false,
+                remote: false,
+            }
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        async fn prepare_namespace(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn teardown_namespace(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn create(&self, _: &str, id: &str, _: &NewSandbox) -> Result<String> {
+            self.boxes.lock().unwrap().insert(id.into(), "stopped");
+            Ok(format!("fake-{id}"))
+        }
+        async fn start(&self, _: &str, id: &str) -> Result<()> {
+            self.boxes.lock().unwrap().insert(id.into(), "running");
+            Ok(())
+        }
+        async fn resume(&self, ns: &str, id: &str) -> Result<()> {
+            self.start(ns, id).await
+        }
+        async fn pause(&self, _: &str, id: &str) -> Result<()> {
+            self.boxes.lock().unwrap().insert(id.into(), "paused");
+            Ok(())
+        }
+        async fn stop(&self, _: &str, id: &str) -> Result<()> {
+            self.boxes.lock().unwrap().insert(id.into(), "stopped");
+            Ok(())
+        }
+        async fn remove(&self, _: &str, id: &str) -> Result<()> {
+            self.boxes.lock().unwrap().remove(id);
+            Ok(())
+        }
+        async fn status(&self, _: &str, id: &str) -> Result<&'static str> {
+            self.boxes.lock().unwrap().get(id).copied().ok_or_else(|| KalypsoError::NotFound(id.into()))
+        }
+        async fn exec(&self, _: &str, _: &str, _: &[&str], _: bool) -> Result<(i64, String)> {
+            Ok((0, String::new()))
+        }
+        async fn exec_with_stdin(&self, _: &str, _: &str, _: &[&str], _: &[u8]) -> Result<i64> {
+            Ok(0)
+        }
+        async fn open_stream(&self, _: &str, _: &str, _: &[&str]) -> Result<ExecStream> {
+            Err(KalypsoError::Runtime("no streams in the fake".into()))
+        }
+        async fn address(&self, _: &str, _: &str) -> Result<Option<String>> {
+            Ok(None)
+        }
+        fn watch(&self) -> Result<BoxStream<'static, SandboxStatusEvent>> {
+            Ok(stream::empty().boxed())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_second_provider_plugs_in_through_the_trait() {
+        let fake = Arc::new(FakeProvider::default());
+        let rt = Runtime::with(vec![fake.clone()]);
+        assert_eq!(rt.kind, "fake");
+        assert_eq!(rt.infos()[0].isolation, "microvm");
+        let db = Db::open_in_memory().unwrap();
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES ('lab','lab')", [])?)).unwrap();
+
+        // The provider's capabilities are enforced: no namespace network here.
+        let err = create(&db, &rt, "lab", spec("vm")).await.unwrap_err();
+        assert_eq!(err.code(), "invalid");
+
+        let isolated = NewSandbox { network: "isolated".into(), ..spec("vm") };
+        let sb = create(&db, &rt, "lab", isolated).await.unwrap();
+        assert_eq!((sb.runtime.as_str(), sb.container_id.as_deref()), ("fake", Some(format!("fake-{}", sb.id).as_str())));
+        assert_eq!(start(&db, &rt, "lab", &sb.id).await.unwrap().status, "running");
+        assert_eq!(pause(&db, &rt, "lab", &sb.id).await.unwrap().status, "paused");
+        assert_eq!(start(&db, &rt, "lab", &sb.id).await.unwrap().status, "running");
+        assert_eq!(stop(&db, &rt, "lab", &sb.id).await.unwrap().status, "stopped");
+        remove(&db, &rt, "lab", &sb.id).await.unwrap();
+        assert!(list(&db, "lab").unwrap().is_empty());
+        assert!(fake.boxes.lock().unwrap().is_empty());
+
+        // Asking for a provider that isn't installed is a clear error.
+        let other = NewSandbox { provider: Some("e2b".into()), ..spec("x") };
+        assert_eq!(create(&db, &rt, "lab", other).await.unwrap_err().code(), "runtime");
     }
 
     #[test]
@@ -610,10 +510,16 @@ mod tests {
         vault.create_ns_key(&db, &ns).unwrap();
         let token = vault.set(&db, &ns, "API_TOKEN", "tok-123 with spaces\nand a newline", "namespace").unwrap();
         vault.set(&db, &ns, "AGENT_ONLY", "not-for-everyone", "agent").unwrap();
+        vault.set(&db, &ns, "ANTHROPIC_API_KEY", "sk-ant-model-key", "gateway").unwrap();
 
         let sb = create(&db, &rt, &ns, spec("vaulted")).await.unwrap();
         start(&db, &rt, &ns, &sb.id).await.unwrap();
-        assert_eq!(deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap(), 1);
+        // API_TOKEN plus the sandbox's own gateway key.
+        assert_eq!(deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap(), 2);
+        let (_, gk) = exec(&rt, &ns, &sb.id, &["cat", &format!("{SECRETS_DIR}/KALYPSO_GATEWAY_KEY")], false).await.unwrap();
+        assert!(gk.starts_with("kx_"));
+        let (_, listing) = exec(&rt, &ns, &sb.id, &["sh", "-c", &format!("cat {SECRETS_DIR}/*")], false).await.unwrap();
+        assert!(!listing.contains("sk-ant-model-key"), "model keys must stay with the gateway");
 
         let (_, body) = exec(&rt, &ns, &sb.id, &["cat", &format!("{SECRETS_DIR}/API_TOKEN")], false).await.unwrap();
         assert_eq!(body, "tok-123 with spaces\nand a newline");
@@ -634,6 +540,64 @@ mod tests {
         rt.remove_network(&ns).await.unwrap();
     }
 
+    /// A sandbox with no network at all reaches a model only through the gateway socket,
+    /// and the provider key never enters it.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn sandbox_reaches_the_model_gateway_through_its_socket() {
+        use crate::gateway::{pricing::Pricing, summary, Gateway};
+        use std::sync::Arc;
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Arc::new(Db::open_in_memory().unwrap());
+        let vault = Arc::new(Vault::ephemeral());
+        let ns = format!("gw{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        vault.create_ns_key(&db, &ns).unwrap();
+
+        // A stand-in for the provider that echoes the key it was given.
+        let up = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_url = format!("http://{}", up.local_addr().unwrap());
+        let app = axum::Router::new().fallback(|h: axum::http::HeaderMap| async move {
+            let key = h.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+            axum::Json(serde_json::json!({"model": "claude-opus-5-5", "saw_key": key, "usage": {"input_tokens": 10, "output_tokens": 5}}))
+        });
+        tokio::spawn(async move { axum::serve(up, app).await.unwrap() });
+        vault.set(&db, &ns, "ANTHROPIC_API_KEY", "sk-ant-model-key", "gateway").unwrap();
+        vault.set(&db, &ns, "ANTHROPIC_BASE_URL", &up_url, "gateway").unwrap();
+
+        let gw = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
+        // Never removed while tests run: other sandboxes created meanwhile mount it too.
+        gw.listen_unix(std::env::temp_dir().join(format!("kalypso-gw-test-{}", std::process::id()))).await.unwrap();
+
+        let mut s = spec("modelcaller");
+        s.image = "docker.io/curlimages/curl:8.10.1".into();
+        s.network = "isolated".into();
+        let sb = create(&db, &rt, &ns, s).await.unwrap();
+        start(&db, &rt, &ns, &sb.id).await.unwrap();
+        deliver_secrets(&db, &vault, &rt, &ns, &sb.id).await.unwrap();
+
+        let script = format!(
+            "curl -sS --unix-socket {}/gateway.sock -H \"x-api-key: $(cat {SECRETS_DIR}/KALYPSO_GATEWAY_KEY)\" \
+             -H 'content-type: application/json' -d '{{\"model\":\"claude-opus-5-5\"}}' {}/anthropic/v1/messages",
+            crate::gateway::SANDBOX_SOCKET_DIR,
+            crate::gateway::SANDBOX_URL,
+        );
+        let (code, body) = exec(&rt, &ns, &sb.id, &["sh", "-c", &script], false).await.unwrap();
+        assert_eq!(code, 0, "{body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["saw_key"], "sk-ant-model-key");
+        let (_, everywhere) =
+            exec(&rt, &ns, &sb.id, &["sh", "-c", "grep -rl sk-ant-model-key /run /tmp /work 2>/dev/null; true"], false).await.unwrap();
+        assert_eq!(everywhere.trim(), "", "provider key found inside the sandbox");
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(summary(&db, Some(&ns), 1).unwrap().totals.requests, 1);
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
+    }
+
     /// A port inside a sandbox on an internal network is reachable on 127.0.0.1 through a forward.
     #[tokio::test]
     async fn port_forward_reaches_a_server_inside() {
@@ -652,8 +616,8 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         let fwd = crate::forward::Forwards::default();
-        let f = fwd.open(rt.docker().unwrap().clone(), container_name(&ns, &sb.id), &ns, &sb.id, 8080).await.unwrap();
-        assert_eq!(fwd.open(rt.docker().unwrap().clone(), container_name(&ns, &sb.id), &ns, &sb.id, 8080).await.unwrap(), f);
+        let f = fwd.open(rt.provider(&sb.runtime).unwrap(), &ns, &sb.id, 8080).await.unwrap();
+        assert_eq!(fwd.open(rt.provider(&sb.runtime).unwrap(), &ns, &sb.id, 8080).await.unwrap(), f);
 
         let mut conn = tokio::net::TcpStream::connect(("127.0.0.1", f.host_port)).await.unwrap();
         conn.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
@@ -714,15 +678,6 @@ mod tests {
         }
         rt.remove_network(&a).await.unwrap();
         rt.remove_network(&b).await.unwrap();
-    }
-
-    #[test]
-    fn actions_map_to_statuses() {
-        assert_eq!(status_for_action("start"), Some("running"));
-        assert_eq!(status_for_action("die"), Some("stopped"));
-        assert_eq!(status_for_action("pause"), Some("paused"));
-        assert_eq!(status_for_action("destroy"), Some("missing"));
-        assert_eq!(status_for_action("exec_create"), None);
     }
 
     /// Changes made outside KALYPSO (here: straight through the engine API) arrive as events.

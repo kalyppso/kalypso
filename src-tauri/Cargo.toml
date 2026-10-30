@@ -26,7 +26,14 @@ chacha20poly1305 = "0.10"
 bollard = "0.18"
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "apple-native", "windows-native"] }
 tracing-appender = "0.2"
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "http2"] }
+toml = "0.8"
+sha2 = "0.10"
+bytes = "1"
 
 [dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tauri = { version = "2", features = ["test"] }
 tempfile = "3.27.0"

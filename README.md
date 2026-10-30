@@ -56,6 +56,18 @@ cargo clippy --all-targets -- -D warnings
 
 TypeScript types for the IPC layer are generated from the Rust structs into `src/bindings/` when the tests run. CI fails if they drift.
 
+## Contributing
+
+Commits and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org): `type(scope): subject`.
+
+```
+feat(tracker): import tickets from Jira
+fix(sandbox): detect Podman on Windows
+docs(readme): add screenshots
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Pull requests are squash-merged, so the PR title becomes the commit on `main`, and CI checks it.
+
 ## Layout
 
 ```

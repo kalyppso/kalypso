@@ -6,6 +6,7 @@ import { Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors 
 import "../styles/pages.css";
 import type { Sandbox } from "../types";
 import type { PortForward } from "../bindings/PortForward";
+import type { ProviderInfo } from "../bindings/ProviderInfo";
 
 export function Sandboxes() {
   const { state, dispatch } = useStore();
@@ -94,6 +95,12 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
 
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  // Only shown when there is a choice; with one engine the form stays as it was.
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [provider, setProvider] = useState<string>("");
+  useEffect(() => {
+    if (isLive()) api.sandboxProviders().then(setProviders).catch(() => {});
+  }, []);
   const create = () => {
     const name = form.name.trim();
     const ok = check({
@@ -108,7 +115,7 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
     if (!ok) return;
     if (isLive()) {
       setSaving(true);
-      api.sandboxCreate(state.ns, { name: form.name.trim(), image: form.image.trim(), cpu: form.cpu, mem_mb: form.memMb, network: form.network })
+      api.sandboxCreate(state.ns, { name: form.name.trim(), image: form.image.trim(), cpu: form.cpu, mem_mb: form.memMb, network: form.network, provider: provider || undefined })
         .then(() => syncNamespace(state.ns, dispatch))
         .then(() => { toast(`Created ${form.name.trim()}`); onClose(); })
         .catch((e) => toast(errorMessage(e), "err"))
@@ -128,7 +135,14 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
         <input className="input" autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="repo-workspace" />
       </Field>
       <div className="field-row">
-        {/* The desktop build uses whichever engine it detected; Firecracker arrives in #35. */}
+        {providers.length > 1 && (
+          <label className="field">Provider
+            <select className="select" value={provider} onChange={(e) => setProvider(e.target.value)}>
+              {providers.map((p, i) => <option key={p.kind} value={i === 0 ? "" : p.kind}>{p.label} ({p.isolation}{p.remote ? ", hosted" : ""})</option>)}
+            </select>
+          </label>
+        )}
+        {/* The desktop build uses the providers it detected (#47). */}
         {!isLive() && (
           <label className="field">Runtime
             <select className="select" value={form.runtime} onChange={(e) => set("runtime", e.target.value as Sandbox["runtime"])}>

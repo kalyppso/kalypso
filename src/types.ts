@@ -48,7 +48,7 @@ export interface Sandbox {
   id: string;
   ns: string;
   name: string;
-  runtime: "docker" | "podman" | "firecracker";
+  runtime: string; // provider kind: "docker", "podman", "microsandbox", …
   image: string;
   status: SandboxStatus;
   cpu: number; // cores
@@ -62,7 +62,7 @@ export interface Secret {
   ns: string;
   key: string;
   value: string;
-  scope: "namespace" | "agent";
+  scope: "namespace" | "agent" | "gateway";
   updatedAt: string;
 }
 

@@ -8,7 +8,7 @@ use ts_rs::TS;
 use crate::error::{KalypsoError, Result};
 
 /// Migrations run in order; `PRAGMA user_version` records how many have been applied.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql"), include_str!("migrations/0002_gateway.sql")];
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]

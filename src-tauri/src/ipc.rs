@@ -1,21 +1,25 @@
 //! Tauri commands. Every command that touches namespaced data takes `ns` first;
 //! the services check ownership so a buggy view can't cross namespaces.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use tauri::State;
 
 use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
+use crate::gateway::{self, Gateway, GatewayInfo, GatewayKey, MintedKey, UsageSummary};
 use crate::ns::{self, Namespace};
-use crate::sandbox::{self, NewSandbox, Runtime, SandboxRecord};
+use crate::sandbox::{self, NewSandbox, ProviderInfo, Runtime, SandboxRecord};
 use crate::store::{AuditEntry, Db};
 use crate::vault::{KeySource, SecretMeta, Vault};
 
 pub struct AppState {
-    pub db: Db,
-    pub vault: Vault,
+    pub db: Arc<Db>,
+    pub vault: Arc<Vault>,
     pub rt: Runtime,
     pub forwards: Forwards,
+    pub gateway: Arc<Gateway>,
 }
 
 fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
@@ -104,7 +108,48 @@ pub async fn secret_delete(s: State<'_, AppState>, ns: String, id: String) -> Re
     Ok(())
 }
 
+// ---------- Model gateway ----------
+
+#[tauri::command]
+pub fn gateway_info(s: State<'_, AppState>) -> GatewayInfo {
+    s.gateway.info()
+}
+
+#[tauri::command]
+pub fn gateway_key_list(s: State<'_, AppState>, ns: String) -> Result<Vec<GatewayKey>> {
+    ensure_ns(&s, &ns)?;
+    gateway::list_keys(&s.db, &ns)
+}
+
+/// A key for a tool outside KALYPSO. The token is returned once and never again.
+#[tauri::command]
+pub fn gateway_key_create(s: State<'_, AppState>, ns: String, label: String) -> Result<MintedKey> {
+    ensure_ns(&s, &ns)?;
+    gateway::mint(&s.db, &ns, None, &label)
+}
+
+#[tauri::command]
+pub fn gateway_key_revoke(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    gateway::revoke_key(&s.db, &ns, &id)
+}
+
+/// Spend over the last `days` days; all namespaces when `ns` is omitted.
+#[tauri::command]
+pub fn usage_summary(s: State<'_, AppState>, ns: Option<String>, days: Option<u32>) -> Result<UsageSummary> {
+    if let Some(ns) = &ns {
+        ensure_ns(&s, ns)?;
+    }
+    gateway::summary(&s.db, ns.as_deref(), days.unwrap_or(30))
+}
+
 // ---------- Sandboxes ----------
+
+/// Sandbox providers available on this machine, default first.
+#[tauri::command]
+pub fn sandbox_providers(s: State<'_, AppState>) -> Vec<ProviderInfo> {
+    s.rt.infos()
+}
 
 #[tauri::command]
 pub fn sandbox_list(s: State<'_, AppState>, ns: String) -> Result<Vec<SandboxRecord>> {
@@ -153,7 +198,7 @@ pub async fn port_forward_open(s: State<'_, AppState>, ns: String, id: String, p
     if rec.status != "running" {
         return Err(KalypsoError::Invalid(format!("start {} before forwarding a port", rec.name)));
     }
-    s.forwards.open(s.rt.docker()?.clone(), sandbox::container_name(&ns, &id), &ns, &id, port).await
+    s.forwards.open(s.rt.provider(&rec.runtime)?, &ns, &id, port).await
 }
 
 #[tauri::command]
