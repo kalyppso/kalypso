@@ -342,7 +342,7 @@ pub async fn judge_text(
         serde_json::to_string(call).map_err(|e| KalypsoError::Runtime(format!("judge prompt serialization failed: {e}")))?,
     );
 
-    let (path, body, auth) = match format {
+    let (path, body, header_name, header_value) = match format {
         JudgeFormat::Anthropic => (
             "/v1/messages".to_string(),
             serde_json::json!({
@@ -350,7 +350,8 @@ pub async fn judge_text(
                 "max_tokens": 32,
                 "messages": [{"role": "user", "content": prompt}]
             }).to_string(),
-            ("x-api-key".to_string(), api_key.to_string()),
+            "x-api-key",
+            api_key.to_string(),
         ),
         JudgeFormat::OpenAi => (
             "/v1/chat/completions".to_string(),
@@ -358,14 +359,15 @@ pub async fn judge_text(
                 "model": "gpt-4.1",
                 "messages": [{"role": "user", "content": prompt}]
             }).to_string(),
-            ("authorization".to_string(), format!("Bearer {api_key}")),
+            "authorization",
+            format!("Bearer {api_key}"),
         ),
     };
 
     let url = format!("{base_url}{path}");
     let resp = http
         .post(&url)
-        .header(&auth.0, &auth.1)
+        .header(header_name, header_value)
         .header("content-type", "application/json")
         .body(body)
         .send()
