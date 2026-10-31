@@ -65,6 +65,10 @@ export const api = {
   policyEvents: (ns: string, limit = 200) => invoke<PolicyEventRecord[]>("policy_events", { ns, limit }),
   policyPending: (ns: string) => invoke<ApprovalRequest[]>("policy_pending", { ns }),
   policyDecide: (ns: string, id: string, approve: boolean, remember: boolean) => invoke<void>("policy_decide", { ns, id, approve, remember }),
+  termOpen: (ns: string, sandboxId: string, pane: string, rows: number, cols: number) => invoke<void>("term_open", { ns, sandboxId, pane, rows, cols }),
+  termWrite: (ns: string, pane: string, data: string) => invoke<void>("term_write", { ns, pane, data }),
+  termResize: (ns: string, pane: string, rows: number, cols: number) => invoke<void>("term_resize", { ns, pane, rows, cols }),
+  termClose: (ns: string, pane: string) => invoke<boolean>("term_close", { ns, pane }),
   usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),
   sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
@@ -140,3 +144,9 @@ export function useBudgetOverview(ns: string) {
 export const onPolicyApproval = (fn: (e: ApprovalRequest) => void) => listen<ApprovalRequest>("policy://approval", (e) => fn(e.payload));
 /** A policy decision was logged in this namespace. */
 export const onPolicyLog = (fn: (ns: string) => void) => listen<string>("policy://log", (e) => fn(e.payload));
+
+/** Terminal output for one pane, as bytes (src-tauri/src/terminal.rs). */
+export const onTermData = (pane: string, fn: (bytes: Uint8Array) => void) =>
+  listen<string>(`term://data/${pane}`, (e) => fn(Uint8Array.from(atob(e.payload), (c) => c.charCodeAt(0))));
+/** The pane's shell ended (exit, crash, or the sandbox stopped). */
+export const onTermExit = (pane: string, fn: () => void) => listen(`term://exit/${pane}`, () => fn());

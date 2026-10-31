@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bollard::container::{
     Config, CreateContainerOptions, InspectContainerOptions, LogOutput, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
-use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::CreateImageOptions;
 use bollard::models::{HostConfig, Mount, MountTypeEnum};
 use bollard::network::CreateNetworkOptions;
@@ -303,6 +303,51 @@ impl SandboxProvider for OciProvider {
             }),
             StartExecResults::Detached => Err(KalypsoError::Runtime("exec unexpectedly detached".into())),
         }
+    }
+
+    async fn open_tty(&self, ns: &str, id: &str, cmd: &[&str], cwd: &str, rows: u16, cols: u16) -> Result<(ExecStream, String)> {
+        let created = self
+            .docker
+            .create_exec(
+                &container_name(ns, id),
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    user: Some(EXEC_USER),
+                    working_dir: Some(cwd),
+                    env: Some(vec!["TERM=xterm-256color", "COLORTERM=truecolor", "LANG=C.UTF-8"]),
+                    tty: Some(true),
+                    attach_stdin: Some(true),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(rt_err)?;
+        let started =
+            self.docker.start_exec(&created.id, Some(StartExecOptions { tty: true, ..Default::default() })).await.map_err(rt_err)?;
+        let StartExecResults::Attached { output, input } = started else {
+            return Err(KalypsoError::Runtime("exec unexpectedly detached".into()));
+        };
+        // The size can only be set once the process runs.
+        self.resize_tty(&created.id, rows, cols).await?;
+        let output = output
+            .filter_map(|chunk| async move {
+                match chunk {
+                    // With a TTY everything arrives as one console stream.
+                    Ok(LogOutput::Console { message } | LogOutput::StdOut { message } | LogOutput::StdErr { message }) => {
+                        Some(Ok(message.to_vec()))
+                    }
+                    Ok(_) => None,
+                    Err(e) => Some(Err(std::io::Error::other(e.to_string()))),
+                }
+            })
+            .boxed();
+        Ok((ExecStream { output, input }, created.id))
+    }
+
+    async fn resize_tty(&self, handle: &str, rows: u16, cols: u16) -> Result<()> {
+        self.docker.resize_exec(handle, ResizeExecOptions { height: rows.max(1), width: cols.max(1) }).await.map_err(rt_err)
     }
 
     async fn address(&self, ns: &str, id: &str) -> Result<Option<String>> {

@@ -291,7 +291,11 @@ The gateway (§4.5) checks the applicable caps before forwarding each request; w
 
 ### 4.20 Terminal
 - **Panes:** each terminal pane is an **xterm.js** view attached to a sandbox. The layout is a binary split tree (`PaneNode`), saved per namespace. Panes split right or down, the dividers can be dragged, and Ctrl+Shift+D / E / W split and close.
-- **Backend:** each pane opens a PTY in Rust (`portable-pty`) running `docker exec -it <container> sh`, or a microVM console. Bytes stream over Tauri IPC (`term://data/<pane>`), and resizes go through `term_resize`.
+- **Backend** (`src-tauri/src/terminal.rs`): each pane opens an interactive shell through the sandbox provider's TTY exec. For Docker and Podman that is the engine API (`exec` with a TTY plus `resize`), so no `docker` CLI is needed, and microVM providers plug in through the same trait.
+  - The shell is `bash -l` when the image has it, otherwise `sh -l`, started in `/work`.
+  - Output streams to the pane as base64 on `term://data/<pane>`, and `term://exit/<pane>` fires when the shell ends. Input, `term_resize` and `term_close` go back over IPC.
+  - Closing a pane hangs up its shell (engines don't end an exec'd process when the connection drops). Stopping or deleting a sandbox closes its panes.
+  - A pane on a stopped sandbox says so and connects when the sandbox starts. Every session opened is audited.
 - **Scrollback:** sessions outlive the React view, so a pane keeps its scrollback while the layout around it changes.
 - **Policies:** terminal input from a person is not subject to agent policies, but an agent typing into a shared pane is.
 

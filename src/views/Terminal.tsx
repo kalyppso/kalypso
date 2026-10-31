@@ -256,7 +256,7 @@ function Shell({ node }: { node: Pane }) {
 
   useEffect(() => {
     getSession(node.id, {}, "", ctx).setContext(ctx);
-  }, [node.id, sandbox?.id]);
+  }, [node.id, sandbox?.id, sandbox?.status]);
 
   // Follow the app theme.
   useEffect(() => {

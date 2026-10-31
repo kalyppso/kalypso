@@ -11,6 +11,7 @@ pub mod ns;
 pub mod policy;
 pub mod sandbox;
 pub mod store;
+pub mod terminal;
 pub mod vault;
 
 use tauri::Manager;
@@ -83,6 +84,10 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::sandbox_pause,
         ipc::sandbox_stop,
         ipc::sandbox_delete,
+        ipc::term_open,
+        ipc::term_write,
+        ipc::term_resize,
+        ipc::term_close,
         ipc::port_forward_open,
         ipc::port_forward_list,
         ipc::port_forward_close,
@@ -133,7 +138,7 @@ pub fn run() {
             events::spawn_usage_events(app.handle().clone(), gw.subscribe());
             events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
             events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
-            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw });
+            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default() });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
         })

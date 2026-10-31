@@ -14,6 +14,7 @@ use crate::ns::{self, Namespace};
 use crate::policy::{self, ApprovalRequest, NewPolicy, Policy, PolicyEvent, PolicyPatch};
 use crate::sandbox::{self, NewSandbox, ProviderInfo, Runtime, SandboxRecord};
 use crate::store::{AuditEntry, Db};
+use crate::terminal::Terminals;
 use crate::vault::{KeySource, SecretMeta, Vault};
 
 pub struct AppState {
@@ -22,6 +23,7 @@ pub struct AppState {
     pub rt: Runtime,
     pub forwards: Forwards,
     pub gateway: Arc<Gateway>,
+    pub terminals: Terminals,
 }
 
 fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
@@ -264,6 +266,7 @@ pub async fn sandbox_pause(s: State<'_, AppState>, ns: String, id: String) -> Re
 pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
     let rec = sandbox::stop(&s.db, &s.rt, &ns, &id).await?;
     s.forwards.close_sandbox(&id);
+    s.terminals.close_sandbox(&ns, &id);
     Ok(rec)
 }
 
@@ -271,7 +274,61 @@ pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Res
 pub async fn sandbox_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
     sandbox::remove(&s.db, &s.rt, &ns, &id).await?;
     s.forwards.close_sandbox(&id);
+    s.terminals.close_sandbox(&ns, &id);
     Ok(())
+}
+
+// ---------- Terminals ----------
+
+/// Open a shell for `pane` in a running sandbox. Output arrives as base64 on
+/// `term://data/<pane>`; `term://exit/<pane>` fires when the shell ends.
+#[tauri::command]
+pub async fn term_open<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    s: State<'_, AppState>,
+    ns: String,
+    sandbox_id: String,
+    pane: String,
+    rows: u16,
+    cols: u16,
+) -> Result<()> {
+    use base64::Engine;
+    use tauri::Emitter;
+    ensure_ns(&s, &ns)?;
+    let (data_app, exit_app) = (app.clone(), app);
+    let (data_event, exit_event) = (format!("term://data/{pane}"), format!("term://exit/{pane}"));
+    s.terminals
+        .open(
+            &s.db,
+            &s.rt,
+            &ns,
+            &sandbox_id,
+            &pane,
+            rows,
+            cols,
+            move |bytes| {
+                let _ = data_app.emit(&data_event, base64::engine::general_purpose::STANDARD.encode(bytes));
+            },
+            move || {
+                let _ = exit_app.emit(&exit_event, ());
+            },
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn term_write(s: State<'_, AppState>, ns: String, pane: String, data: String) -> Result<()> {
+    s.terminals.write(&ns, &pane, data.as_bytes()).await
+}
+
+#[tauri::command]
+pub async fn term_resize(s: State<'_, AppState>, ns: String, pane: String, rows: u16, cols: u16) -> Result<()> {
+    s.terminals.resize(&ns, &pane, rows, cols).await
+}
+
+#[tauri::command]
+pub async fn term_close(s: State<'_, AppState>, ns: String, pane: String) -> Result<bool> {
+    Ok(s.terminals.close(&ns, &pane).await)
 }
 
 // ---------- Port forwarding ----------
