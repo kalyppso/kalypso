@@ -63,7 +63,7 @@ function specSummary(s: Spec): string {
     case "host": return [s.allow.length ? `Hosts not in a list of ${s.allow.length}` : "", s.deny.length ? `Hosts ${s.deny.join(", ")}` : ""].filter(Boolean).join("; ");
     case "secrets": return "Any secret value of this namespace";
     case "cost": return `Calls over $${(s.max / 1e6).toFixed(2)}`;
-    default: return "Plain language only: needs the policy judge (coming in #30) to be enforced";
+    default: return "Plain language: enforced by the policy judge.";
   }
 }
 
@@ -296,7 +296,7 @@ const CHECKS: { id: CheckKind; label: string; hint: string }[] = [
   { id: "host", label: "Hosts", hint: "Host names, one per line. *.example.com covers its subdomains." },
   { id: "secrets", label: "Secret values", hint: "Trips when a call contains any secret value from this namespace." },
   { id: "cost", label: "Cost per call", hint: "Trips when a single call is estimated to cost more than this." },
-  { id: "text", label: "Plain language", hint: "Stored and shown to agents. Enforcing it needs the policy judge (coming in #30)." },
+  { id: "text", label: "Plain language", hint: "Stored and shown to agents. Enforced by the policy judge." },
 ];
 
 /** The New policy form against the core: the rule in words, plus what the engine checks. */
