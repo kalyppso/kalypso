@@ -600,9 +600,9 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
     let text_policies: Vec<&policy::Policy> = policies.iter().filter(|p| matches!(p.spec, policy::Spec::Text)).collect();
     if !text_policies.is_empty() {
         if let Ok(Some((base_url, api_key, format))) = policy::find_llm_config(&*gw.db, &*gw.vault, &ns) {
-            for p in &text_policies {
+            for p in text_policies.iter() {
                 match policy::judge_text(&p.rule, &call, &gw.http, &base_url, &api_key, format).await {
-                    Ok(Some(reason)) => hits.push(policy::Hit { policy: (*p).clone(), reason }),
+                    Ok(Some(reason)) => hits.push(policy::Hit { policy: p.clone(), reason }),
                     Ok(None) => {}
                     Err(e) => tracing::warn!(error = %e, "policy judge failed for {}", p.name),
                 }

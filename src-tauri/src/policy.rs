@@ -402,11 +402,9 @@ pub async fn judge_text(
 
     let line = text.trim().lines().next().unwrap_or("");
     if line.starts_with("DENY:") {
-        Ok(Some(line[5..].trim().to_string()))
-    } else if line == "ALLOW" {
-        Ok(None)
+        Ok(Some(line.strip_prefix("DENY:").unwrap_or(line).trim().to_string()))
     } else {
-        Ok(None) // fail open on unexpected response
+        Ok(None) // fail open on unexpected response or ALLOW
     }
 }
 /// One line describing the call for logs and approval prompts, with secret values hidden.
