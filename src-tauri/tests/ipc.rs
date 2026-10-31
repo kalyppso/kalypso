@@ -23,7 +23,7 @@ fn app() -> WebviewWindow<tauri::test::MockRuntime> {
     let db = Arc::new(Db::open_in_memory().unwrap());
     let vault = Arc::new(Vault::ephemeral());
     let gateway = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
-    app.manage(AppState { db, vault, rt: Runtime::none(), forwards: Default::default(), gateway });
+    app.manage(AppState { db, vault, rt: Runtime::none(), forwards: Default::default(), gateway, terminals: Default::default() });
     WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap()
 }
 

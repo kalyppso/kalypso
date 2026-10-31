@@ -1,9 +1,10 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { api, errorMessage, isLive, onTermData, onTermExit } from "../backend";
 import type { Agent, Commit, Sandbox } from "../types";
 
-// Prototype shell. The desktop build replaces this with a PTY streamed from
-// `docker exec -it <sandbox> sh` over Tauri IPC (ARCHITECTURE.md §4.20).
+// In the desktop app each pane is a real shell in its sandbox (src-tauri/src/terminal.rs).
+// In a plain browser (`npm run dev`) it is a small simulated shell on sample data.
 
 export interface ShellContext {
   sandbox: Sandbox | null;
@@ -16,6 +17,8 @@ export interface Session {
   fit: FitAddon;
   el: HTMLDivElement;
   setContext: (ctx: ShellContext) => void;
+  /** Closes the pane's shell in the sandbox, when there is one. */
+  dispose?: () => void;
 }
 
 const sessions = new Map<string, Session>();
@@ -44,13 +47,93 @@ export function getSession(id: string, theme: Terminal["options"]["theme"], font
   const existing = sessions.get(id);
   if (existing) return existing;
 
-  const term = new Terminal({ fontFamily: font, fontSize: 12.5, lineHeight: 1.25, cursorBlink: true, theme, allowTransparency: true, scrollback: 2000 });
+  const term = new Terminal({ fontFamily: font, fontSize: 12.5, lineHeight: 1.25, cursorBlink: true, theme, allowTransparency: true, scrollback: 5000 });
   const fit = new FitAddon();
   term.loadAddon(fit);
   const el = document.createElement("div");
   el.style.cssText = "width:100%;height:100%";
   term.open(el);
 
+  const session = isLive() ? liveShell(id, term, fit, el, initial) : simulatedShell(id, term, fit, el, initial);
+  sessions.set(id, session);
+  return session;
+}
+
+const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
+
+/** A real shell in the pane's sandbox. Reconnects when the sandbox changes or starts. */
+function liveShell(id: string, term: Terminal, fit: FitAddon, el: HTMLDivElement, initial: ShellContext): Session {
+  let ctx = initial;
+  let open: { ns: string; sandboxId: string } | null = null;
+  let waiting = false; // a press of Enter reconnects
+  let offs: (() => void)[] = [];
+  let attempt = 0;
+
+  const detach = () => { offs.forEach((f) => f()); offs = []; };
+  const disconnect = () => {
+    detach();
+    if (open) void api.termClose(open.ns, id).catch(() => {});
+    open = null;
+  };
+
+  const connect = async () => {
+    disconnect();
+    waiting = false;
+    const sb = ctx.sandbox;
+    if (!sb) return void term.write(`\r\n${dim("No sandbox here yet. Create one in Sandboxes, then pick it above.")}`);
+    if (sb.status !== "running") {
+      waiting = true;
+      return void term.write(`\r\n${dim(`${sb.name} is ${sb.status}. Start it in Sandboxes; this pane connects when it runs.`)}`);
+    }
+    const mine = ++attempt;
+    term.write(`\r\n${dim(`Connecting to ${sb.name}…`)}\r\n`);
+    const [offData, offExit] = await Promise.all([
+      onTermData(id, (bytes) => term.write(bytes)),
+      onTermExit(id, () => {
+        detach();
+        open = null;
+        waiting = true;
+        term.write(`\r\n${dim("[session ended, press Enter to reconnect]")}`);
+      }),
+    ]);
+    offs = [offData, offExit];
+    if (mine !== attempt) return detach(); // superseded while subscribing
+    try {
+      await api.termOpen(sb.ns, sb.id, id, term.rows, term.cols);
+      open = { ns: sb.ns, sandboxId: sb.id };
+    } catch (e) {
+      detach();
+      waiting = true;
+      term.write(`\r\n\x1b[31m${errorMessage(e)}\x1b[0m\r\n${dim("Press Enter to try again.")}`);
+    }
+  };
+
+  term.onData((data) => {
+    if (open) return void api.termWrite(open.ns, id, data).catch(() => {});
+    if (waiting && data.includes("\r")) void connect();
+  });
+  term.onResize(({ rows, cols }) => {
+    if (open) void api.termResize(open.ns, id, rows, cols).catch(() => {});
+  });
+
+  void connect();
+  return {
+    term,
+    fit,
+    el,
+    setContext: (next) => {
+      const moved = next.sandbox?.id !== ctx.sandbox?.id;
+      const started = next.sandbox?.status === "running" && ctx.sandbox?.status !== "running";
+      const stopped = next.sandbox?.status !== "running" && ctx.sandbox?.status === "running";
+      ctx = next;
+      if (moved || (started && !open)) void connect();
+      else if (stopped) { disconnect(); waiting = true; term.write(`\r\n${dim(`${next.sandbox?.name} stopped.`)}`); }
+    },
+    dispose: disconnect,
+  };
+}
+
+function simulatedShell(_id: string, term: Terminal, fit: FitAddon, el: HTMLDivElement, initial: ShellContext): Session {
   let ctx = initial;
   let line = "";
   let cwd = "~/work";
@@ -138,13 +221,14 @@ export function getSession(id: string, theme: Terminal["options"]["theme"], font
       }
     },
   };
-  sessions.set(id, session);
-  term.write(`Connected to \x1b[1m${host()}\x1b[0m. Type 'help' to see what you can do.`);
+  term.write(`Connected to \x1b[1m${host()}\x1b[0m (sample shell). Type 'help' to see what you can do.`);
   prompt();
   return session;
 }
 
 export function disposeSession(id: string) {
-  sessions.get(id)?.term.dispose();
+  const s = sessions.get(id);
+  s?.dispose?.();
+  s?.term.dispose();
   sessions.delete(id);
 }

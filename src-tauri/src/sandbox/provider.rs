@@ -72,6 +72,16 @@ pub trait SandboxProvider: Send + Sync + 'static {
     /// Run a command and hand back its stdin/stdout as a live byte stream.
     async fn open_stream(&self, ns: &str, id: &str, cmd: &[&str]) -> Result<ExecStream>;
 
+    /// An interactive terminal running `cmd` with a TTY: stdin in, everything the
+    /// terminal shows out. Returns the stream and a handle for [`Self::resize_tty`].
+    async fn open_tty(&self, _ns: &str, _id: &str, _cmd: &[&str], _cwd: &str, _rows: u16, _cols: u16) -> Result<(ExecStream, String)> {
+        Err(crate::error::KalypsoError::Runtime(format!("{} sandboxes don't support terminals yet", self.info().label)))
+    }
+
+    async fn resize_tty(&self, _handle: &str, _rows: u16, _cols: u16) -> Result<()> {
+        Ok(())
+    }
+
     /// The sandbox's address on its namespace network, if it has one.
     async fn address(&self, ns: &str, id: &str) -> Result<Option<String>>;
 
