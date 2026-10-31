@@ -65,6 +65,10 @@
 
 Early. The whole UI exists as a prototype on sample data. The Rust core (Phase 1) is being built, and namespaces, secrets and sandboxes already run for real in the desktop app. Progress is tracked in the [Roadmap](https://github.com/kalyppso/kalypso/issues/41).
 
+## Download
+
+Installers for Windows (`.exe`, `.msi`), macOS (`.dmg`) and Linux (`.deb`, `.rpm`, `.AppImage`) are on the [Releases](https://github.com/kalyppso/kalypso/releases) page and at [kalyppso.github.io/website](https://kalyppso.github.io/website/). Builds aren't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will ask you to confirm the first launch.
+
 ## Run it
 
 You need Node 20+, Rust stable and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. For sandboxes you also need Docker, or Podman with its API socket (`systemctl --user enable --now podman.socket`).

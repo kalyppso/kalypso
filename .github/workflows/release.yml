@@ -1,0 +1,73 @@
+name: Release
+
+# Push a version tag (v0.1.0) to build installers for Windows, macOS and Linux and
+# publish them on a GitHub Release. 0.x releases are marked as pre-releases.
+# The website's download button reads the newest release from the GitHub API.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  create:
+    name: Create release
+    runs-on: ubuntu-24.04
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version matches the app
+        run: |
+          app=$(jq -r .version src-tauri/tauri.conf.json)
+          [ "v$app" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} doesn't match tauri.conf.json version $app"; exit 1; }
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          case "${GITHUB_REF_NAME}" in v0.*) pre="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" --title "KALYPSO ${GITHUB_REF_NAME}" --generate-notes --draft $pre
+          echo "id=$(gh release view "${GITHUB_REF_NAME}" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: create
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.create.outputs.id }}
+
+  publish:
+    name: Publish release
+    needs: [create, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false
