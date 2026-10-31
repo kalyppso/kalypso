@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::{KalypsoError, Result};
+use crate::store::Db;
 use crate::vault::Vault;
-
 /// How long a call waits for the user before it is denied.
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -385,8 +385,8 @@ pub async fn judge_text(
                 .and_then(|c| c.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|b| b.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
+                .and_then(|t| t.as_str().map(|s| s.to_owned()))
+                .unwrap_or_default()
         }
         JudgeFormat::OpenAi => {
             let v: serde_json::Value = resp.json().await.map_err(|e| KalypsoError::Runtime(format!("judge response parse failed: {e}")))?;
@@ -395,8 +395,8 @@ pub async fn judge_text(
                 .and_then(|arr| arr.first())
                 .and_then(|b| b.get("message"))
                 .and_then(|m| m.get("content"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
+                .and_then(|t| t.as_str().map(|s| s.to_owned()))
+                .unwrap_or_default()
         }
     };
 
@@ -746,6 +746,7 @@ impl Approvals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::response::IntoResponse;
 
     fn db() -> Db {
         let db = Db::open_in_memory().unwrap();
