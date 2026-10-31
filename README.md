@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="src/assets/logo-dark.png">
-    <img src="src/assets/logo-light.png" width="96" alt="KALYPSO logo">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+    <img src="docs/images/logo-light.png" width="200" alt="KALYPSO logo: a figure rising from purple waves">
   </picture>
 </p>
 
