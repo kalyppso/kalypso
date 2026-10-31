@@ -6,7 +6,9 @@ import "../styles/pages.css";
 import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
 import { themePatch, themes } from "../themes";
 import { ACCENTS, FONTS, contrast, fontFamily } from "../appearance";
-import { PageHead, Toggle } from "../components/ui";
+import { Field, PageHead, Toggle, useErrors } from "../components/ui";
+import { NAV } from "../components/Sidebar";
+import { APPROVAL_TIMEOUTS, DEFAULT_PREFS, SCROLLBACK, TERM_FONT_SIZES, formatDateTime, formatTime, fromDb, timeZones, type Prefs } from "../prefs";
 import { ColorPicker } from "../components/ColorPicker";
 import { BrandIcon, providerIcon, providerLabel } from "./Auth";
 import type { Appearance, AuthProvider } from "../types";
@@ -64,17 +66,94 @@ export function SettingsView() {
 function Preferences() {
   const { state, dispatch } = useStore();
   const toast = useToast();
+  const p = state.prefs;
+  const set = (patch: Partial<Prefs>) => dispatch({ type: "prefs", patch });
+  const live = isLive();
   return (
-    <div className="card" style={{ padding: "4px 18px" }}>
-      <Setting title="Ambient background" desc="A faint node web behind the app that follows the cursor, with a small spider. Off by default.">
-        <Toggle on={state.ambient} onChange={(v) => dispatch({ type: "ambient", value: v })} label="Ambient web" />
-      </Setting>
-      <Setting title="Show code by default" desc="When off, configs, manifests and policy specs stay hidden until you open them.">
-        <Toggle on={state.showCode} onChange={(v) => dispatch({ type: "showCode", value: v })} label="Show code by default" />
-      </Setting>
-      <Setting title="Reset prototype data" desc="Restores the sample namespaces, agents, policies and integrations.">
-        <button className="btn danger" onClick={() => { if (confirm("Reset all prototype data?")) { dispatch({ type: "reset" }); toast("Prototype data reset", "info"); } }}>Reset</button>
-      </Setting>
+    <>
+      <Group title="General">
+        <Setting title="Start page" desc="The page KALYPSO opens on.">
+          <select className="select" value={p.startView} onChange={(e) => set({ startView: e.target.value as Prefs["startView"] })} style={{ width: 200 }}>
+            <option value="last">Where I left off</option>
+            {NAV.flatMap((g) => g.items).map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
+          </select>
+        </Setting>
+        <Setting title="Default namespace" desc="The namespace KALYPSO opens in.">
+          <select className="select" value={p.defaultNs} onChange={(e) => set({ defaultNs: e.target.value })} style={{ width: 200 }}>
+            <option value="last">The last one I used</option>
+            {state.namespaces.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
+        </Setting>
+        <Setting title="Reduce motion" desc="Turns off animations and transitions. Also follows your system setting.">
+          <Toggle on={p.reduceMotion} onChange={(v) => set({ reduceMotion: v })} label="Reduce motion" />
+        </Setting>
+      </Group>
+
+      <Group title="Notifications">
+        <Setting title="Budget alerts" desc="A desktop notification when spend crosses an alert threshold or a cap pauses requests. In-app notices always show.">
+          <Toggle on={p.notifyBudget} onChange={(v) => set({ notifyBudget: v })} label="Budget alert notifications" />
+        </Setting>
+        <Setting title="Approval requests" desc="A desktop notification when an agent's call waits for your approval.">
+          <Toggle on={p.notifyApprovals} onChange={(v) => set({ notifyApprovals: v })} label="Approval notifications" />
+        </Setting>
+      </Group>
+
+      <Group title="Agents and safety">
+        <Setting title="Approval wait" desc="How long a call held by an Ask me policy waits for you. With no answer, it is denied.">
+          <select className="select" value={p.approvalTimeoutMin} onChange={(e) => set({ approvalTimeoutMin: +e.target.value })} style={{ width: 200 }}>
+            {APPROVAL_TIMEOUTS.map((m) => <option key={m} value={m}>{m === 1 ? "1 minute" : m === 60 ? "1 hour" : `${m} minutes`}</option>)}
+          </select>
+        </Setting>
+        <Setting title="Show code by default" desc="When off, configs, manifests and policy specs stay hidden until you open them.">
+          <Toggle on={state.showCode} onChange={(v) => dispatch({ type: "showCode", value: v })} label="Show code by default" />
+        </Setting>
+      </Group>
+
+      <Group title="Terminal">
+        <Setting title="Font size" desc="Applies to every pane right away.">
+          <select className="select" value={p.termFontSize} onChange={(e) => set({ termFontSize: +e.target.value })} style={{ width: 200 }}>
+            {TERM_FONT_SIZES.map((f) => <option key={f} value={f}>{f}px</option>)}
+          </select>
+        </Setting>
+        <Setting title="Cursor" desc="The shape of the cursor in terminal panes.">
+          <div className="segmented">
+            {(["block", "bar", "underline"] as const).map((c) => (
+              <button key={c} className={p.termCursor === c ? "active" : ""} onClick={() => set({ termCursor: c })}>{c[0].toUpperCase() + c.slice(1)}</button>
+            ))}
+          </div>
+        </Setting>
+        <Setting title="Scrollback" desc="Lines each pane keeps above the screen.">
+          <select className="select" value={p.termScrollback} onChange={(e) => set({ termScrollback: +e.target.value })} style={{ width: 200 }}>
+            {SCROLLBACK.map((n) => <option key={n} value={n}>{n.toLocaleString()} lines</option>)}
+          </select>
+        </Setting>
+      </Group>
+
+      <Group title="Display">
+        <Setting title="Ambient background" desc="A faint node web behind the app that follows the cursor, with a small spider.">
+          <Toggle on={state.ambient} onChange={(v) => dispatch({ type: "ambient", value: v })} label="Ambient web" />
+        </Setting>
+      </Group>
+
+      <Group title="Reset">
+        <Setting title="Default preferences" desc="Puts everything on this page back to how it started. Your account and appearance stay.">
+          <button className="btn" onClick={() => { set(DEFAULT_PREFS); dispatch({ type: "showCode", value: false }); dispatch({ type: "ambient", value: false }); toast("Preferences reset", "info"); }}>Reset preferences</button>
+        </Setting>
+        {!live && (
+          <Setting title="Sample data" desc="Restores the sample namespaces, agents, policies and integrations.">
+            <button className="btn danger" onClick={() => { if (confirm("Reset all sample data?")) { dispatch({ type: "reset" }); toast("Sample data reset", "info"); } }}>Reset data</button>
+          </Setting>
+        )}
+      </Group>
+    </>
+  );
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div className="section-title">{title}</div>
+      <div className="card" style={{ padding: "4px 18px" }}>{children}</div>
     </div>
   );
 }
@@ -178,37 +257,93 @@ function Account() {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const user = state.session!;
+  const p = state.prefs;
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const { errors, check, clear } = useErrors();
   const all: AuthProvider[] = ["google", "github", "gitlab"];
+  const zones = timeZones();
+  const now = new Date();
+  const dirty = name.trim() !== user.name || email.trim() !== user.email;
+
+  const save = () => {
+    const ok = check({
+      name: !name.trim() ? "Enter your name." : name.trim().length > 60 ? "Keep it under 60 characters." : undefined,
+      email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? "Enter a valid email address." : undefined,
+    });
+    if (!ok) return;
+    dispatch({ type: "updateProfile", patch: { name: name.trim(), email: email.trim() } });
+    toast("Profile saved");
+  };
+
   return (
     <>
-      <div className="card">
-        <div className="row">
-          <span className="avatar" style={{ width: 36, height: 36, fontSize: 13 }}>{user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}</span>
-          <div>
-            <div style={{ fontWeight: 500 }}>{user.name}</div>
-            <div className="faint small">{user.email}, signed in with {providerLabel(user.provider)}</div>
+      <Group title="Profile">
+        <div style={{ padding: "14px 0", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="row" style={{ gap: 12 }}>
+            <span className="avatar" style={{ width: 40, height: 40, fontSize: 14, borderRadius: "50%", background: "var(--accent-soft)", color: "var(--accent-hi)" }}>
+              {(name.trim() || user.name).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+            </span>
+            <div className="faint small">Signed in with {providerLabel(user.provider)}{user.since ? ` since ${user.since}` : ""}.</div>
           </div>
-          <span className="spacer" />
-          <button className="btn" onClick={() => dispatch({ type: "logout" })}>Sign out</button>
+          <div className="field-row">
+            <Field label="Name" error={errors.name}>
+              <input className="input" value={name} onChange={(e) => { setName(e.target.value); clear("name"); }} />
+            </Field>
+            <Field label="Email" error={errors.email}>
+              <input className="input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); clear("email"); }} />
+            </Field>
+          </div>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            {dirty && <button className="btn ghost" onClick={() => { setName(user.name); setEmail(user.email); check({}); }}>Discard</button>}
+            <button className="btn primary" disabled={!dirty} onClick={save}>Save profile</button>
+          </div>
         </div>
-        <div style={{ marginTop: 14 }}>
-          {all.map((p) => {
-            const linked = user.linked.includes(p);
-            return (
-              <div key={p} className="list-row">
-                <BrandIcon icon={providerIcon(p)!} />
-                <span>{providerLabel(p)}</span>
-                <span className="spacer" />
-                {linked ? (
-                  <span className="faint small">Connected</span>
-                ) : (
-                  <button className="btn sm" onClick={() => { dispatch({ type: "linkProvider", provider: p }); toast(`${providerLabel(p)} connected`); }}>Connect</button>
-                )}
+      </Group>
+
+      <Group title="Time and region">
+        <Setting title="Time zone" desc={`Times in logs and the tracker use this. Now: ${formatTime(now, p)}.`}>
+          <select className="select" value={p.timeZone} onChange={(e) => dispatch({ type: "prefs", patch: { timeZone: e.target.value } })} style={{ width: 220 }}>
+            <option value="auto">System ({Intl.DateTimeFormat().resolvedOptions().timeZone})</option>
+            {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
+          </select>
+        </Setting>
+        <Setting title="Clock" desc="12-hour or 24-hour times.">
+          <div className="segmented">
+            {([["auto", "System"], ["12h", "12-hour"], ["24h", "24-hour"]] as const).map(([v, l]) => (
+              <button key={v} className={p.clock === v ? "active" : ""} onClick={() => dispatch({ type: "prefs", patch: { clock: v } })}>{l}</button>
+            ))}
+          </div>
+        </Setting>
+      </Group>
+
+      <Group title="Linked accounts">
+        {all.map((prov) => {
+          const linked = user.linked.includes(prov);
+          const primary = user.provider === prov;
+          return (
+            <div key={prov} className="list-row" style={{ padding: "12px 0" }}>
+              <BrandIcon icon={providerIcon(prov)!} />
+              <div>
+                <div>{providerLabel(prov)}</div>
+                <div className="faint small">{primary ? "You sign in with this" : linked ? "Connected" : "Not connected"}</div>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <span className="spacer" />
+              {primary ? null : linked ? (
+                <button className="btn sm" onClick={() => { dispatch({ type: "unlinkProvider", provider: prov }); toast(`${providerLabel(prov)} disconnected`, "warn"); }}>Disconnect</button>
+              ) : (
+                <button className="btn sm" onClick={() => { dispatch({ type: "linkProvider", provider: prov }); toast(`${providerLabel(prov)} connected`); }}>Connect</button>
+              )}
+            </div>
+          );
+        })}
+      </Group>
+
+      <Group title="Session">
+        <Setting title="Sign out" desc="Your namespaces, secrets and sandboxes stay on this machine.">
+          <button className="btn" onClick={() => dispatch({ type: "logout" })}>Sign out</button>
+        </Setting>
+      </Group>
     </>
   );
 }
@@ -243,6 +378,10 @@ const KINDS = [
   { id: "secret.", label: "Secrets" },
   { id: "sandbox.", label: "Sandboxes" },
   { id: "namespace.", label: "Namespaces" },
+  { id: "policy.", label: "Policies" },
+  { id: "budget.", label: "Budgets" },
+  { id: "gateway.", label: "Gateway keys" },
+  { id: "terminal.", label: "Terminals" },
 ];
 
 // Security-relevant actions recorded by the core (src-tauri/src/store). Newest first.
@@ -289,7 +428,7 @@ function AuditLog() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td className="mono faint small">{r.ts}</td>
+                    <td className="mono faint small">{formatDateTime(fromDb(r.ts), state.prefs)}</td>
                     <td className="dim">{r.ns ?? "None"}</td>
                     <td className="mono small">{r.action}</td>
                     <td className="clip" style={{ maxWidth: 220 }} title={r.target}>{r.target}</td>

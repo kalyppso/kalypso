@@ -23,6 +23,20 @@ export interface Session {
 
 const sessions = new Map<string, Session>();
 
+type TermPrefs = { fontSize: number; cursorStyle: "block" | "bar" | "underline"; scrollback: number };
+let termPrefs: TermPrefs = { fontSize: 12.5, cursorStyle: "block", scrollback: 5000 };
+
+/** Apply terminal preferences to every open pane and to new ones. */
+export function setTerminalPrefs(p: TermPrefs) {
+  termPrefs = p;
+  for (const s of sessions.values()) {
+    s.term.options.fontSize = p.fontSize;
+    s.term.options.cursorStyle = p.cursorStyle;
+    s.term.options.scrollback = p.scrollback;
+    try { s.fit.fit(); } catch { /* pane hidden */ }
+  }
+}
+
 const HELP = [
   "Available commands:",
   "  help            show this list",
@@ -47,7 +61,7 @@ export function getSession(id: string, theme: Terminal["options"]["theme"], font
   const existing = sessions.get(id);
   if (existing) return existing;
 
-  const term = new Terminal({ fontFamily: font, fontSize: 12.5, lineHeight: 1.25, cursorBlink: true, theme, allowTransparency: true, scrollback: 5000 });
+  const term = new Terminal({ fontFamily: font, lineHeight: 1.25, cursorBlink: true, theme, allowTransparency: true, ...termPrefs });
   const fit = new FitAddon();
   term.loadAddon(fit);
   const el = document.createElement("div");

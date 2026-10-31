@@ -1,3 +1,5 @@
+import { sanitizePrefs } from "./prefs";
+import { setTerminalPrefs } from "./components/shell";
 import { useEffect, useRef, useState } from "react";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
 import { api, errorMessage, isLive, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
@@ -73,6 +75,8 @@ export function App() {
         const p = (prefs ?? {}) as { showCode?: unknown; ambient?: unknown };
         if (typeof p.showCode === "boolean") dispatch({ type: "showCode", value: p.showCode });
         if (typeof p.ambient === "boolean") dispatch({ type: "ambient", value: p.ambient });
+        const rest = sanitizePrefs(prefs);
+        if (Object.keys(rest).length) dispatch({ type: "prefs", patch: rest });
       })
       .catch((e) => toast(errorMessage(e), "err"))
       .finally(() => { prefsLoaded.current = true; });
@@ -85,8 +89,27 @@ export function App() {
   }, [state.appearance, state.session]);
   useEffect(() => {
     if (!isLive() || !state.session || !prefsLoaded.current) return;
-    api.settingsSet("preferences", { showCode: state.showCode, ambient: state.ambient }).catch(() => {});
-  }, [state.showCode, state.ambient, state.session]);
+    // The core reads notifyBudget, notifyApprovals and approvalTimeoutMin from here.
+    api.settingsSet("preferences", { showCode: state.showCode, ambient: state.ambient, ...state.prefs }).catch(() => {});
+  }, [state.showCode, state.ambient, state.prefs, state.session]);
+
+  // Open the chosen start page and namespace once per launch or sign-in.
+  const booted = useRef(false);
+  useEffect(() => {
+    if (!state.session) { booted.current = false; return; }
+    if (booted.current) return;
+    booted.current = true;
+    const { startView, defaultNs } = state.prefs;
+    if (defaultNs !== "last" && defaultNs !== state.ns && state.namespaces.some((n) => n.id === defaultNs)) dispatch({ type: "ns", ns: defaultNs });
+    if (startView !== "last" && startView !== state.view) dispatch({ type: "view", view: startView });
+  }, [state.session, state.namespaces]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("reduce-motion", state.prefs.reduceMotion);
+  }, [state.prefs.reduceMotion]);
+  useEffect(() => {
+    setTerminalPrefs({ fontSize: state.prefs.termFontSize, cursorStyle: state.prefs.termCursor, scrollback: state.prefs.termScrollback });
+  }, [state.prefs.termFontSize, state.prefs.termCursor, state.prefs.termScrollback]);
 
   // Containers changed outside KALYPSO (CLI, crash, engine restart) show up without a refresh.
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { DEFAULT_PREFS, sanitizePrefs, type Prefs } from "./prefs";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
 import * as mock from "./mock";
 import type { Activity } from "./mock";
@@ -49,6 +50,7 @@ export interface State {
   ns: string;
   showCode: boolean;
   ambient: boolean;
+  prefs: Prefs;
   paletteOpen: boolean;
   sidebarOpen: boolean;
   // Set by a quick action: the next view opens with its create form showing.
@@ -97,6 +99,9 @@ export type Action =
   | { type: "view"; view: ViewId; compose?: boolean }
   | { type: "ns"; ns: string }
   | { type: "showCode"; value: boolean }
+  | { type: "prefs"; patch: Partial<Prefs> }
+  | { type: "updateProfile"; patch: Partial<Pick<Session, "name" | "email">> }
+  | { type: "unlinkProvider"; provider: AuthProvider }
   | { type: "ambient"; value: boolean }
   | { type: "palette"; open: boolean }
   | { type: "sidebar"; open: boolean }
@@ -147,6 +152,7 @@ function initial(): State {
     ns: "work",
     showCode: false,
     ambient: false,
+    prefs: DEFAULT_PREFS,
     paletteOpen: false,
     sidebarOpen: true,
     compose: false,
@@ -182,6 +188,8 @@ function load(): State {
     // Transient UI state never comes back from storage.
     if (raw) {
       const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, toolsOpen: false, toolsTab: null, toasts: [] } as State;
+      // Preferences added after this was saved get their defaults; bad stored values are dropped.
+      saved.prefs = { ...DEFAULT_PREFS, ...sanitizePrefs(saved.prefs) };
       // Terminal, Browser and Phone used to be pages; they now live in the tools layer.
       if (["terminal", "browser", "phone"].includes(saved.view)) saved.view = "overview";
       delete (saved as Partial<State> & { terminals?: unknown }).terminals;
@@ -260,6 +268,15 @@ function reducer(s: State, a: Action): State {
       return { ...s, ns: a.ns, compose: false, toolsOpen: s.toolsOpen && (s.toolTabs[a.ns]?.length ?? 0) > 0 };
     case "showCode":
       return { ...s, showCode: a.value };
+    case "prefs":
+      return { ...s, prefs: { ...s.prefs, ...a.patch } };
+    case "updateProfile":
+      return s.session ? { ...s, session: { ...s.session, ...a.patch } } : s;
+    case "unlinkProvider":
+      // The account you signed in with stays linked.
+      return s.session && s.session.provider !== a.provider
+        ? { ...s, session: { ...s.session, linked: s.session.linked.filter((p) => p !== a.provider) } }
+        : s;
     case "ambient":
       return { ...s, ambient: a.value };
     case "palette":
