@@ -548,3 +548,9 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
   border: 1px solid var(--accent-hi); border-radius: 12px; box-shadow: var(--pop-shadow); animation: pop-in 0.22s var(--spring);
 }
 .approval-action { display: block; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--card-2); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+
+/* Reduce motion: from Settings, or the system setting. */
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}

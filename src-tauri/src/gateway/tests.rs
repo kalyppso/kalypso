@@ -389,3 +389,17 @@ async fn secrets_never_leave_and_never_reach_the_log() {
         401
     );
 }
+
+#[tokio::test]
+async fn approval_wait_follows_preferences() {
+    let e = env().await;
+    let gw = Gateway::new(e.db.clone(), e.vault.clone(), Pricing::builtin());
+    assert_eq!(gw.approval_wait(), crate::policy::APPROVAL_TIMEOUT);
+    e.db.set_setting("preferences", &serde_json::json!({"approvalTimeoutMin": 2})).unwrap();
+    assert_eq!(gw.approval_wait(), std::time::Duration::from_secs(120));
+    // Out-of-range or malformed values fall back to the default.
+    e.db.set_setting("preferences", &serde_json::json!({"approvalTimeoutMin": 600})).unwrap();
+    assert_eq!(gw.approval_wait(), crate::policy::APPROVAL_TIMEOUT);
+    e.db.set_setting("preferences", &serde_json::json!({"approvalTimeoutMin": "soon"})).unwrap();
+    assert_eq!(gw.approval_wait(), crate::policy::APPROVAL_TIMEOUT);
+}

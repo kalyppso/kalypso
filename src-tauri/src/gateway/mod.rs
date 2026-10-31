@@ -372,6 +372,15 @@ impl Gateway {
         self.alerts.subscribe()
     }
 
+    /// The user's approval wait from Settings (1 to 60 minutes), or the default.
+    fn approval_wait(&self) -> std::time::Duration {
+        let minutes = self.db.setting("preferences").ok().flatten().and_then(|p| p.get("approvalTimeoutMin").and_then(|v| v.as_u64()));
+        match minutes {
+            Some(m @ 1..=60) => std::time::Duration::from_secs(m * 60),
+            _ => self.approval_timeout,
+        }
+    }
+
     pub fn subscribe_policy_log(&self) -> tokio::sync::broadcast::Receiver<String> {
         self.policy_log.subscribe()
     }
@@ -605,7 +614,7 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
             source: source.clone(),
             action: action.clone(),
         };
-        match gw.approvals.ask(req, gw.approval_timeout).await {
+        match gw.approvals.ask(req, gw.approval_wait()).await {
             Answer::Approved { remember } => {
                 log(&h.policy, "approved");
                 if remember {

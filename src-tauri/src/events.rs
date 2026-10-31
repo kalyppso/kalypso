@@ -73,9 +73,12 @@ pub fn spawn_budget_alerts(app: AppHandle, mut rx: tokio::sync::broadcast::Recei
             match rx.recv().await {
                 Ok(alert) => {
                     tracing::info!(ns = %alert.ns, message = %alert.message, "budget alert");
-                    if let Err(e) = app.notification().builder().title(format!("KALYPSO budget, {}", alert.ns)).body(&alert.message).show()
-                    {
-                        tracing::warn!(error = %e, "could not show a desktop notification");
+                    if wants(&app, "notifyBudget") {
+                        if let Err(e) =
+                            app.notification().builder().title(format!("KALYPSO budget, {}", alert.ns)).body(&alert.message).show()
+                        {
+                            tracing::warn!(error = %e, "could not show a desktop notification");
+                        }
                     }
                     let _ = app.emit(BUDGET_ALERT, &alert);
                 }
@@ -100,8 +103,11 @@ pub fn spawn_policy_events(
             match approvals.recv().await {
                 Ok(req) => {
                     let body = format!("{} wants to run {}. Open KALYPSO to approve or deny.", req.source, req.action);
-                    if let Err(e) = handle.notification().builder().title(format!("Approval needed: {}", req.policy)).body(body).show() {
-                        tracing::warn!(error = %e, "could not show a desktop notification");
+                    if wants(&handle, "notifyApprovals") {
+                        if let Err(e) = handle.notification().builder().title(format!("Approval needed: {}", req.policy)).body(body).show()
+                        {
+                            tracing::warn!(error = %e, "could not show a desktop notification");
+                        }
                     }
                     let _ = handle.emit(POLICY_APPROVAL, &req);
                 }
@@ -121,4 +127,10 @@ pub fn spawn_policy_events(
             }
         }
     });
+}
+
+/// A desktop-notification switch from the user's preferences (Settings → Preferences). On unless turned off.
+fn wants(app: &AppHandle, key: &str) -> bool {
+    let prefs = app.state::<AppState>().db.setting("preferences").ok().flatten();
+    prefs.as_ref().and_then(|p| p.get(key)).and_then(|v| v.as_bool()).unwrap_or(true)
 }

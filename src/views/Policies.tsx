@@ -1,3 +1,4 @@
+import { formatTime, fromDb } from "../prefs";
 import { useEffect, useState } from "react";
 import { Ban, Eye, Hand, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
@@ -66,7 +67,6 @@ function specSummary(s: Spec): string {
   }
 }
 
-const localTime = (ts: string) => new Date(ts.replace(" ", "T") + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const specFor = (name: string, rule: string, enforcement: Enforcement) =>
@@ -93,7 +93,7 @@ export function Policies() {
         check: "", judge: false, code: p.spec,
       }));
   const log = live
-    ? live.events.map((e) => ({ id: String(e.id), at: localTime(e.ts), who: e.source, policy: e.policy, detail: e.action, outcome: e.outcome }))
+    ? live.events.map((e) => ({ id: String(e.id), at: formatTime(fromDb(e.ts), state.prefs), who: e.source, policy: e.policy, detail: e.action, outcome: e.outcome }))
     : policyEvents.map((e) => ({
         id: e.id, at: e.at, who: name(e.agentId), policy: state.policies.find((p) => p.id === e.policyId)?.name ?? e.policyId, detail: e.detail, outcome: e.outcome,
       }));
