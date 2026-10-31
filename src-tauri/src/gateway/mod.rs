@@ -594,7 +594,25 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
         axum::Json(d).into_response()
     };
 
-    let hits = policy::evaluate(&policies, &call, &secrets);
+    let mut hits = policy::evaluate(&policies, &call, &secrets);
+
+    // Text policies need the LLM judge (#30).
+    let text_policies: Vec<&policy::Policy> = policies.iter().filter(|p| matches!(p.spec, policy::Spec::Text)).collect();
+    if !text_policies.is_empty() {
+        if let Ok(Some((base_url, api_key, format))) = policy::find_llm_config(&*gw.db, &*gw.vault, &ns) {
+                match policy::judge_text(&p.rule, &call, &gw.http, &base_url, &api_key, format).await {
+                    Ok(Some(reason)) => hits.push(policy::Hit { policy: p.clone(), reason }),
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(error = %e, "policy judge failed for {}", p.name),
+                }
+            }
+        }
+    }
+
+    // Sort hits by enforcement rank: block first, then approve, then warn.
+    let rank = |e: &str| match e { "block" => 0, "approve" => 1, _ => 2 };
+    hits.sort_by_key(|h| rank(&h.policy.enforcement));
+
     if let Some(h) = hits.iter().find(|h| h.policy.enforcement == "block") {
         log(&h.policy, "blocked");
         return deny(&h.policy, format!("Blocked by policy \"{}\": {}. {}", h.policy.name, h.reason, h.policy.rule));
