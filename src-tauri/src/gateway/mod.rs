@@ -8,6 +8,7 @@
 //! Routes mirror each provider's SDK base URL: `/<provider>/<path>` is sent to
 //! `<PROVIDER>_BASE_URL/<path>`. Anthropic and OpenAI have built-in base URLs;
 //! any other OpenAI-compatible provider needs `<PROVIDER>_BASE_URL` set.
+#![allow(clippy::explicit_auto_deref)]
 
 pub mod pricing;
 pub mod usage;

@@ -21,6 +21,7 @@ use ts_rs::TS;
 use crate::error::{KalypsoError, Result};
 use crate::store::Db;
 use crate::vault::Vault;
+#![allow(clippy::explicit_auto_deref)]
 /// How long a call waits for the user before it is denied.
 pub const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
