@@ -594,7 +594,34 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
         axum::Json(d).into_response()
     };
 
-    let hits = policy::evaluate(&policies, &call, &secrets);
+    let mut hits = policy::evaluate(&policies, &call, &secrets);
+
+    // Text policies go to the LLM judge (#30), all at once. It fails closed
+    // (ARCHITECTURE §4.12): a rule that can't be judged counts as tripped.
+    let text: Vec<&policy::Policy> = policies.iter().filter(|p| p.enabled && p.spec == policy::Spec::Text).collect();
+    if !text.is_empty() {
+        let verdicts: Vec<std::result::Result<Option<String>, String>> = match policy::find_llm_config(&gw.db, &gw.vault, &ns) {
+            Ok(Some((base, key, format))) => {
+                let judging = text.iter().map(|p| policy::judge_text(&p.rule, &call, &gw.http, &base, &key, format));
+                futures_util::future::join_all(judging).await.into_iter().map(|v| v.map_err(|e| e.to_string())).collect()
+            }
+            Ok(None) => vec![Err("no ANTHROPIC_API_KEY or OPENAI_API_KEY in this namespace".into()); text.len()],
+            Err(e) => vec![Err(e.to_string()); text.len()],
+        };
+        for (p, verdict) in text.into_iter().zip(verdicts) {
+            let reason = match verdict {
+                Ok(None) => continue,
+                Ok(Some(reason)) => reason,
+                Err(e) => {
+                    tracing::warn!(error = %e, policy = %p.name, "policy judge failed");
+                    format!("policy judge unavailable ({e})")
+                }
+            };
+            hits.push(policy::Hit { policy: p.clone(), reason });
+        }
+        hits.sort_by_key(|h| policy::rank(&h.policy.enforcement));
+    }
+
     if let Some(h) = hits.iter().find(|h| h.policy.enforcement == "block") {
         log(&h.policy, "blocked");
         return deny(&h.policy, format!("Blocked by policy \"{}\": {}. {}", h.policy.name, h.reason, h.policy.rule));

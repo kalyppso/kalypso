@@ -27,11 +27,17 @@ async fn fake(State(seen): State<Upstream>, req: Request) -> Response {
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
     let stream = body["stream"].as_bool().unwrap_or(false);
     let path = parts.uri.path().to_string();
+    let prompt = body.pointer("/messages/0/content").and_then(|c| c.as_str()).unwrap_or_default();
+    let is_judge = body["system"].as_str().is_some_and(|s| s.starts_with("You are a security policy judge"));
+    let judge_verdict = is_judge.then(|| if prompt.contains("DROP") { "DENY: dropping tables" } else { "ALLOW" });
     *seen.lock().unwrap() = Seen {
         path: path.clone(),
         headers: parts.headers.iter().map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string())).collect(),
         body,
     };
+    if let Some(text) = judge_verdict {
+        return axum::Json(serde_json::json!({"content": [{"type": "text", "text": text}]})).into_response();
+    }
     if path.ends_with("/fail") {
         return (StatusCode::TOO_MANY_REQUESTS, axum::Json(serde_json::json!({"type": "error"}))).into_response();
     }
@@ -317,6 +323,40 @@ async fn force_push_to_main_is_blocked_and_logged() {
         (log[0].outcome.as_str(), log[0].source.as_str(), log[0].action.as_str()),
         ("blocked", "agent", "bash: git push --force origin main")
     );
+}
+
+#[tokio::test]
+async fn text_policies_are_judged_and_fail_closed() {
+    let e = env().await;
+    let rule = crate::policy::NewPolicy {
+        name: "No dropping tables".into(),
+        rule: "Never drop database tables.".into(),
+        category: "custom".into(),
+        enforcement: "block".into(),
+        applies_to: None,
+        spec: crate::policy::Spec::Text,
+        everywhere: None,
+    };
+    crate::policy::create(&e.db, "work", rule).unwrap();
+    let token = mint(&e.db, "work", None, "agent").unwrap().token;
+
+    let d = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "psql -c 'DROP TABLE users'"})).await;
+    assert_eq!(d.decision, "deny");
+    assert!(d.reason.unwrap().contains("dropping tables"));
+    {
+        let seen = e.seen.lock().unwrap();
+        assert_eq!(seen.path, "/v1/messages");
+        assert_eq!(header(&seen, "anthropic-version"), Some("2023-06-01"), "the real API rejects calls without it");
+        assert_eq!(header(&seen, "x-api-key"), Some("sk-ant-real-provider-key"));
+    }
+    let ok = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "ls"})).await;
+    assert_eq!(ok.decision, "allow");
+
+    // Judge unreachable: the call is blocked, not waved through.
+    e.vault.set(&e.db, "work", "ANTHROPIC_BASE_URL", "http://127.0.0.1:1", "gateway").unwrap();
+    let d = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "ls"})).await;
+    assert_eq!(d.decision, "deny");
+    assert!(d.reason.unwrap().contains("policy judge unavailable"));
 }
 
 #[tokio::test]
