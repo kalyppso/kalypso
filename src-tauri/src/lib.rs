@@ -101,6 +101,17 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             init_logging(&dir.join("logs"));
+            // The window starts hidden and the page shows it once its first frame is painted,
+            // so it never opens blank. If the page fails to load, show it anyway.
+            if let Some(win) = app.get_webview_window("main") {
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    if !win.is_visible().unwrap_or(true) {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                });
+            }
             let db = std::sync::Arc::new(store::Db::open(&dir.join("kalypso.db"))?);
             let vault = std::sync::Arc::new(vault::Vault::load(&dir)?);
             let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());

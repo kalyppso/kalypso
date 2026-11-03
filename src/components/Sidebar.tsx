@@ -107,7 +107,7 @@ export function Sidebar() {
   }, [state.view, folded]);
 
   return (
-    <aside className="sidebar" aria-hidden={!state.sidebarOpen}>
+    <aside className="sidebar" aria-hidden={!state.sidebarOpen} data-tauri-drag-region>
       <NamespaceSwitcher />
       <nav className="nav" ref={navRef}>
         <span className="nav-mark" style={{ transform: `translateY(${mark?.top ?? 0}px)`, height: mark?.height ?? 0, opacity: mark ? 1 : 0 }} aria-hidden />

@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import "./styles.css";
 import { App } from "./App";
 import { StoreProvider } from "./store";
+import { markChrome } from "./window";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@fontsource-variable/inter";
@@ -12,6 +13,8 @@ import "@fontsource-variable/dm-sans";
 import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/jetbrains-mono";
+
+markChrome();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
