@@ -128,24 +128,29 @@ Every IPC command takes `ns` as its first argument. The `ipc` layer checks that 
 - The UI gets live status from the Docker events stream, sent as `sandbox://status` events.
 
 ### 4.4 Agents and the supervisor
-An agent is a declarative record (name, role, model, sandbox, skills, mcps, secrets, max_turns, autonomy level) plus a **runtime adapter**:
+An agent is a record in the `agents` table (name, role, runtime, model, sandbox, command, restart policy, `max_restarts`, `max_turns`), plus a **runtime adapter** (`src-tauri/src/agent/runtime.rs`):
 
 ```rust
 #[async_trait]
 trait AgentRuntime {
-    async fn start(&self, ctx: AgentCtx) -> Result<RunHandle>;
-    async fn send(&self, run: &RunHandle, msg: Message) -> Result<()>;
-    async fn stop(&self, run: &RunHandle) -> Result<()>;
-    fn events(&self, run: &RunHandle) -> BoxStream<AgentEvent>; // turns, tool calls, artifacts
+    fn kind(&self) -> &'static str;
+    async fn start(&self, ctx: &AgentCtx<'_>) -> Result<Run>; // event stream, stdin, exec handle, pid file
+    fn encode(&self, message: &str) -> Vec<u8>;              // one message as bytes on stdin
 }
 ```
 
-Adapters, in priority order:
-1. **Claude Agent SDK.** A small Node or Python runner inside the sandbox, talking to the core over a Unix socket or NATS.
-2. **Claude Code CLI** in headless mode (`claude -p --output-format stream-json`).
-3. **Generic HTTP/A2A** agent, for agents you bring yourself.
+Adapters:
+1. **Command** (done): any program run in the sandbox through the provider's `open_process`. Each line it prints is a transcript event, and each message is written to its stdin as one line. The wrapper writes the PID to `/tmp/.kalypso-agent-<id>.pid`, so the supervisor can signal it.
+2. **Claude Agent SDK** (#14): a runner inside the sandbox that talks to the gateway.
+3. **Claude Code CLI** (#15): headless mode (`claude -p --output-format stream-json`).
 
-The supervisor restarts agents according to a policy, enforces `max_turns` and pauses an agent when its budget runs out. It also turns agent events into UI events. Transcripts are stored per run, and the code and diffs inside them are rendered collapsed (code on demand).
+The **supervisor** (`agent/supervisor.rs`) owns every live run:
+- **Runs.** Each start is a row in `agent_runs` (attempt, exit code, outcome: running, exited, crashed or stopped, and a reason). Its output, inputs and status changes go to `agent_events`, and are forwarded live as the `agent://update` event.
+- **Restarts.** The policy is `never`, `on-failure` (the default) or `always`. Backoff doubles from 1 s up to 30 s. After `max_restarts` restarts the agent is marked `failed`, with the reason, for example "gave up after 3 restart(s); last run crashed (exit 137)".
+- **Turns.** A message past `max_turns` stops the agent with "reached its limit of N turns".
+- **Pause and resume** send SIGSTOP and SIGCONT. **Stop** sends SIGTERM, then SIGKILL after 5 s. Stopping or deleting a sandbox stops its agents first.
+- **Budgets.** When the gateway refuses a call with `budget_exceeded`, it reports the block, and the supervisor pauses the running agents in that key's sandbox with the reason "budget: …".
+- **App restarts.** Runs still marked running when KALYPSO quit are closed as stopped ("KALYPSO restarted").
 
 ### 4.5 Model gateway (budget enforcement)
 A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes through. It listens on `127.0.0.1:47821` (or a free port) for tools on the host, and on `<app data>/run/gateway.sock` for sandboxes.
@@ -343,7 +348,7 @@ All commands are `async`, return `Result<T, KALYPSOError>` and take `ns` first.
 ```
 ns_list / ns_create / ns_delete
 sandbox_list / sandbox_create / sandbox_start / sandbox_pause / sandbox_stop / sandbox_delete / sandbox_logs
-agent_list / agent_create / agent_update / agent_start / agent_stop / agent_send / agent_runs
+agent_list / agent_create / agent_update / agent_delete / agent_start / agent_stop / agent_pause / agent_resume / agent_send / agent_runs / agent_events
 secret_list (metadata only) / secret_set / secret_reveal (auth-gated) / secret_delete / secret_grant
 connection_list / connection_create / connection_delete / tunnel_create / tunnel_delete
 budget_get / budget_set / budget_rule_add / budget_rule_delete / usage_daily / usage_by_agent

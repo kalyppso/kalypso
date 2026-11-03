@@ -328,6 +328,16 @@ pub struct Gateway {
     approval_timeout: std::time::Duration,
     /// The namespace whose policy log just changed.
     policy_log: tokio::sync::broadcast::Sender<String>,
+    /// Requests refused for budget, so the supervisor can pause the agents behind them.
+    blocks: tokio::sync::broadcast::Sender<BudgetBlocked>,
+}
+
+/// A model request the gateway refused because a budget was reached.
+#[derive(Debug, Clone)]
+pub struct BudgetBlocked {
+    pub ns: String,
+    pub key_id: String,
+    pub reason: String,
 }
 
 /// A budget notification for the user.
@@ -361,6 +371,7 @@ impl Gateway {
             approvals: Default::default(),
             approval_timeout: crate::policy::APPROVAL_TIMEOUT,
             policy_log: tokio::sync::broadcast::channel(64).0,
+            blocks: tokio::sync::broadcast::channel(64).0,
         })
     }
 
@@ -379,6 +390,10 @@ impl Gateway {
             Some(m @ 1..=60) => std::time::Duration::from_secs(m * 60),
             _ => self.approval_timeout,
         }
+    }
+
+    pub fn subscribe_blocks(&self) -> tokio::sync::broadcast::Receiver<BudgetBlocked> {
+        self.blocks.subscribe()
     }
 
     pub fn subscribe_policy_log(&self) -> tokio::sync::broadcast::Receiver<String> {
@@ -773,6 +788,7 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
 
     let call = Call { gw: gw.clone(), key_id, ns, source, provider: provider.to_string(), model, stream, started: Instant::now() };
     if let Some(msg) = decision.block {
+        let _ = gw.blocks.send(BudgetBlocked { ns: call.ns.clone(), key_id: call.key_id.clone(), reason: msg.clone() });
         call.finish(402, None, None);
         return fail(format, StatusCode::PAYMENT_REQUIRED, &msg);
     }

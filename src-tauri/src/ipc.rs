@@ -6,6 +6,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::State;
 
+use crate::agent::supervisor::Supervisor;
+use crate::agent::{self, AgentEvent, AgentPatch, AgentRecord, AgentRun, NewAgent};
 use crate::budget::{self, Budget, BudgetOverview, BudgetRule, NewBudgetRule};
 use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
@@ -24,6 +26,7 @@ pub struct AppState {
     pub forwards: Forwards,
     pub gateway: Arc<Gateway>,
     pub terminals: Terminals,
+    pub agents: Arc<Supervisor>,
 }
 
 fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
@@ -264,6 +267,8 @@ pub async fn sandbox_pause(s: State<'_, AppState>, ns: String, id: String) -> Re
 
 #[tauri::command]
 pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Result<SandboxRecord> {
+    // Agents first, so their exit isn't mistaken for a crash and restarted.
+    s.agents.stop_sandbox(&ns, &id, "its sandbox was stopped").await;
     let rec = sandbox::stop(&s.db, &s.rt, &ns, &id).await?;
     s.forwards.close_sandbox(&id);
     s.terminals.close_sandbox(&ns, &id);
@@ -272,10 +277,83 @@ pub async fn sandbox_stop(s: State<'_, AppState>, ns: String, id: String) -> Res
 
 #[tauri::command]
 pub async fn sandbox_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    s.agents.stop_sandbox(&ns, &id, "its sandbox was deleted").await;
     sandbox::remove(&s.db, &s.rt, &ns, &id).await?;
     s.forwards.close_sandbox(&id);
     s.terminals.close_sandbox(&ns, &id);
     Ok(())
+}
+
+// ---------- Agents ----------
+
+#[tauri::command]
+pub fn agent_list(s: State<'_, AppState>, ns: String) -> Result<Vec<AgentRecord>> {
+    ensure_ns(&s, &ns)?;
+    agent::list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn agent_create(s: State<'_, AppState>, ns: String, agent: NewAgent) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    agent::create(&s.db, &ns, agent)
+}
+
+/// Changes apply from the agent's next start.
+#[tauri::command]
+pub fn agent_update(s: State<'_, AppState>, ns: String, id: String, patch: AgentPatch) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    agent::update(&s.db, &ns, &id, patch)
+}
+
+#[tauri::command]
+pub async fn agent_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    s.agents.stop(&ns, &id, "deleted").await?;
+    agent::delete(&s.db, &ns, &id)
+}
+
+#[tauri::command]
+pub async fn agent_start(s: State<'_, AppState>, ns: String, id: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    s.agents.start(&ns, &id).await
+}
+
+#[tauri::command]
+pub async fn agent_stop(s: State<'_, AppState>, ns: String, id: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    s.agents.stop(&ns, &id, "stopped by you").await
+}
+
+#[tauri::command]
+pub async fn agent_pause(s: State<'_, AppState>, ns: String, id: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    s.agents.pause(&ns, &id, "paused by you").await
+}
+
+#[tauri::command]
+pub async fn agent_resume(s: State<'_, AppState>, ns: String, id: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    s.agents.resume(&ns, &id).await
+}
+
+#[tauri::command]
+pub async fn agent_send(s: State<'_, AppState>, ns: String, id: String, message: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    s.agents.send(&ns, &id, &message).await
+}
+
+/// Newest first.
+#[tauri::command]
+pub fn agent_runs(s: State<'_, AppState>, ns: String, id: String, limit: Option<u32>) -> Result<Vec<AgentRun>> {
+    ensure_ns(&s, &ns)?;
+    agent::runs(&s.db, &ns, &id, limit.unwrap_or(50))
+}
+
+/// A run's transcript after event `after` (0 for all of it).
+#[tauri::command]
+pub fn agent_events(s: State<'_, AppState>, ns: String, run_id: String, after: Option<i64>) -> Result<Vec<AgentEvent>> {
+    ensure_ns(&s, &ns)?;
+    agent::events(&s.db, &ns, &run_id, after.unwrap_or(0), 2000)
 }
 
 // ---------- Terminals ----------

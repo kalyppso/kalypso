@@ -1,6 +1,7 @@
 // KALYPSO core. Phase 1 services: SQLite store, namespaces, secrets vault and
 // sandboxes on Docker or Podman. See docs/ARCHITECTURE.md and the Roadmap issue.
 
+pub mod agent;
 pub mod budget;
 pub mod error;
 pub mod events;
@@ -84,6 +85,17 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::sandbox_pause,
         ipc::sandbox_stop,
         ipc::sandbox_delete,
+        ipc::agent_list,
+        ipc::agent_create,
+        ipc::agent_update,
+        ipc::agent_delete,
+        ipc::agent_start,
+        ipc::agent_stop,
+        ipc::agent_pause,
+        ipc::agent_resume,
+        ipc::agent_send,
+        ipc::agent_runs,
+        ipc::agent_events,
         ipc::term_open,
         ipc::term_write,
         ipc::term_resize,
@@ -138,7 +150,14 @@ pub fn run() {
             events::spawn_usage_events(app.handle().clone(), gw.subscribe());
             events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
             events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
-            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default() });
+            // Agents that were running when KALYPSO quit aren't supervised any more.
+            let reset = agent::reset_after_restart(&db)?;
+            if reset > 0 {
+                tracing::info!(agents = reset, "marked agents from the last session as stopped");
+            }
+            let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
+            events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
+            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents });
             events::spawn_sandbox_watcher(app.handle().clone());
             Ok(())
         })

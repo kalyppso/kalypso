@@ -82,6 +82,18 @@ pub trait SandboxProvider: Send + Sync + 'static {
         Ok(())
     }
 
+    /// A long-running process without a TTY: stdin in, stdout and stderr out (in
+    /// order of arrival). Returns the stream and a handle for [`Self::exit_code`].
+    async fn open_process(&self, _ns: &str, _id: &str, _cmd: &[&str], _cwd: &str, _env: &[String]) -> Result<(ExecStream, String)> {
+        Err(crate::error::KalypsoError::Runtime(format!("{} sandboxes can't run agents yet", self.info().label)))
+    }
+
+    /// The exit code of a process from [`Self::open_process`] or [`Self::open_tty`],
+    /// or `None` while it is still running.
+    async fn exit_code(&self, _handle: &str) -> Result<Option<i64>> {
+        Ok(None)
+    }
+
     /// The sandbox's address on its namespace network, if it has one.
     async fn address(&self, ns: &str, id: &str) -> Result<Option<String>>;
 

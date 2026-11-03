@@ -5,8 +5,8 @@ import { useStore } from "../store";
 
 const tone: Record<string, "ok" | "warn" | "err" | ""> = {
   running: "ok", up: "ok", healthy: "ok", connected: "ok", approved: "ok",
-  idle: "warn", paused: "warn", degraded: "warn", syncing: "warn", warned: "warn",
-  error: "err", down: "err", offline: "err", blocked: "err", denied: "err",
+  idle: "warn", paused: "warn", degraded: "warn", syncing: "warn", warned: "warn", starting: "warn", restarting: "warn",
+  error: "err", down: "err", offline: "err", blocked: "err", denied: "err", failed: "err", crashed: "err",
   stopped: "",
 };
 

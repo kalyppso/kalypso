@@ -64,6 +64,7 @@ pub struct SandboxStatusEvent {
 }
 
 /// The sandbox providers available on this machine. The first is the default.
+#[derive(Clone)]
 pub struct Runtime {
     providers: Vec<Arc<dyn SandboxProvider>>,
     /// Kind of the default provider, or "none".
