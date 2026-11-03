@@ -554,3 +554,24 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- Window chrome (desktop: no native title bar) ---------- */
+/* The app fades in on the first painted frame; the window is shown right after it. */
+.chrome .shell, .chrome .auth { animation: app-in 0.22s var(--ease); }
+@keyframes app-in { from { opacity: 0; } }
+.chrome .topbar, .chrome .crumbs, .chrome .sidebar { -webkit-user-select: none; user-select: none; }
+/* macOS: room for the traffic lights over the sidebar. */
+.os-mac .sidebar { padding-top: 46px; }
+.os-mac .shell.collapsed .topbar { padding-left: 84px; }
+/* Windows and Linux: KALYPSO's own controls, at the end of the top bar. */
+.win-controls { display: flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border); height: 22px; }
+.win-btn {
+  display: grid; place-items: center; width: 30px; height: 28px; border: 0; border-radius: 6px; background: none;
+  color: var(--text-3); cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.win-btn:hover { background: var(--card-2); color: var(--text); }
+.win-btn.close:hover { background: #c42b1c; color: #fff; }
+.win-btn:active { transform: scale(0.96); }
+.win-strip { position: fixed; inset: 0 0 auto 0; z-index: 5; height: 44px; display: flex; justify-content: flex-end; align-items: center; padding: 0 10px; }
+.win-strip .win-controls { border-left: 0; }
+@media (prefers-reduced-motion: reduce) { .chrome .shell, .chrome .auth { animation: none; } }

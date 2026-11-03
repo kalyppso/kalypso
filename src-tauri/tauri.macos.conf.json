@@ -1,0 +1,24 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "KALYPSO",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "center": true,
+        "visible": false,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 24
+        },
+        "backgroundColor": "#0f0f0f"
+      }
+    ]
+  }
+}

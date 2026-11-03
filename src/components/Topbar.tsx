@@ -3,13 +3,14 @@ import { useStore } from "../store";
 import { themePatch, themes } from "../themes";
 import { viewLabel } from "./Sidebar";
 import { Toggle, modKey, usePopover } from "./ui";
+import { WindowControls } from "./WindowControls";
 
 export function Topbar() {
   const { state, dispatch } = useStore();
   const themePop = usePopover();
 
   return (
-    <header className="topbar">
+    <header className="topbar" data-tauri-drag-region>
       <button
         className="btn ghost icon"
         title={`${state.sidebarOpen ? "Close" : "Open"} sidebar (${modKey} B)`}
@@ -19,11 +20,11 @@ export function Topbar() {
       >
         <PanelLeft size={15} />
       </button>
-      <div className="crumbs">
+      <div className="crumbs" data-tauri-drag-region>
         <strong>{viewLabel(state.view)}</strong>
       </div>
 
-      <span className="spacer" />
+      <span className="spacer" data-tauri-drag-region />
 
       <button className="btn ghost" style={{ minWidth: 200, justifyContent: "flex-start", color: "var(--text-3)" }} onClick={() => dispatch({ type: "palette", open: true })}>
         <Search size={14} /> Search
@@ -65,6 +66,7 @@ export function Topbar() {
         )}
       </div>
 
+      <WindowControls />
     </header>
   );
 }

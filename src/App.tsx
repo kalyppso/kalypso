@@ -2,6 +2,8 @@ import type { Agent } from "./types";
 import { sanitizePrefs } from "./prefs";
 import { setTerminalPrefs } from "./components/shell";
 import { useEffect, useRef, useState } from "react";
+import { revealWindow } from "./window";
+import { WindowControls } from "./components/WindowControls";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
 import { api, errorMessage, isLive, onAgentUpdate, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
@@ -49,6 +51,8 @@ export function App() {
   const { agents, policies } = useNamespaced();
 
   useEffect(() => applyAppearance(state.appearance), [state.appearance]);
+  // Colours are applied, so the first frame is the real one: show the window now.
+  useEffect(() => void revealWindow().catch(() => {}), []);
 
   // Desktop build: namespaces, secrets and sandboxes come from the Rust core.
   const toast = useToast();
@@ -161,13 +165,13 @@ export function App() {
   if (state.toolsOpen) toolsSeen.current = true;
   const toolTab = currentToolTab(state);
 
-  if (!state.session) return <Auth />;
+  if (!state.session) return <><div className="win-strip" data-tauri-drag-region><WindowControls /></div><Auth /></>;
 
   const View = views[state.view];
   return (
     <>
       {state.ambient && <NeuralWeb theme={state.appearance.theme} active />}
-      <div className={`shell ${state.sidebarOpen ? "" : "collapsed"}`}>
+      <div className={`shell ${state.sidebarOpen ? "" : "collapsed"}`} data-tauri-drag-region>
         <Sidebar />
         <div className="main">
           <Topbar />
