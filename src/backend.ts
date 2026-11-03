@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
+import type { AgentEvent } from "./bindings/AgentEvent";
+import type { AgentPatch } from "./bindings/AgentPatch";
+import type { AgentRecord } from "./bindings/AgentRecord";
+import type { AgentRun } from "./bindings/AgentRun";
+import type { AgentUpdate } from "./bindings/AgentUpdate";
+import type { NewAgent } from "./bindings/NewAgent";
 import type { Budget as BudgetRecord } from "./bindings/Budget";
 import type { BudgetAlert } from "./bindings/BudgetAlert";
 import type { BudgetOverview } from "./bindings/BudgetOverview";
@@ -25,7 +31,7 @@ import type { SandboxRecord } from "./bindings/SandboxRecord";
 import type { SandboxStatusEvent } from "./bindings/SandboxStatusEvent";
 import type { SecretMeta } from "./bindings/SecretMeta";
 import type { Action } from "./store";
-import type { Namespace, Policy, Sandbox, Secret } from "./types";
+import type { Agent, Namespace, Policy, Sandbox, Secret } from "./types";
 
 // Calls into the Rust core (src-tauri/src/ipc.rs). In a plain browser
 // (`npm run dev`) there is no core, and the app runs on mock data instead.
@@ -69,6 +75,17 @@ export const api = {
   termWrite: (ns: string, pane: string, data: string) => invoke<void>("term_write", { ns, pane, data }),
   termResize: (ns: string, pane: string, rows: number, cols: number) => invoke<void>("term_resize", { ns, pane, rows, cols }),
   termClose: (ns: string, pane: string) => invoke<boolean>("term_close", { ns, pane }),
+  agentList: (ns: string) => invoke<AgentRecord[]>("agent_list", { ns }),
+  agentCreate: (ns: string, agent: NewAgent) => invoke<AgentRecord>("agent_create", { ns, agent }),
+  agentUpdate: (ns: string, id: string, patch: AgentPatch) => invoke<AgentRecord>("agent_update", { ns, id, patch }),
+  agentDelete: (ns: string, id: string) => invoke<void>("agent_delete", { ns, id }),
+  agentStart: (ns: string, id: string) => invoke<AgentRecord>("agent_start", { ns, id }),
+  agentStop: (ns: string, id: string) => invoke<AgentRecord>("agent_stop", { ns, id }),
+  agentPause: (ns: string, id: string) => invoke<AgentRecord>("agent_pause", { ns, id }),
+  agentResume: (ns: string, id: string) => invoke<AgentRecord>("agent_resume", { ns, id }),
+  agentSend: (ns: string, id: string, message: string) => invoke<void>("agent_send", { ns, id, message }),
+  agentRuns: (ns: string, id: string, limit = 50) => invoke<AgentRun[]>("agent_runs", { ns, id, limit }),
+  agentEvents: (ns: string, runId: string, after = 0) => invoke<AgentEvent[]>("agent_events", { ns, runId, after }),
   usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),
   sandboxProviders: () => invoke<ProviderInfo[]>("sandbox_providers"),
   sandboxList: (ns: string) => invoke<SandboxRecord[]>("sandbox_list", { ns }),
@@ -106,10 +123,18 @@ export const toSandbox = (r: SandboxRecord): Sandbox => ({
 
 /** Reload one namespace's secrets and sandboxes from the core into the store. */
 export async function syncNamespace(ns: string, dispatch: (a: Action) => void) {
-  const [secrets, sandboxes, policies] = await Promise.all([api.secretList(ns), api.sandboxList(ns), api.policyList(ns)]);
+  const [secrets, sandboxes, policies, agents] = await Promise.all([api.secretList(ns), api.sandboxList(ns), api.policyList(ns), api.agentList(ns)]);
   dispatch({ type: "hydrateNs", ns, secrets: secrets.map(toSecret), sandboxes: sandboxes.map(toSandbox) });
   dispatch({ type: "hydratePolicies", ns, policies: policies.map(toPolicy) });
+  dispatch({ type: "hydrateAgents", ns, agents: agents.map(toAgent) });
 }
+
+export const toAgent = (a: AgentRecord): Agent => ({
+  id: a.id, ns: a.ns, name: a.name, role: a.role, model: a.model, status: a.status as Agent["status"], sandboxId: a.sandbox_id,
+  skills: [], mcps: [], secrets: [], statusReason: a.status_reason, runtime: a.runtime, command: a.command,
+  restart: a.restart, maxRestarts: a.max_restarts, maxTurns: a.max_turns,
+  config: [`# ${a.name} (${a.runtime})`, `command: ${a.command}`, `restart: ${a.restart}`, `max_restarts: ${a.max_restarts}`, `max_turns: ${a.max_turns || "no limit"}`].join("\n"),
+});
 
 export const toPolicy = (p: PolicyRecord): Policy => ({
   id: p.id, ns: p.ns, name: p.name, rule: p.rule, category: p.category as Policy["category"], enforcement: p.enforcement as Policy["enforcement"],
@@ -150,3 +175,6 @@ export const onTermData = (pane: string, fn: (bytes: Uint8Array) => void) =>
   listen<string>(`term://data/${pane}`, (e) => fn(Uint8Array.from(atob(e.payload), (c) => c.charCodeAt(0))));
 /** The pane's shell ended (exit, crash, or the sandbox stopped). */
 export const onTermExit = (pane: string, fn: () => void) => listen(`term://exit/${pane}`, () => fn());
+
+/** Agent status changes and transcript lines (src-tauri/src/agent/supervisor.rs). */
+export const onAgentUpdate = (fn: (e: AgentUpdate) => void) => listen<AgentUpdate>("agent://update", (e) => fn(e.payload));

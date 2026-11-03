@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0002_gateway.sql"),
     include_str!("migrations/0003_budgets.sql"),
     include_str!("migrations/0004_policies.sql"),
+    include_str!("migrations/0005_agents.sql"),
 ];
 
 #[derive(Debug, Clone, Serialize, TS)]

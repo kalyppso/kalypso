@@ -1,8 +1,9 @@
+import type { Agent } from "./types";
 import { sanitizePrefs } from "./prefs";
 import { setTerminalPrefs } from "./components/shell";
 import { useEffect, useRef, useState } from "react";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
-import { api, errorMessage, isLive, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
+import { api, errorMessage, isLive, onAgentUpdate, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
@@ -119,6 +120,15 @@ export function App() {
     });
     return () => void off.then((unlisten) => unlisten());
   }, [state.ns, state.session, dispatch]);
+
+  // Agents change state on their own (crashes, restarts, budget pauses); keep the store current.
+  useEffect(() => {
+    if (!isLive() || !state.session) return;
+    const off = onAgentUpdate((u) => {
+      if (u.status) dispatch({ type: "agentLive", id: u.agent_id, status: u.status as Agent["status"], reason: u.reason ?? "" });
+    });
+    return () => void off.then((unlisten) => unlisten());
+  }, [state.session, dispatch]);
 
   // Budget alerts are desktop notifications too; inside the app they show as a notice.
   useEffect(() => {

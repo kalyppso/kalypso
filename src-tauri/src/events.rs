@@ -14,6 +14,7 @@ pub const USAGE: &str = "usage://event";
 pub const BUDGET_ALERT: &str = "budget://alert";
 pub const POLICY_APPROVAL: &str = "policy://approval";
 pub const POLICY_LOG: &str = "policy://log";
+pub const AGENT_UPDATE: &str = "agent://update";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
@@ -133,4 +134,34 @@ pub fn spawn_policy_events(
 fn wants(app: &AppHandle, key: &str) -> bool {
     let prefs = app.state::<AppState>().db.setting("preferences").ok().flatten();
     prefs.as_ref().and_then(|p| p.get(key)).and_then(|v| v.as_bool()).unwrap_or(true)
+}
+
+/// Agent status changes and transcript lines go to the UI; budget blocks from the
+/// gateway pause the agents in the blocked sandbox.
+pub fn spawn_agent_events(
+    app: AppHandle,
+    agents: std::sync::Arc<crate::agent::supervisor::Supervisor>,
+    mut blocks: tokio::sync::broadcast::Receiver<crate::gateway::BudgetBlocked>,
+) {
+    let mut updates = agents.subscribe();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match updates.recv().await {
+                Ok(u) => {
+                    let _ = app.emit(AGENT_UPDATE, &u);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match blocks.recv().await {
+                Ok(b) => agents.on_budget_block(&b.ns, &b.key_id, &b.reason).await,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
 }

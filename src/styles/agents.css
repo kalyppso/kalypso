@@ -22,7 +22,18 @@
 /* Status dot on the avatar corner; running uses the accent. */
 .agent-avatar::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 0 2px var(--card); }
 .agent-avatar.running::after { background: var(--accent-hi); }
-.agent-avatar.error::after { background: var(--err); }
+.agent-avatar.error::after, .agent-avatar.failed::after { background: var(--err); }
+.agent-avatar.paused::after, .agent-avatar.restarting::after, .agent-avatar.starting::after { background: var(--warn); }
+.agent-reason { margin: 10px 0 0; color: var(--text-2); font-size: 13px; }
+.agent-reason.bad { color: var(--err); }
+.runs { display: flex; flex-direction: column; gap: 2px; }
+.run-row { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 12px; align-items: center; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.run-row:hover { background: var(--card-2); }
+.run-row.on { background: var(--card-3); }
+.transcript { margin: 0; padding: 12px 14px; max-height: 360px; overflow: auto; border-radius: 10px; background: var(--card); font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.transcript .in { color: var(--accent-hi); }
+.transcript .st { color: var(--text-3); font-style: italic; }
+.composer { display: flex; gap: 8px; margin-top: 10px; }
 .agent-head .agent-avatar::after { box-shadow: 0 0 0 2px var(--page-bg); }
 
 .agent-back { margin: -6px 0 14px -9px; }

@@ -25,7 +25,7 @@ export interface Namespace {
   description: string;
 }
 
-export type AgentStatus = "running" | "idle" | "stopped" | "error";
+export type AgentStatus = "running" | "idle" | "stopped" | "error" | "starting" | "paused" | "restarting" | "failed";
 
 export interface Agent {
   id: string;
@@ -40,6 +40,13 @@ export interface Agent {
   secrets: string[];
   // Shown only when the user explicitly asks to see code.
   config: string;
+  /** From the core: why it is in its status ("crashed (exit 137)"). */
+  statusReason?: string;
+  runtime?: string;
+  command?: string;
+  restart?: string;
+  maxRestarts?: number;
+  maxTurns?: number;
 }
 
 export type SandboxStatus = "running" | "paused" | "stopped";

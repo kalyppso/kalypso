@@ -346,6 +346,47 @@ impl SandboxProvider for OciProvider {
         Ok((ExecStream { output, input }, created.id))
     }
 
+    async fn open_process(&self, ns: &str, id: &str, cmd: &[&str], cwd: &str, env: &[String]) -> Result<(ExecStream, String)> {
+        let env: Vec<&str> = env.iter().map(String::as_str).collect();
+        let created = self
+            .docker
+            .create_exec(
+                &container_name(ns, id),
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    user: Some(EXEC_USER),
+                    working_dir: Some(cwd),
+                    env: Some(env),
+                    attach_stdin: Some(true),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(rt_err)?;
+        let StartExecResults::Attached { output, input } = self.docker.start_exec(&created.id, None).await.map_err(rt_err)? else {
+            return Err(KalypsoError::Runtime("exec unexpectedly detached".into()));
+        };
+        let output = output
+            .filter_map(|chunk| async move {
+                match chunk {
+                    Ok(LogOutput::StdOut { message } | LogOutput::StdErr { message } | LogOutput::Console { message }) => {
+                        Some(Ok(message.to_vec()))
+                    }
+                    Ok(_) => None,
+                    Err(e) => Some(Err(std::io::Error::other(e.to_string()))),
+                }
+            })
+            .boxed();
+        Ok((ExecStream { output, input }, created.id))
+    }
+
+    async fn exit_code(&self, handle: &str) -> Result<Option<i64>> {
+        let info = self.docker.inspect_exec(handle).await.map_err(rt_err)?;
+        Ok(if info.running == Some(true) { None } else { info.exit_code })
+    }
+
     async fn resize_tty(&self, handle: &str, rows: u16, cols: u16) -> Result<()> {
         self.docker.resize_exec(handle, ResizeExecOptions { height: rows.max(1), width: cols.max(1) }).await.map_err(rt_err)
     }
