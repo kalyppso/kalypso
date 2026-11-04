@@ -262,10 +262,10 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       </div>
 
       <div className="agent-facts">
-        <Fact k="Runtime" v={<span className="mono">{a.runtime}</span>} />
+        <Fact k="Runtime" v={a.runtime === "claude-sdk" ? <>Claude Agent SDK · <span className="mono">{a.model}</span></> : <span className="mono">{a.runtime}</span>} />
         <Fact k="Sandbox" v={sb ? sb.name : <span className="faint">None assigned</span>} />
         <Fact k="If it stops" v={a.restart === "never" ? "Leave it stopped" : a.restart === "always" ? `Restart, up to ${a.maxRestarts}x` : `Restart after crashes, up to ${a.maxRestarts}x`} />
-        <Fact k="Turns per run" v={a.maxTurns ? a.maxTurns : "No limit"} />
+        <Fact k={a.runtime === "claude-sdk" ? "Turns per task" : "Turns per run"} v={a.maxTurns ? a.maxTurns : "No limit"} />
       </div>
 
       <Section title="Transcript">
@@ -286,7 +286,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         ) : (
           <pre className="transcript" aria-live="polite">
             {lines.map((l) => (
-              <div key={l.id} className={l.kind === "input" ? "in" : l.kind === "status" ? "st" : ""}>{l.kind === "input" ? `> ${l.text}` : l.text}</div>
+              <div key={l.id} className={`ev-${l.kind}`}>{l.kind === "input" ? `> ${l.text}` : l.text}</div>
             ))}
             {lines.length === 0 && <span className="faint">Nothing printed yet.</span>}
             <div ref={bottom} />
@@ -300,16 +300,21 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         )}
       </Section>
 
-      <Section title="Command"><code className="mono small">{a.command || "None set"}</code></Section>
+      <Section title={a.runtime === "claude-sdk" ? "Task" : "Command"}>
+        {a.runtime === "claude-sdk" ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}
+      </Section>
     </>
   );
 }
 
 const RUNTIMES = [
-  { id: "command", label: "Command", hint: "Any program run in the sandbox. Messages go to its input; what it prints is the transcript." },
-  { id: "claude-sdk", label: "Claude Agent SDK", hint: "Coming with #14." },
-  { id: "claude-code", label: "Claude Code", hint: "Coming with #15." },
+  { id: "claude-sdk", label: "Claude Agent SDK", hint: "Claude works in the sandbox with its tools. KALYPSO checks every tool call against your policies.", ready: true },
+  { id: "command", label: "Command", hint: "Any program run in the sandbox. Messages go to its input; what it prints is the transcript.", ready: true },
+  { id: "claude-code", label: "Claude Code", hint: "Coming with #15.", ready: false },
 ];
+/** The image with KALYPSO's agent runner, which Claude Agent SDK agents need. */
+export const RUNNER_IMAGE = "ghcr.io/kalyppso/agent-runner:latest";
+const hasRunner = (image: string) => /agent-runner/.test(image);
 
 /** New agent, created in the core. */
 function NewLiveAgent({ onClose }: { onClose: () => void }) {
@@ -320,10 +325,14 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [command, setCommand] = useState("");
-  const [sandboxId, setSandboxId] = useState(sandboxes[0]?.id ?? "");
+  const [runtime, setRuntime] = useState("claude-sdk");
+  const [model, setModel] = useState(MODELS[1]);
+  const [sandboxId, setSandboxId] = useState((sandboxes.find((s) => hasRunner(s.image)) ?? sandboxes[0])?.id ?? "");
   const [restart, setRestart] = useState("on-failure");
   const [maxRestarts, setMaxRestarts] = useState("3");
   const [maxTurns, setMaxTurns] = useState("0");
+  const sdk = runtime === "claude-sdk";
+  const picked = sandboxes.find((s) => s.id === sandboxId);
 
   const create = () => {
     const n = name.trim();
@@ -332,12 +341,12 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         : !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(n) ? "Use letters, digits, - and _, starting with a letter or digit."
         : agents.some((a) => a.name.toLowerCase() === n.toLowerCase()) ? `An agent called ${n} already exists here.`
         : undefined,
-      command: command.trim() ? undefined : "Say what to run, for example: python agent.py",
+      command: sdk || command.trim() ? undefined : "Say what to run, for example: python agent.py",
       sandbox: sandboxId ? undefined : sandboxes.length ? "Pick a sandbox." : "Create a sandbox first.",
     });
     if (!ok) return;
     api.agentCreate(state.ns, {
-      name: n, role: role.trim() || undefined, runtime: "command", command: command.trim(), sandbox_id: sandboxId,
+      name: n, role: role.trim() || undefined, runtime, model: sdk ? model : undefined, command: command.trim(), sandbox_id: sandboxId,
       restart, max_restarts: Math.max(0, +maxRestarts || 0), max_turns: Math.max(0, +maxTurns || 0),
     })
       .then((rec) => { dispatch({ type: "hydrateAgents", ns: state.ns, agents: [...agents.filter((x) => x.ns === state.ns), toAgent(rec)] }); toast(`Agent ${n} created`); onClose(); })
@@ -358,14 +367,34 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         </Field>
       </div>
       <label className="field">Role<input className="input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="What does this agent do?" /></label>
-      <label className="field">Runtime
-        <select className="select" value="command" onChange={() => {}}>
-          {RUNTIMES.map((r) => <option key={r.id} value={r.id} disabled={r.id !== "command"}>{r.label}{r.id !== "command" ? ` (${r.hint})` : ""}</option>)}
-        </select>
-      </label>
-      <Field label="Command" error={errors.command} hint={RUNTIMES[0].hint}>
-        <input className="input mono" value={command} onChange={(e) => { setCommand(e.target.value); clear("command"); }} placeholder="python agent.py" />
-      </Field>
+      <div className="field-row">
+        <Field label="Runtime" hint={RUNTIMES.find((r) => r.id === runtime)?.hint}>
+          <select className="select" value={runtime} onChange={(e) => { setRuntime(e.target.value); clear("command"); }}>
+            {RUNTIMES.map((r) => <option key={r.id} value={r.id} disabled={!r.ready}>{r.label}{r.ready ? "" : ` (${r.hint})`}</option>)}
+          </select>
+        </Field>
+        {sdk && (
+          <label className="field">Model
+            <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
+              {MODELS.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      {sdk && picked && !hasRunner(picked.image) && (
+        <p className="agent-reason bad" style={{ margin: 0 }}>
+          {picked.name} runs <span className="mono">{picked.image}</span>, which has no agent runner. Use a sandbox with <span className="mono">{RUNNER_IMAGE}</span>, or an image built FROM it.
+        </p>
+      )}
+      {sdk ? (
+        <Field label="Task" hint="What to do first. Leave it empty to give it work later from the transcript.">
+          <textarea className="input" rows={3} value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Fix the failing tests in /work/app and open a summary of what changed." />
+        </Field>
+      ) : (
+        <Field label="Command" error={errors.command} hint={RUNTIMES[1].hint}>
+          <input className="input mono" value={command} onChange={(e) => { setCommand(e.target.value); clear("command"); }} placeholder="python agent.py" />
+        </Field>
+      )}
       <div className="field-row">
         <label className="field">If it stops
           <select className="select" value={restart} onChange={(e) => setRestart(e.target.value)}>
@@ -377,8 +406,8 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         <label className="field">Restarts, at most
           <input className="input mono" type="number" min={0} max={100} value={maxRestarts} disabled={restart === "never"} onChange={(e) => setMaxRestarts(e.target.value)} />
         </label>
-        <label className="field">Turns per run
-          <input className="input mono" type="number" min={0} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} title="0 means no limit" />
+        <label className="field">{sdk ? "Turns per task" : "Turns per run"}
+          <input className="input mono" type="number" min={0} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} title={sdk ? "Model turns for each task or message; 0 means no limit" : "Messages per run; 0 means no limit"} />
         </label>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Create agent" />

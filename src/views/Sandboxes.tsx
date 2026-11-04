@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RUNNER_IMAGE } from "./Agents";
 import { Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
@@ -156,7 +157,7 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
           </select>
         </label>
       </div>
-      <Field label="Image" error={errors.image}>
+      <Field label="Image" error={errors.image} hint={<>For Claude agents, use <button type="button" className="link mono" onClick={() => set("image", RUNNER_IMAGE)}>{RUNNER_IMAGE}</button>.</>}>
         <input className="input mono" value={form.image} onChange={(e) => set("image", e.target.value)} />
       </Field>
       <div className="field-row">

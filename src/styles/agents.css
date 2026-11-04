@@ -31,8 +31,15 @@
 .run-row:hover { background: var(--card-2); }
 .run-row.on { background: var(--card-3); }
 .transcript { margin: 0; padding: 12px 14px; max-height: 360px; overflow: auto; border-radius: 10px; background: var(--card); font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.transcript .in { color: var(--accent-hi); }
-.transcript .st { color: var(--text-3); font-style: italic; }
+.transcript > div + div { margin-top: 2px; }
+.transcript .ev-input { color: var(--accent-hi); margin-top: 8px; }
+.transcript .ev-status { color: var(--text-3); font-style: italic; }
+.transcript .ev-output { color: var(--text-2); }
+.transcript .ev-text { font-family: var(--font); font-size: 13.5px; color: var(--text); margin: 8px 0; }
+.transcript .ev-tool { color: var(--text-2); }
+.transcript .ev-tool::before { content: "› "; color: var(--accent-hi); }
+.transcript .ev-result { color: var(--text); font-weight: 500; margin-top: 6px; }
+.transcript .ev-policy, .transcript .ev-error { color: var(--err, #e5484d); }
 .composer { display: flex; gap: 8px; margin-top: 10px; }
 .agent-head .agent-avatar::after { box-shadow: 0 0 0 2px var(--page-bg); }
 
