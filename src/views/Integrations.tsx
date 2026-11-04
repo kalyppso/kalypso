@@ -6,7 +6,7 @@ import {
 } from "simple-icons";
 import { luminance } from "../appearance";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, Status, Toggle, useErrors } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, PreviewNote, Status, Toggle, useErrors } from "../components/ui";
 import "../styles/integrations.css";
 import type { Integration, IntegrationKind } from "../types";
 
@@ -106,12 +106,15 @@ export function Integrations() {
   const { integrations } = useNamespaced();
   const [tab, setTab] = useState<"connected" | "browse">(integrations.length ? "connected" : "browse");
   const [openId, setOpenId] = useState<string | null>(null);
+  // Desktop app: nothing to connect to yet, and tokens must only ever go to the vault (#28).
+  const live = "__TAURI_INTERNALS__" in window;
   const [adding, setAdding] = useState<IntegrationKind | null>(null);
   const open = integrations.find((i) => i.id === openId);
 
   return (
     <>
       <PageHead title="Integrations" subtitle="Connect the tools you already use. Mark a notes app or wiki as a brain and agents can use it as shared long-term memory." />
+      <PreviewNote issue={28}>Integrations are coming soon: this is the catalog that's planned. Connecting one, with its token kept in the vault, arrives with</PreviewNote>
 
       {open ? (
         <IntegrationDetail i={open} onBack={() => setOpenId(null)} />
@@ -155,7 +158,7 @@ export function Integrations() {
                     {KINDS.filter((k) => k.group === g).map((k) => {
                       const connected = integrations.filter((i) => i.kind === k.kind).length;
                       return (
-                        <button key={k.kind} className="logo-tile" onClick={() => setAdding(k.kind)} title={`${k.label}: ${k.blurb}`}>
+                        <button key={k.kind} className="logo-tile" disabled={live} onClick={() => setAdding(k.kind)} title={live ? `${k.label}: coming soon` : `${k.label}: ${k.blurb}`}>
                           <Logo kind={k.kind} size={26} />
                           <span className="logo-tile-name">{k.label}</span>
                           <span className="faint small clip">{connected ? `${connected} connected` : k.blurb}</span>

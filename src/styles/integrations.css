@@ -35,6 +35,8 @@
   transition: background 0.15s, transform 0.15s var(--ease);
 }
 .logo-tile:hover { background: var(--card-2); }
+.logo-tile:disabled { cursor: default; opacity: 0.55; }
+.logo-tile:disabled:hover { background: var(--card); }
 .logo-tile:active { transform: scale(0.98); }
 .logo-tile:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
 .logo-tile .logo { margin-bottom: 4px; background: var(--card-3); }

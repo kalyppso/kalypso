@@ -286,6 +286,14 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .card.flush { padding: 0; overflow: hidden; }
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .card-title { font-size: 13px; font-weight: 600; }
+.getting-started .card-head { justify-content: space-between; }
+.gs-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gs-steps li { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.gs-steps li + li { border-top: 1px solid var(--border); }
+.gs-mark { width: 24px; height: 24px; flex: none; border-radius: 50%; display: grid; place-items: center; font: 500 12px var(--mono); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--border); }
+.gs-steps li.done .gs-mark { background: var(--accent-soft); color: var(--accent-hi); box-shadow: none; }
+.gs-steps li.done .gs-text > div:first-child { color: var(--text-3); text-decoration: line-through; }
+.gs-text { flex: 1; min-width: 0; }
 
 /* A row of numbers, each in its own tile. */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -575,3 +583,8 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .win-strip { position: fixed; inset: 0 0 auto 0; z-index: 5; height: 44px; display: flex; justify-content: flex-end; align-items: center; padding: 0 10px; }
 .win-strip .win-controls { border-left: 0; }
 @media (prefers-reduced-motion: reduce) { .chrome .shell, .chrome .auth { animation: none; } }
+
+/* Pages the core doesn't back yet say so, quietly. */
+.preview-note { margin: -8px 0 20px; padding: 10px 14px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); color: var(--text-2); font-size: 13px; }
+.preview-note a { color: var(--accent-hi); text-decoration: none; }
+.preview-note a:hover { text-decoration: underline; }
