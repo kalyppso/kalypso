@@ -1,0 +1,20 @@
+# KALYPSO agent runner: the image for sandboxes whose agents use the Claude Agent SDK.
+# Build: podman build -t ghcr.io/kalyppso/agent-runner:latest runner/agent-sdk
+# Your own image works too, if it is built FROM this one.
+FROM docker.io/library/node:22-bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git curl ripgrep procps python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/kalypso/runner
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY runner.mjs ./
+
+LABEL org.opencontainers.image.title="KALYPSO agent runner" \
+      org.opencontainers.image.description="Runs Claude Agent SDK agents inside KALYPSO sandboxes" \
+      org.opencontainers.image.source="https://github.com/kalyppso/kalypso" \
+      dev.kalypso.runner="agent-sdk"
+
+WORKDIR /work

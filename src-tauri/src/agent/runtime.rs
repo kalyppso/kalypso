@@ -23,9 +23,17 @@ pub struct AgentCtx<'a> {
 
 /// Something an agent produced, already split into readable pieces.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Event {
+pub struct Event {
+    /// output, text, tool, result, policy, error or status (see `agent_events.kind`).
+    pub kind: &'static str,
+    pub text: String,
+}
+
+impl Event {
     /// A line the agent printed.
-    Output(String),
+    pub fn output(text: impl Into<String>) -> Self {
+        Event { kind: "output", text: text.into() }
+    }
 }
 
 /// A started agent process.
@@ -44,13 +52,18 @@ pub trait AgentRuntime: Send + Sync + 'static {
     async fn start(&self, ctx: &AgentCtx<'_>) -> Result<Run>;
     /// Bytes to write to the agent's stdin to deliver one message.
     fn encode(&self, message: &str) -> Vec<u8>;
+    /// True when the runtime enforces `max_turns` itself (as model turns), so the
+    /// supervisor does not count messages against it.
+    fn counts_turns(&self) -> bool {
+        false
+    }
 }
 
 /// The runtime for an agent kind.
 pub fn for_kind(kind: &str) -> Result<Arc<dyn AgentRuntime>> {
     match kind {
         "command" => Ok(Arc::new(CommandRuntime)),
-        "claude-sdk" => Err(KalypsoError::Invalid("Claude Agent SDK agents arrive with #14".into())),
+        "claude-sdk" => Ok(Arc::new(ClaudeSdkRuntime)),
         "claude-code" => Err(KalypsoError::Invalid("Claude Code agents arrive with #15".into())),
         other => Err(KalypsoError::Invalid(format!("unknown runtime {other}"))),
     }
@@ -98,6 +111,71 @@ impl AgentRuntime for CommandRuntime {
     }
 }
 
+/// Where the runner lives in the agent runner image (`runner/agent-sdk`).
+pub const RUNNER: &str = "/opt/kalypso/runner/runner.mjs";
+/// The image with the runner; images built FROM it work too.
+pub const RUNNER_IMAGE: &str = "ghcr.io/kalyppso/agent-runner:latest";
+
+/// A Claude Agent SDK agent: the runner in the sandbox drives the SDK, sends model calls
+/// through the gateway with the sandbox's virtual key, and asks the policy engine before
+/// every tool call. Its stdout is JSON lines, turned into transcript events here.
+pub struct ClaudeSdkRuntime;
+
+#[async_trait]
+impl AgentRuntime for ClaudeSdkRuntime {
+    fn kind(&self) -> &'static str {
+        "claude-sdk"
+    }
+
+    async fn start(&self, ctx: &AgentCtx<'_>) -> Result<Run> {
+        let a = ctx.agent;
+        let pid_file = pid_file(&a.id);
+        let missing = format!(
+            r#"{{"t":"error","text":"The sandbox image has no KALYPSO agent runner. Use {RUNNER_IMAGE}, or an image built FROM it."}}"#
+        );
+        let wrapper = format!("echo $$ > {pid_file}; [ -f {RUNNER} ] || {{ echo '{missing}'; exit 64; }}; exec node {RUNNER}");
+        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
+        let env = vec![
+            format!("KALYPSO_AGENT={}", a.name),
+            format!("KALYPSO_AGENT_ID={}", a.id),
+            format!("KALYPSO_MODEL={}", a.model),
+            format!("KALYPSO_ROLE={}", a.role),
+            format!("KALYPSO_TASK={}", a.command),
+            format!("KALYPSO_MAX_TURNS={}", a.max_turns),
+        ];
+        let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, "/work", &env).await?;
+        Ok(Run { events: lines(stream.output).map(sdk_event).boxed(), input: stream.input, handle, pid_file })
+    }
+
+    fn encode(&self, message: &str) -> Vec<u8> {
+        let mut b = serde_json::json!({ "type": "message", "text": message }).to_string().into_bytes();
+        b.push(b'\n');
+        b
+    }
+
+    fn counts_turns(&self) -> bool {
+        true
+    }
+}
+
+/// One runner line to a transcript event. Anything that is not a runner event (a stack
+/// trace, a stray print) is kept as plain output.
+fn sdk_event(e: Event) -> Event {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&e.text) else { return e };
+    let text = v.get("text").and_then(|t| t.as_str()).unwrap_or_default().to_string();
+    let kind = match v.get("t").and_then(|t| t.as_str()) {
+        Some("text") => "text",
+        Some("tool") => "tool",
+        Some("output") => "output",
+        Some("result") => "result",
+        Some("policy") => "policy",
+        Some("error") => "error",
+        Some("ready") => "status",
+        _ => return e,
+    };
+    Event { kind, text }
+}
+
 /// Split a byte stream into lines (UTF-8, lossy), keeping a partial last line until it ends.
 fn lines(output: BoxStream<'static, std::io::Result<Vec<u8>>>) -> BoxStream<'static, Event> {
     const MAX_LINE: usize = 16 * 1024;
@@ -106,12 +184,12 @@ fn lines(output: BoxStream<'static, std::io::Result<Vec<u8>>>) -> BoxStream<'sta
             if let Some(i) = buf.iter().position(|&b| b == b'\n') {
                 let line: Vec<u8> = buf.drain(..=i).collect();
                 let text = String::from_utf8_lossy(&line[..line.len() - 1]).trim_end_matches('\r').to_string();
-                return Some((Event::Output(text), (out, buf, done)));
+                return Some((Event::output(text), (out, buf, done)));
             }
             if buf.len() >= MAX_LINE {
                 let text = String::from_utf8_lossy(&buf).into_owned();
                 buf.clear();
-                return Some((Event::Output(text), (out, buf, done)));
+                return Some((Event::output(text), (out, buf, done)));
             }
             if done {
                 if buf.is_empty() {
@@ -119,7 +197,7 @@ fn lines(output: BoxStream<'static, std::io::Result<Vec<u8>>>) -> BoxStream<'sta
                 }
                 let text = String::from_utf8_lossy(&buf).trim_end_matches('\r').to_string();
                 buf.clear();
-                return Some((Event::Output(text), (out, buf, done)));
+                return Some((Event::output(text), (out, buf, done)));
             }
             match out.next().await {
                 Some(Ok(chunk)) => buf.extend_from_slice(&chunk),
@@ -136,7 +214,7 @@ mod tests {
 
     async fn collect(chunks: Vec<&'static str>) -> Vec<String> {
         let s = futures_util::stream::iter(chunks.into_iter().map(|c| Ok(c.as_bytes().to_vec()))).boxed();
-        lines(s).map(|Event::Output(t)| t).collect().await
+        lines(s).map(|e| e.text).collect().await
     }
 
     #[tokio::test]
@@ -149,7 +227,24 @@ mod tests {
     #[test]
     fn messages_are_one_line() {
         assert_eq!(CommandRuntime.encode("hi\nthere"), b"hi there\n");
-        assert!(for_kind("claude-sdk").is_err());
+        assert_eq!(for_kind("claude-sdk").unwrap().kind(), "claude-sdk");
+        assert!(for_kind("claude-code").is_err());
         assert_eq!(for_kind("command").unwrap().kind(), "command");
+    }
+}
+
+#[cfg(test)]
+mod sdk_tests {
+    use super::*;
+
+    #[test]
+    fn runner_lines_become_typed_events() {
+        let ev = |l: &str| sdk_event(Event::output(l));
+        assert_eq!(ev(r#"{"t":"tool","text":"Bash  ls"}"#), Event { kind: "tool", text: "Bash  ls".into() });
+        assert_eq!(ev(r#"{"t":"ready","text":"claude-haiku-5-5"}"#).kind, "status");
+        assert_eq!(ev("plain words"), Event::output("plain words"));
+        assert_eq!(ev(r#"{"t":"nope"}"#).kind, "output");
+        assert_eq!(ClaudeSdkRuntime.encode("hi\nthere"), b"{\"text\":\"hi\\nthere\",\"type\":\"message\"}\n".to_vec());
+        assert!(ClaudeSdkRuntime.counts_turns() && !CommandRuntime.counts_turns());
     }
 }

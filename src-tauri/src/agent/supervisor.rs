@@ -18,7 +18,7 @@ use serde::Serialize;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use ts_rs::TS;
 
-use super::runtime::{self, AgentCtx, AgentRuntime, Event};
+use super::runtime::{self, AgentCtx, AgentRuntime};
 use super::{AgentEvent, AgentRecord};
 use crate::error::{KalypsoError, Result};
 use crate::sandbox::{self, Runtime, SandboxProvider};
@@ -175,8 +175,12 @@ impl Supervisor {
             self.status(&agent, "running", if attempt == 1 { "" } else { "restarted after a crash" });
 
             let mut events = run.events;
-            while let Some(Event::Output(line)) = events.next().await {
-                self.event(&agent, &run_id, "output", &line);
+            while let Some(ev) = events.next().await {
+                self.event(&agent, &run_id, ev.kind, &ev.text);
+                // A finished task leaves the agent running, waiting for the next message.
+                if ev.kind == "result" {
+                    self.status(&agent, "running", &format!("{}; waiting for a message", ev.text));
+                }
             }
             *live.input.lock().await = None;
 
@@ -320,12 +324,12 @@ impl Supervisor {
         if agent.status == "paused" {
             return Err(KalypsoError::Invalid(format!("{} is paused; resume it first", agent.name)));
         }
-        if agent.max_turns > 0 && live.turns.load(Ordering::SeqCst) >= agent.max_turns {
+        let rt = runtime::for_kind(&agent.runtime)?;
+        if !rt.counts_turns() && agent.max_turns > 0 && live.turns.load(Ordering::SeqCst) >= agent.max_turns {
             let reason = format!("reached its limit of {} turns", agent.max_turns);
             self.stop(ns, id, &reason).await?;
             return Err(KalypsoError::Invalid(format!("{} {reason}", agent.name)));
         }
-        let rt = runtime::for_kind(&agent.runtime)?;
         {
             let mut input = live.input.lock().await;
             let w = input.as_mut().ok_or_else(|| KalypsoError::Invalid(format!("{} is between runs", agent.name)))?;

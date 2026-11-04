@@ -66,7 +66,7 @@ export function useErrors() {
 }
 
 // A labelled form control with an optional error under it.
-export function Field({ label, error, hint, children }: { label: ReactNode; error?: string; hint?: string; children: ReactNode }) {
+export function Field({ label, error, hint, children }: { label: ReactNode; error?: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className={`field ${error ? "invalid" : ""}`}>
       {label}

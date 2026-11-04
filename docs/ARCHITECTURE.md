@@ -141,7 +141,14 @@ trait AgentRuntime {
 
 Adapters:
 1. **Command** (done): any program run in the sandbox through the provider's `open_process`. Each line it prints is a transcript event, and each message is written to its stdin as one line. The wrapper writes the PID to `/tmp/.kalypso-agent-<id>.pid`, so the supervisor can signal it.
-2. **Claude Agent SDK** (#14): a runner inside the sandbox that talks to the gateway.
+2. **Claude Agent SDK** (done): sandboxes run the agent runner image (`ghcr.io/kalyppso/agent-runner`, source in `runner/agent-sdk`). `runner.mjs` drives the SDK, with these details:
+   - **Model calls** go through the gateway socket via a loopback shim, using the sandbox's virtual key.
+   - **Every tool call** first goes through a `PreToolUse` hook that asks `POST /_kalypso/policy/check`. A denied call does not run and Claude gets the reason. Approvals hold the call. If KALYPSO is unreachable, the call is denied.
+   - **The first message** is the agent's task. Later messages arrive on stdin, as JSON lines.
+   - **Output** is JSON lines, shown as typed transcript events: text, tool, output, policy, result and error.
+   - **`max_turns`** is passed to the SDK as model turns per task.
+   - **After a restart**, the agent resumes its conversation from `/work/.kalypso/agents/<id>/`.
+   - **A finished task** leaves the agent running, "waiting for a message".
 3. **Claude Code CLI** (#15): headless mode (`claude -p --output-format stream-json`).
 
 The **supervisor** (`agent/supervisor.rs`) owns every live run:
@@ -156,7 +163,7 @@ The **supervisor** (`agent/supervisor.rs`) owns every live run:
 A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes through. It listens on `127.0.0.1:47821` (or a free port) for tools on the host, and on `<app data>/run/gateway.sock` for sandboxes.
 - **Routes** mirror each provider SDK's base URL: `/<provider>/<path>` goes to `<PROVIDER>_BASE_URL/<path>`. `anthropic` (Messages API) and `openai` have built-in base URLs; any other OpenAI-compatible provider (OpenRouter, Ollama, vLLM, …) works once its `<PROVIDER>_BASE_URL` is set.
 - **Keys.** Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `<PROVIDER>_API_KEY`) are namespace secrets with the `gateway` scope: the gateway decrypts them per request and they are never delivered into a sandbox. Callers present a KALYPSO virtual key (`kx_…`, stored only as a SHA-256 hash) in `x-api-key` or `Authorization: Bearer`; the gateway resolves it to its namespace and swaps in the real key.
-- **Sandboxes.** On every start (and secret refresh) a sandbox gets a fresh key in `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`; the previous one is revoked. On Linux engines the socket folder is bind-mounted read-only at `/run/kalypso/gateway`, so even a sandbox with no network can call `http://gateway.kalypso/anthropic/v1/messages` with `curl --unix-socket /run/kalypso/gateway/gateway.sock`. SDKs that only speak TCP need a loopback shim inside the sandbox; the agent image (#14) is planned to ship one. VM-backed engines (Docker Desktop on macOS and Windows) cannot pass sockets through, so they are not mounted there yet.
+- **Sandboxes.** On every start (and secret refresh) a sandbox gets a fresh key in `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`; the previous one is revoked. On Linux engines the socket folder is bind-mounted read-only at `/run/kalypso/gateway`, so even a sandbox with no network can call `http://gateway.kalypso/anthropic/v1/messages` with `curl --unix-socket /run/kalypso/gateway/gateway.sock`. SDKs that only speak TCP need a loopback shim inside the sandbox; the agent runner image ships one (§4.4). VM-backed engines (Docker Desktop on macOS and Windows) cannot pass sockets through, so they are not mounted there yet.
 - **Metering.** Responses stream back unchanged while the gateway reads `usage`: JSON bodies; Anthropic SSE `message_start` and `message_delta` (running totals); OpenAI `usage` chunks (the gateway sets `stream_options.include_usage` on streamed Chat Completions) and Responses `response.completed`. Input, output, cache-write (5-minute and 1-hour) and cache-read tokens are priced from `<app data>/pricing.toml` (created with defaults, re-read when it changes) and written to `usage_events` with the namespace, source (sandbox or key label), model, status and latency. Models without a price are counted and flagged as unpriced.
 - **Budgets.** Before forwarding, the gateway checks the namespace's monthly limit and every budget rule that applies to the request's key (§4.14). A paused request gets HTTP 402 with `budget_exceeded` and a message saying which cap was hit and when requests resume; it is recorded in `usage_events` but never forwarded. A downgrade rewrites the request's `model`. Alerts and hits become desktop notifications, once per period.
 
