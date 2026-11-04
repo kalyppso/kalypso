@@ -20,5 +20,11 @@
         "backgroundColor": "#0f0f0f"
       }
     ]
+  },
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    }
   }
 }
