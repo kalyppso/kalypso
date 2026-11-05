@@ -167,3 +167,17 @@ export function usePopover() {
 
 export const usd = (n: number) => `$${n.toFixed(2)}`;
 export const initials = (name: string) => name.slice(0, 2).toUpperCase();
+
+/**
+ * For pages the core doesn't back yet: what you add is kept on this machine, but agents
+ * don't act on it until the issue ships. Only shown in the desktop app.
+ */
+export function PreviewNote({ children, issue }: { children: ReactNode; issue: number }) {
+  if (!("__TAURI_INTERNALS__" in window)) return null;
+  return (
+    <p className="preview-note">
+      {children}{" "}
+      <a href={`https://github.com/kalyppso/kalypso/issues/${issue}`} target="_blank" rel="noreferrer">#{issue}</a>
+    </p>
+  );
+}

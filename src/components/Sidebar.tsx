@@ -159,14 +159,14 @@ function UserMenu() {
         </span>
         <div style={{ minWidth: 0 }}>
           <div className="clip" style={{ fontWeight: 500 }}>{user.name}</div>
-          <div className="faint small clip">{user.email}</div>
+          <div className="faint small clip">{user.email || (user.provider === "local" ? "On this machine" : "")}</div>
         </div>
         <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
       </button>
       {open && (
         <div className="popover" style={{ top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: "100%", minWidth: 0 }}>
           <button className="pop-item" onClick={() => { dispatch({ type: "view", view: "settings" }); setOpen(false); }}><Settings size={14} /> Account and appearance</button>
-          <button className="pop-item" onClick={() => dispatch({ type: "logout" })}><LogOut size={14} /> Sign out</button>
+          {user.provider !== "local" && <button className="pop-item" onClick={() => dispatch({ type: "logout" })}><LogOut size={14} /> Sign out</button>}
         </div>
       )}
     </div>

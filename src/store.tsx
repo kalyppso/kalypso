@@ -146,7 +146,39 @@ export const DEFAULT_APPEARANCE: Appearance = {
   size: "default",
 };
 
+/** In the desktop app, data comes from the core; the sample data is only for the browser preview. */
+const live = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+/** The desktop app has no accounts yet (#37): you are signed in as yourself, on this machine. */
+const localSession = (name = "You", email = ""): Session => ({ name, email, provider: "local", linked: [], since: "" });
+
+/** Collections the sample data fills. Namespaces are left to the core, which replaces them on start. */
+const SEEDED = [
+  "agents", "sandboxes", "secrets", "connections", "budgets", "budgetRules", "usage", "skills", "mcps", "integrations",
+  "policies", "policyEvents", "activity", "tasks", "repos", "commits", "pullRequests", "tickets",
+] as const;
+
+/**
+ * Drop every sample record, keeping what you made yourself. Records are matched by the
+ * sample's ids, so state saved by an earlier version is cleaned too. Collections whose
+ * samples have no id (usage, budgets, activity) only ever come from the core.
+ */
+function withoutSamples(s: State): State {
+  const out = { ...s } as Record<string, unknown>;
+  for (const key of SEEDED) {
+    const seed = mock[key] as unknown as { id?: string }[];
+    const ids = new Set(seed.map((x) => x.id).filter((id): id is string => !!id));
+    const list = (s[key] ?? []) as unknown as { id?: string }[];
+    out[key] = ids.size ? list.filter((x) => !x.id || !ids.has(x.id)) : [];
+  }
+  return out as unknown as State;
+}
+
 function initial(): State {
+  return live() ? withoutSamples({ ...sample(), session: localSession() }) : sample();
+}
+
+function sample(): State {
   return {
     session: null,
     appearance: DEFAULT_APPEARANCE,
@@ -197,6 +229,12 @@ function load(): State {
       delete (saved as Partial<State> & { terminals?: unknown }).terminals;
       // The default accent moved to the logo purple; only migrate people who never changed it.
       if (saved.appearance.accent === "#8b5cf6") saved.appearance = { ...saved.appearance, accent: DEFAULT_APPEARANCE.accent };
+      if (live()) {
+        // Keep the name someone gave themselves; drop the mock sign-in and every sample record.
+        const mine = saved.session?.provider === "local" ? saved.session : null;
+        saved.session = localSession(mine?.name, mine?.email);
+        return withoutSamples(saved);
+      }
       return saved;
     }
   } catch {
@@ -212,7 +250,8 @@ function reducer(s: State, a: Action): State {
     case "login":
       return { ...s, session: a.session, view: "overview" };
     case "logout":
-      return { ...s, session: null, paletteOpen: false };
+      // Nothing to sign out of in the desktop app until accounts exist.
+      return live() ? s : { ...s, session: null, paletteOpen: false };
     case "linkProvider":
       return s.session && !s.session.linked.includes(a.provider)
         ? { ...s, session: { ...s.session, linked: [...s.session.linked, a.provider] } }

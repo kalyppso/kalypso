@@ -53,7 +53,7 @@ export function Git() {
     return (
       <>
         <PageHead title="Git tracker" subtitle={subtitle} />
-        <div className="empty">No repositories in this namespace. Connect GitHub or GitLab in Integrations.</div>
+        <div className="empty">No repositories in this namespace yet. Linking GitHub repositories to agents is coming (<a href="https://github.com/kalyppso/kalypso/issues/100" target="_blank" rel="noreferrer">#100</a>).</div>
       </>
     );
   }

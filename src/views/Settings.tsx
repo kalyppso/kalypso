@@ -265,11 +265,13 @@ function Account() {
   const zones = timeZones();
   const now = new Date();
   const dirty = name.trim() !== user.name || email.trim() !== user.email;
+  // The desktop app has no accounts yet (#37): nothing to link or sign out of.
+  const local = user.provider === "local";
 
   const save = () => {
     const ok = check({
       name: !name.trim() ? "Enter your name." : name.trim().length > 60 ? "Keep it under 60 characters." : undefined,
-      email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? "Enter a valid email address." : undefined,
+      email: local && !email.trim() ? undefined : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? "Enter a valid email address." : undefined,
     });
     if (!ok) return;
     dispatch({ type: "updateProfile", patch: { name: name.trim(), email: email.trim() } });
@@ -284,13 +286,13 @@ function Account() {
             <span className="avatar" style={{ width: 40, height: 40, fontSize: 14, borderRadius: "50%", background: "var(--accent-soft)", color: "var(--accent-hi)" }}>
               {(name.trim() || user.name).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
             </span>
-            <div className="faint small">Signed in with {providerLabel(user.provider)}{user.since ? ` since ${user.since}` : ""}.</div>
+            <div className="faint small">{local ? "No account needed. Everything stays on this machine; your name is used in logs and commits." : <>Signed in with {providerLabel(user.provider)}{user.since ? ` since ${user.since}` : ""}.</>}</div>
           </div>
           <div className="field-row">
             <Field label="Name" error={errors.name}>
               <input className="input" value={name} onChange={(e) => { setName(e.target.value); clear("name"); }} />
             </Field>
-            <Field label="Email" error={errors.email}>
+            <Field label={local ? "Email (optional)" : "Email"} error={errors.email}>
               <input className="input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); clear("email"); }} />
             </Field>
           </div>
@@ -317,7 +319,7 @@ function Account() {
         </Setting>
       </Group>
 
-      <Group title="Linked accounts">
+      {!local && <Group title="Linked accounts">
         {all.map((prov) => {
           const linked = user.linked.includes(prov);
           const primary = user.provider === prov;
@@ -337,13 +339,13 @@ function Account() {
             </div>
           );
         })}
-      </Group>
+      </Group>}
 
-      <Group title="Session">
+      {!local && <Group title="Session">
         <Setting title="Sign out" desc="Your namespaces, secrets and sandboxes stay on this machine.">
           <button className="btn" onClick={() => dispatch({ type: "logout" })}>Sign out</button>
         </Setting>
-      </Group>
+      </Group>}
     </>
   );
 }

@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import "../styles/connections.css";
 import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
+import { CodeReveal, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors } from "../components/ui";
 import { Logo } from "./Integrations";
 import type { Agent, Connection, ConnectionKind, IntegrationKind } from "../types";
 
@@ -121,6 +121,7 @@ export function Connections() {
       <PageHead title="Connections & tunnels" subtitle="Let agents talk to each other, to your tools, or to machines elsewhere. Links stay inside this namespace.">
         <PrimaryButton onClick={() => setDraft({})} icon={<Plus size={14} />}>New connection</PrimaryButton>
       </PageHead>
+      <PreviewNote issue={23}>Links you draw here are a plan for now: agents can't use them until the connections API ships in</PreviewNote>
 
       {suggestions.length > 0 && (
         <div style={{ marginBottom: 16 }}>

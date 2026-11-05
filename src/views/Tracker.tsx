@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { Field, Modal, ModalActions, PageHead, PrimaryButton, initials, usd, useErrors } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, initials, usd, useErrors } from "../components/ui";
 import "../styles/pages.css";
 import type { Task, TaskStatus } from "../types";
 import { kindDef } from "./Integrations";
@@ -58,6 +58,7 @@ export function Tracker() {
         {ticketSources.length > 0 && <button className="btn" onClick={() => setImporting(true)}><Download size={14} /> Import tickets</button>}
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New task</PrimaryButton>
       </PageHead>
+      <PreviewNote issue={20}>Tasks are kept on this machine, but agents don't pick them up yet. That arrives with real tasks in</PreviewNote>
 
       <div className="stats">
         <div className="stat"><div className="stat-label">Running</div><div className="stat-value">{count("running")}</div><div className="stat-sub">{count("queued")} queued</div></div>

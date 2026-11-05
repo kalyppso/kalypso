@@ -13,9 +13,9 @@ interface Day {
   people: number;
 }
 
-// The last 14 days come from real commit data; older days are seeded history
-// so the year looks lived-in. The real build reads the full commit log.
-function buildYear(commits: Commit[], seed: number): Day[] {
+// The last 14 days come from real commit data. In the browser preview, older days are
+// seeded history so the year looks lived-in; the desktop app never invents any.
+function buildYear(commits: Commit[], seed: number, history: boolean): Day[] {
   let s = seed;
   const rand = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
   const today = new Date();
@@ -25,7 +25,7 @@ function buildYear(commits: Commit[], seed: number): Day[] {
   const days: Day[] = [];
   for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
     const ago = Math.round((today.getTime() - d.getTime()) / 86400000);
-    if (ago < 14) {
+    if (ago < 14 || !history) {
       const list = commits.filter((c) => c.day === ago);
       days.push({ date: new Date(d), agents: list.filter((c) => c.isAgent).length, people: list.filter((c) => !c.isAgent).length });
     } else {
@@ -39,7 +39,7 @@ function buildYear(commits: Commit[], seed: number): Day[] {
   return days;
 }
 
-export function ContributionGraph({ commits, seed }: { commits: Commit[]; seed: number }) {
+export function ContributionGraph({ commits, seed, history = true }: { commits: Commit[]; seed: number; history?: boolean }) {
   const [who, setWho] = useState<"all" | "agents" | "people">("all");
   const [hover, setHover] = useState<{ day: Day; x: number; y: number } | null>(null);
   // Squares grow to fill the card, like the GitHub profile graph.
@@ -50,7 +50,7 @@ export function ContributionGraph({ commits, seed }: { commits: Commit[]; seed: 
     if (wrap.current) ro.observe(wrap.current);
     return () => ro.disconnect();
   }, []);
-  const days = useMemo(() => buildYear(commits, seed), [commits, seed]);
+  const days = useMemo(() => buildYear(commits, seed, history), [commits, seed, history]);
 
   const count = (d: Day) => (who === "agents" ? d.agents : who === "people" ? d.people : d.agents + d.people);
   const total = days.reduce((s, d) => s + count(d), 0);

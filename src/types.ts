@@ -202,7 +202,8 @@ export interface Appearance {
   size: "compact" | "default" | "large";
 }
 
-export type AuthProvider = "google" | "github" | "gitlab" | "email";
+/** "local": the desktop app without an account (accounts arrive with #37). */
+export type AuthProvider = "google" | "github" | "gitlab" | "email" | "local";
 
 export interface Session {
   name: string;

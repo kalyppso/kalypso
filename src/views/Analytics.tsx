@@ -1,9 +1,10 @@
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { dailySeries, monthSpend, useNamespaced, useStore } from "../store";
 import { PageHead, Status, initials, usd } from "../components/ui";
 import { MonitoringPanel } from "./Monitoring";
-import type { ViewId } from "../types";
+import { api, isLive, useBudgetOverview } from "../backend";
+import type { PolicyEvent, ViewId } from "../types";
 
 // Layout, top to bottom: headline numbers that open their page, three equal
 // "what's happening" cards, then live monitoring.
@@ -11,9 +12,13 @@ const LIST_MAX = 4;
 
 export function Analytics() {
   const { state, dispatch } = useStore();
-  const { agents, sandboxes, connections, budget, policyEvents, activity, integrations } = useNamespaced();
-  const spend = monthSpend(state.usage, agents.map((a) => a.id));
-  const limit = budget?.monthlyLimit ?? 0;
+  const { agents, sandboxes, connections, budget, policyEvents: localEvents, activity, integrations } = useNamespaced();
+  // Desktop app: spend from the gateway's meter and policy events from the enforcement log.
+  const { overview } = useBudgetOverview(state.ns);
+  const liveEvents = useLivePolicyEvents(state.ns);
+  const policyEvents = liveEvents ?? localEvents;
+  const spend = overview ? overview.month_spent / 1e6 : monthSpend(state.usage, agents.map((a) => a.id));
+  const limit = overview ? overview.budget.monthly_limit / 1e6 : budget?.monthlyLimit ?? 0;
   const pct = limit ? spend / limit : 0;
   const running = agents.filter((a) => a.status === "running").length;
   const isStop = (o: string) => o === "blocked" || o === "denied";
@@ -74,7 +79,12 @@ export function Analytics() {
         </ListCard>
       </div>
 
-      <MonitoringPanel />
+      {isLive() ? (
+        <section className="card">
+          <div className="card-head"><span className="card-title">Monitoring</span></div>
+          <p className="faint" style={{ margin: 0 }}>Request rate, tokens, latency and errors per model arrive with the metrics store (#21). Until then, spend per model and per agent is on the Budget page.</p>
+        </section>
+      ) : <MonitoringPanel />}
     </>
   );
 }
@@ -154,4 +164,23 @@ function Pips({ marks }: { marks: boolean[] }) {
       ))}
     </svg>
   );
+}
+
+/** Today's enforcement log from the core, in the shape this page lists. Null outside the desktop app. */
+function useLivePolicyEvents(ns: string): PolicyEvent[] | null {
+  const [events, setEvents] = useState<PolicyEvent[] | null>(null);
+  useEffect(() => {
+    if (!isLive()) return;
+    const today = new Date().toISOString().slice(0, 10);
+    api.policyEvents(ns, 200)
+      .then((list) => setEvents(list
+        .filter((e) => e.ts.startsWith(today))
+        .map((e) => ({
+          id: String(e.id), ns: e.ns, policyId: e.policy_id, agentId: e.source,
+          outcome: (e.outcome === "asked" ? "warned" : e.outcome) as PolicyEvent["outcome"],
+          detail: `${e.policy}: ${e.action}`, at: e.ts.slice(11, 16),
+        }))))
+      .catch(() => setEvents([]));
+  }, [ns]);
+  return events;
 }
