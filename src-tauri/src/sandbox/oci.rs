@@ -30,7 +30,17 @@ const EXEC_USER: &str = "0";
 pub struct OciProvider {
     docker: Docker,
     kind: &'static str,
+    /// The engine runs in a VM (Docker Desktop, Podman machine), so sandboxes can't
+    /// mount the host's gateway socket and reach it through the relay instead.
+    vm: bool,
+    /// One relay change at a time per provider (creating it twice would conflict).
+    relay_lock: tokio::sync::Mutex<()>,
 }
+
+/// The gateway relay: one small container per namespace that forwards sandbox traffic to
+/// the host's sandbox gateway port. Pinned, so it can't change under us.
+pub const RELAY_IMAGE: &str = "docker.io/alpine/socat:1.8.0.3";
+const RELAY_PORT: u16 = 8080;
 
 impl OciProvider {
     /// Find a reachable engine: `DOCKER_HOST` first, then the usual places Docker,
@@ -39,8 +49,9 @@ impl OciProvider {
         for (endpoint, kind) in candidates() {
             let Some(docker) = connect(&endpoint) else { continue };
             if docker.ping().await.is_ok() {
-                tracing::info!(kind, endpoint, "container runtime connected");
-                return Some(Self { docker, kind });
+                let vm = runs_in_vm(&docker).await;
+                tracing::info!(kind, endpoint, vm, "container runtime connected");
+                return Some(Self { docker, kind, vm, relay_lock: tokio::sync::Mutex::new(()) });
             }
         }
         None
@@ -48,6 +59,106 @@ impl OciProvider {
 
     pub fn docker(&self) -> &Docker {
         &self.docker
+    }
+
+    /// The host port sandboxes reach through the relay, when this engine needs one.
+    fn relay(&self) -> Option<u16> {
+        if self.vm || crate::gateway::socket_dir().is_none() {
+            crate::gateway::sandbox_port()
+        } else {
+            None
+        }
+    }
+
+    /// Make sure the namespace's relay runs and forwards to `port`, and is on every
+    /// sandbox gateway network of the namespace (a recreated relay must rejoin them).
+    async fn ensure_relay(&self, ns: &str, port: u16) -> Result<()> {
+        let _guard = self.relay_lock.lock().await;
+        let name = relay_name(ns);
+        let current = match self.docker.inspect_container(&name, None::<InspectContainerOptions>).await {
+            Ok(info) => Some(info),
+            Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => None,
+            Err(e) => return Err(rt_err(e)),
+        };
+        let same_port = current
+            .as_ref()
+            .and_then(|i| i.config.as_ref()?.labels.as_ref()?.get("kalypso.gw_port").cloned())
+            .is_some_and(|p| p == port.to_string());
+        let mut fresh = false;
+        match current {
+            Some(info) if same_port => {
+                if info.state.and_then(|s| s.running) != Some(true) {
+                    self.docker.start_container(&name, None::<StartContainerOptions<String>>).await.map_err(rt_err)?;
+                }
+            }
+            other => {
+                if other.is_some() {
+                    let opts = Some(RemoveContainerOptions { force: true, ..Default::default() });
+                    self.docker.remove_container(&name, opts).await.map_err(rt_err)?;
+                }
+                self.pull(RELAY_IMAGE).await?;
+                let labels = HashMap::from([
+                    ("kalypso.ns".to_string(), ns.to_string()),
+                    ("kalypso.role".to_string(), "gateway-relay".to_string()),
+                    ("kalypso.gw_port".to_string(), port.to_string()),
+                ]);
+                let host = |limits: bool| HostConfig {
+                    // Out to the host only; sandboxes come in over their own internal networks.
+                    network_mode: Some("bridge".into()),
+                    extra_hosts: Some(vec!["host.kalypso:host-gateway".into()]),
+                    readonly_rootfs: Some(true),
+                    cap_drop: Some(vec!["ALL".into()]),
+                    security_opt: Some(vec!["no-new-privileges".into()]),
+                    memory: limits.then_some(32 * 1024 * 1024),
+                    pids_limit: limits.then_some(128),
+                    restart_policy: Some(bollard::models::RestartPolicy {
+                        name: Some(bollard::models::RestartPolicyNameEnum::UNLESS_STOPPED),
+                        maximum_retry_count: None,
+                    }),
+                    ..Default::default()
+                };
+                let config = |limits: bool| Config {
+                    image: Some(RELAY_IMAGE.to_string()),
+                    cmd: Some(vec![format!("TCP-LISTEN:{RELAY_PORT},fork,reuseaddr,max-children=128"), format!("TCP:host.kalypso:{port}")]),
+                    labels: Some(labels.clone()),
+                    host_config: Some(host(limits)),
+                    ..Default::default()
+                };
+                let opts = || Some(CreateContainerOptions { name: name.clone(), platform: None });
+                match self.docker.create_container(opts(), config(true)).await {
+                    Ok(_) => {}
+                    Err(e) if e.to_string().contains("cgroup") => {
+                        self.docker.create_container(opts(), config(false)).await.map_err(rt_err)?;
+                    }
+                    Err(e) => return Err(rt_err(e)),
+                }
+                self.docker.start_container(&name, None::<StartContainerOptions<String>>).await.map_err(rt_err)?;
+                fresh = true;
+                tracing::info!(ns, port, "gateway relay started");
+            }
+        }
+        if fresh {
+            let filters = HashMap::from([("label".to_string(), vec![format!("kalypso.gw={ns}")])]);
+            let nets = self.docker.list_networks(Some(bollard::network::ListNetworksOptions { filters })).await.map_err(rt_err)?;
+            for n in nets.into_iter().filter_map(|n| n.name) {
+                self.join_relay(ns, &n).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Put the relay on a sandbox's gateway network, as `gateway.kalypso`.
+    async fn join_relay(&self, ns: &str, net: &str) -> Result<()> {
+        let config = bollard::network::ConnectNetworkOptions {
+            container: relay_name(ns),
+            endpoint_config: bollard::models::EndpointSettings { aliases: Some(vec!["gateway.kalypso".into()]), ..Default::default() },
+        };
+        match self.docker.connect_network(net, config).await {
+            Ok(()) => Ok(()),
+            // Already on it.
+            Err(e) if e.to_string().contains("already") || e.to_string().contains("exists") => Ok(()),
+            Err(e) => Err(rt_err(e)),
+        }
     }
 
     async fn pull(&self, image: &str) -> Result<()> {
@@ -106,6 +217,11 @@ impl SandboxProvider for OciProvider {
     }
 
     async fn teardown_namespace(&self, ns: &str) -> Result<()> {
+        let opts = Some(RemoveContainerOptions { force: true, ..Default::default() });
+        match self.docker.remove_container(&relay_name(ns), opts).await {
+            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+            Err(e) => return Err(rt_err(e)),
+        }
         match self.docker.remove_network(&network_name(ns)).await {
             Ok(()) => Ok(()),
             Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(()),
@@ -115,7 +231,29 @@ impl SandboxProvider for OciProvider {
 
     async fn create(&self, ns: &str, id: &str, spec: &NewSandbox) -> Result<String> {
         self.pull(&spec.image).await?;
+        // VM engines: a private internal network per sandbox, shared only with the
+        // namespace's relay, is how it reaches the gateway in every network mode.
+        let relay = self.relay();
+        let gw_net = gateway_network_name(ns, id);
+        if relay.is_some() {
+            self.docker
+                .create_network(CreateNetworkOptions {
+                    name: gw_net.clone(),
+                    driver: "bridge".into(),
+                    internal: true,
+                    labels: HashMap::from([
+                        ("kalypso.ns".to_string(), ns.to_string()),
+                        ("kalypso.gw".to_string(), ns.to_string()),
+                        ("kalypso.sandbox".to_string(), id.to_string()),
+                    ]),
+                    ..Default::default()
+                })
+                .await
+                .map_err(rt_err)?;
+        }
         let network_mode = match spec.network.as_str() {
+            // No network at all, except the relay on VM engines.
+            "isolated" if relay.is_some() => gw_net.clone(),
             "isolated" => "none".to_string(),
             "namespace" => {
                 self.prepare_namespace(ns).await?;
@@ -129,7 +267,7 @@ impl SandboxProvider for OciProvider {
         let mut mounts = vec![Mount { target: Some("/work".into()), typ: Some(MountTypeEnum::VOLUME), ..Default::default() }];
         // The model gateway's socket: the only way out to a model, whatever the network mode.
         // A local engine sees the host's files; a VM-backed one (Docker Desktop) cannot pass sockets.
-        if let Some(dir) = crate::gateway::socket_dir().filter(|_| cfg!(target_os = "linux")) {
+        if let Some(dir) = crate::gateway::socket_dir().filter(|_| relay.is_none()) {
             mounts.push(Mount {
                 source: Some(dir.display().to_string()),
                 target: Some(crate::gateway::SANDBOX_SOCKET_DIR.into()),
@@ -161,6 +299,7 @@ impl SandboxProvider for OciProvider {
             cmd: Some(vec!["infinity".to_string()]),
             working_dir: Some("/work".into()),
             labels: Some(labels.clone()),
+            env: relay.map(|_| vec![format!("KALYPSO_GATEWAY_URL={}", crate::gateway::RELAY_URL)]),
             host_config: Some(host(limits)),
             ..Default::default()
         };
@@ -174,10 +313,23 @@ impl SandboxProvider for OciProvider {
             }
             Err(e) => return Err(rt_err(e)),
         };
+        if let Some(port) = relay {
+            self.ensure_relay(ns, port).await?;
+            self.join_relay(ns, &gw_net).await?;
+            if network_mode != gw_net {
+                let config =
+                    bollard::network::ConnectNetworkOptions { container: container_name(ns, id), endpoint_config: Default::default() };
+                self.docker.connect_network(&gw_net, config).await.map_err(rt_err)?;
+            }
+        }
         Ok(created.id)
     }
 
     async fn start(&self, ns: &str, id: &str) -> Result<()> {
+        // The relay may be gone (engine restarted, KALYPSO on a new port): bring it back first.
+        if let Some(port) = self.relay() {
+            self.ensure_relay(ns, port).await?;
+        }
         self.docker.start_container(&container_name(ns, id), None::<StartContainerOptions<String>>).await.map_err(rt_err)
     }
 
@@ -196,9 +348,20 @@ impl SandboxProvider for OciProvider {
     async fn remove(&self, ns: &str, id: &str) -> Result<()> {
         let opts = Some(RemoveContainerOptions { force: true, v: true, ..Default::default() });
         match self.docker.remove_container(&container_name(ns, id), opts).await {
-            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(()),
-            Err(e) => Err(rt_err(e)),
+            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+            Err(e) => return Err(rt_err(e)),
         }
+        // Its gateway network, if it had one: take the relay off it, then remove it.
+        let net = gateway_network_name(ns, id);
+        if self.docker.inspect_network::<String>(&net, None).await.is_ok() {
+            let leave = bollard::network::DisconnectNetworkOptions { container: relay_name(ns), force: true };
+            let _ = self.docker.disconnect_network(&net, leave).await;
+            match self.docker.remove_network(&net).await {
+                Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+                Err(e) => tracing::warn!(network = net, error = %e, "could not remove a sandbox gateway network"),
+            }
+        }
+        Ok(())
     }
 
     async fn status(&self, ns: &str, id: &str) -> Result<&'static str> {
@@ -417,6 +580,34 @@ pub fn status_for_action(action: &str) -> Option<&'static str> {
 
 pub fn network_name(ns: &str) -> String {
     format!("kalypso-ns-{ns}")
+}
+
+/// The namespace's gateway relay (VM engines only).
+pub fn relay_name(ns: &str) -> String {
+    format!("kalypso-gw-{ns}")
+}
+
+/// A sandbox's private network to the relay (VM engines only).
+pub fn gateway_network_name(ns: &str, id: &str) -> String {
+    format!("kalypso-gw-{ns}-{id}")
+}
+
+/// Whether the engine runs containers in a VM, so host sockets can't be shared with them.
+/// `KALYPSO_GATEWAY_TRANSPORT=relay` or `=socket` overrides the guess.
+async fn runs_in_vm(docker: &Docker) -> bool {
+    match std::env::var("KALYPSO_GATEWAY_TRANSPORT").as_deref() {
+        Ok("relay") => return true,
+        Ok("socket") => return false,
+        _ => {}
+    }
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    // Docker Desktop on Linux runs a VM too.
+    match docker.info().await {
+        Ok(info) => info.operating_system.is_some_and(|os| os.contains("Docker Desktop")),
+        Err(_) => false,
+    }
 }
 
 pub(crate) fn container_name(ns: &str, id: &str) -> String {
