@@ -26,6 +26,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Theme contrast (WCAG AA)
+        run: npm run check:contrast
       - name: Type-check and build
         run: npm run build
 

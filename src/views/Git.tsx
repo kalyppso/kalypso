@@ -2,7 +2,7 @@ import { useState } from "react";
 import { siGithub, siGitlab } from "simple-icons";
 import { CheckCircle2, CircleDashed, GitBranch, GitPullRequest, MessageSquareWarning, XCircle } from "lucide-react";
 import { useNamespaced, useStore } from "../store";
-import { CodeReveal, PageHead, initials } from "../components/ui";
+import { CodeReveal, EmptyState, initials, PageHead } from "../components/ui";
 import { BrandIcon } from "./Auth";
 import type { Commit, PullRequest } from "../types";
 import "../styles/git.css";
@@ -53,7 +53,10 @@ export function Git() {
     return (
       <>
         <PageHead title="Git tracker" subtitle={subtitle} />
-        <div className="empty">No repositories in this namespace yet. Linking GitHub repositories to agents is coming (<a href="https://github.com/kalyppso/kalypso/issues/100" target="_blank" rel="noreferrer">#100</a>).</div>
+        <EmptyState icon={GitBranch} title="No repositories yet">
+          Commits, pull requests and CI from the repositories your agents work on. Linking GitHub repositories to agents is coming in{" "}
+          <a href="https://github.com/kalyppso/kalypso/issues/100" target="_blank" rel="noreferrer">#100</a>.
+        </EmptyState>
       </>
     );
   }

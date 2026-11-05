@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ExternalLink, Plug, Sparkles, Trash2 } from "lucide-react";
 import { siGithub } from "simple-icons";
 import { uid, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
 import { BrandIcon } from "./Auth";
 import { lookupSkills, parseRepo, type SkillLookup } from "../github";
 import "../styles/integrations.css";
@@ -61,7 +61,11 @@ export function Registry() {
               <div className="chips">{usedBy("skills", s.id).map((u) => <span key={u} className="badge">{u}</span>)}{usedBy("skills", s.id).length === 0 && <span className="faint small">Not attached to any agent</span>}</div>
             </div>
           ))}
-          {state.skills.length === 0 && <div className="empty">No skills yet. Add one from GitHub.</div>}
+          {state.skills.length === 0 && (
+            <EmptyState icon={Sparkles} title="No skills yet">
+              Skills teach agents how to do a job. Add one from a GitHub repository with the button above.
+            </EmptyState>
+          )}
         </div>
       ) : (
         <>

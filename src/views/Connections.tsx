@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, applyNodeChanges, type Connection as FlowLink, type Edge, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "../styles/connections.css";
-import { ArrowLeftRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Cable, Loader2, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors } from "../components/ui";
 import { Logo } from "./Integrations";
 import type { Agent, Connection, ConnectionKind, IntegrationKind } from "../types";
 
@@ -137,7 +137,11 @@ export function Connections() {
       )}
 
       {agents.length === 0 ? (
-        <div className="empty" style={{ marginBottom: 16 }}>Add agents to this namespace to connect them.</div>
+        <div style={{ marginBottom: 16 }}>
+          <EmptyState icon={Cable} title="Nothing to connect yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "agents", compose: true })}><Plus size={13} /> New agent</button>}>
+            Add agents to this namespace, then link them to each other and to your tools.
+          </EmptyState>
+        </div>
       ) : (
         <div className="flow-wrap">
           <div className="flow-bar">

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle } from "lucide-react";
+import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 
 const tone: Record<string, "ok" | "warn" | "err" | ""> = {
@@ -179,5 +179,76 @@ export function PreviewNote({ children, issue }: { children: ReactNode; issue: n
       {children}{" "}
       <a href={`https://github.com/kalyppso/kalypso/issues/${issue}`} target="_blank" rel="noreferrer">#{issue}</a>
     </p>
+  );
+}
+
+/**
+ * Keeps one page's crash from blanking the whole window: the sidebar, top bar and
+ * other pages keep working, and the page says what went wrong.
+ */
+export class PageBoundary extends Component<{ children: ReactNode; page: string }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error(`The ${this.props.page} page crashed`, error);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="empty-state" role="alert">
+        <div className="empty-title">This page ran into a problem</div>
+        <p className="faint">{this.state.error.message}</p>
+        <button className="btn" onClick={() => this.setState({ error: null })}>Try again</button>
+      </div>
+    );
+  }
+}
+
+/** What a page shows before it has anything: what goes here, and the first step. */
+export function EmptyState({ icon: Icon, title, children, action }: { icon: LucideIcon; title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon" aria-hidden><Icon size={18} /></span>
+      <div className="empty-title">{title}</div>
+      {children && <p className="faint">{children}</p>}
+      {action}
+    </div>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [
+  [`${modKey} K`, "Search and run any command"],
+  [`${modKey} B`, "Collapse or expand the sidebar"],
+  ["Ctrl `", "Open or close the terminal"],
+  ["?", "Show these shortcuts"],
+  ["Esc", "Close a dialog, panel or menu"],
+  ["↑ ↓ Enter", "Move and choose in lists and the command palette"],
+];
+
+/** `?` (outside a text field) or the command palette opens this. */
+export function ShortcutsSheet() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || !!t.closest(".xterm"));
+      if (e.key === "?" && !typing && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setOpen((o) => !o); }
+    };
+    const show = () => setOpen(true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("kalypso:shortcuts", show);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("kalypso:shortcuts", show); };
+  }, []);
+  if (!open) return null;
+  return (
+    <Modal title="Keyboard shortcuts" onClose={() => setOpen(false)}>
+      <dl className="shortcuts">
+        {SHORTCUTS.map(([keys, what]) => (
+          <div key={keys}><dt>{keys.split(" ").map((k) => <kbd key={k}>{k}</kbd>)}</dt><dd>{what}</dd></div>
+        ))}
+      </dl>
+    </Modal>
   );
 }

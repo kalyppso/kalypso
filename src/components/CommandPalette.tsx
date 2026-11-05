@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Code2, CornerDownLeft, Layers, Palette, Sparkles } from "lucide-react";
+import { Bot, Boxes, Cable, Code2, CornerDownLeft, KanbanSquare, Keyboard, KeyRound, Layers, PanelLeft, Palette, Rows3, ShieldCheck, Sparkles } from "lucide-react";
+import type { ViewId } from "../types";
 import { useStore } from "../store";
 import { themePatch, themes } from "../themes";
 import { NAV } from "./Sidebar";
@@ -37,12 +38,44 @@ export function CommandPalette() {
       id: `th-${t.id}`, group: "Theme", label: `Theme: ${t.label}`, icon: <Palette size={16} />,
       run: () => { dispatch({ type: "appearance", patch: themePatch(t.id) }); close(); },
     }));
+    // Every create action, so nothing needs the mouse.
+    const create: [ViewId, string, ReactNode][] = [
+      ["agents", "New agent", <Bot size={16} />],
+      ["sandboxes", "New sandbox", <Boxes size={16} />],
+      ["secrets", "Add secret", <KeyRound size={16} />],
+      ["policies", "New policy", <ShieldCheck size={16} />],
+      ["tracker", "New task", <KanbanSquare size={16} />],
+      ["connections", "New connection", <Cable size={16} />],
+    ];
+    const make = create.map(([view, label, icon]) => ({
+      id: `new-${view}`, group: "Create", label, icon,
+      run: () => { dispatch({ type: "view", view, compose: true }); close(); },
+    }));
+    const p = state.prefs;
+    const layout = [
+      ...(["left", "right", "top"] as const).filter((v) => v !== p.sidebarPosition).map((v) => ({
+        id: `pos-${v}`, group: "Layout", label: `Navigation on the ${v}`, icon: <PanelLeft size={16} />,
+        run: () => { dispatch({ type: "prefs", patch: { sidebarPosition: v } }); close(); },
+      })),
+      ...(p.sidebarPosition === "top" ? [] : [{
+        id: "collapse", group: "Layout", label: state.sidebarOpen ? "Collapse the sidebar" : "Expand the sidebar", icon: <PanelLeft size={16} />,
+        run: () => { dispatch({ type: "sidebar", open: !state.sidebarOpen }); close(); },
+      }]),
+      {
+        id: "density", group: "Layout", label: p.density === "compact" ? "Comfortable density" : "Compact density", icon: <Rows3 size={16} />,
+        run: () => { dispatch({ type: "prefs", patch: { density: p.density === "compact" ? "comfortable" : "compact" } }); close(); },
+      },
+    ];
+    const help = [{
+      id: "shortcuts", group: "Help", label: "Keyboard shortcuts", icon: <Keyboard size={16} />,
+      run: () => { close(); window.dispatchEvent(new Event("kalypso:shortcuts")); },
+    }];
     const misc = [
       { id: "code", group: "Preferences", label: state.showCode ? "Hide code" : "Show code", icon: <Code2 size={16} />, run: () => { dispatch({ type: "showCode", value: !state.showCode }); close(); } },
       { id: "ambient", group: "Preferences", label: state.ambient ? "Turn off ambient background" : "Turn on ambient background", icon: <Sparkles size={16} />, run: () => { dispatch({ type: "ambient", value: !state.ambient }); close(); } },
     ];
-    return [...go, ...tools, ...ns, ...th, ...misc];
-  }, [state.namespaces, state.showCode, state.ambient, dispatch]);
+    return [...go, ...make, ...tools, ...ns, ...layout, ...th, ...misc, ...help];
+  }, [state.namespaces, state.showCode, state.ambient, state.prefs, state.sidebarOpen, dispatch]);
 
   const filtered = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()));
 
