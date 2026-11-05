@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AuditEntry } from "./bindings/AuditEntry";
+import type { SecretGrant } from "./bindings/SecretGrant";
 import type { AgentEvent } from "./bindings/AgentEvent";
 import type { AgentPatch } from "./bindings/AgentPatch";
 import type { AgentRecord } from "./bindings/AgentRecord";
@@ -53,6 +54,8 @@ export const api = {
   nsDelete: (ns: string) => invoke<void>("ns_delete", { ns }),
   secretList: (ns: string) => invoke<SecretMeta[]>("secret_list", { ns }),
   secretSet: (ns: string, key: string, value: string, scope: string) => invoke<SecretMeta>("secret_set", { ns, key, value, scope }),
+  secretGrants: (ns: string, limit?: number) => invoke<SecretGrant[]>("secret_grants", { ns, limit }),
+  secretGrantRevoke: (ns: string, id: string) => invoke<void>("secret_grant_revoke", { ns, id }),
   secretReveal: (ns: string, id: string) => invoke<string>("secret_reveal", { ns, id }),
   secretDelete: (ns: string, id: string) => invoke<void>("secret_delete", { ns, id }),
   gatewayInfo: () => invoke<GatewayInfo>("gateway_info"),

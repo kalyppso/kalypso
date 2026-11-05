@@ -103,7 +103,7 @@ impl Vault {
         if value.is_empty() {
             return Err(KalypsoError::Invalid("secret value is empty".into()));
         }
-        if !["namespace", "agent", "gateway"].contains(&scope) {
+        if !["namespace", "agent", "gateway", "on-request"].contains(&scope) {
             return Err(KalypsoError::Invalid(format!("unknown scope {scope}")));
         }
         let (ct, nonce) = seal(&self.ns_key(db, ns)?, value.as_bytes())?;
@@ -129,6 +129,22 @@ impl Vault {
             })?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })
+    }
+
+    /// Decrypt an `on-request` secret for the secret gateway (#87), by name. Only that scope:
+    /// model keys and secrets delivered at start never go out this way. The value lives in
+    /// memory that is wiped when dropped.
+    pub fn open_on_request(&self, db: &Db, ns: &str, key: &str) -> Result<Option<zeroize::Zeroizing<String>>> {
+        let row: Option<(Vec<u8>, Vec<u8>)> = db.with(|c| {
+            Ok(c.query_row("SELECT ciphertext, nonce FROM secrets WHERE ns = ?1 AND key = ?2 AND scope = 'on-request'", (ns, key), |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?)
+        })?;
+        let Some((ct, nonce)) = row else { return Ok(None) };
+        let plain = zeroize::Zeroizing::new(open(&self.ns_key(db, ns)?, &ct, &nonce)?);
+        let text = std::str::from_utf8(&plain).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))?;
+        Ok(Some(zeroize::Zeroizing::new(text.to_string())))
     }
 
     /// Decrypt one secret. Refuses ids from other namespaces and records every reveal.

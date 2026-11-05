@@ -63,6 +63,7 @@ function specSummary(s: Spec): string {
     case "host": return [s.allow.length ? `Hosts not in a list of ${s.allow.length}` : "", s.deny.length ? `Hosts ${s.deny.join(", ")}` : ""].filter(Boolean).join("; ");
     case "secrets": return "Any secret value of this namespace";
     case "cost": return `Calls over $${(s.max / 1e6).toFixed(2)}`;
+    case "secret_request": return s.names.length ? `Requests for ${s.names.join(", ")}` : "Any on-request secret";
     default: return "Plain language: enforced by the policy judge.";
   }
 }
@@ -296,6 +297,7 @@ const CHECKS: { id: CheckKind; label: string; hint: string }[] = [
   { id: "host", label: "Hosts", hint: "Host names, one per line. *.example.com covers its subdomains." },
   { id: "secrets", label: "Secret values", hint: "Trips when a call contains any secret value from this namespace." },
   { id: "cost", label: "Cost per call", hint: "Trips when a single call is estimated to cost more than this." },
+  { id: "secret_request", label: "Secret requests", hint: "On-request secrets, one name or pattern per line (STRIPE_*); empty for any. Warn lets matching requests run without asking; block refuses them. Requests no policy matches always ask you." },
   { id: "text", label: "Plain language", hint: "Stored and shown to agents. Enforced by the policy judge." },
 ];
 
@@ -321,6 +323,7 @@ function NewLivePolicy({ names, onAdded, onClose }: { names: string[]; onAdded: 
       case "path": case "host": return { kind, allow: mode === "allow" ? lines : [], deny: mode === "deny" ? lines : [] };
       case "cost": return { kind, max: Math.round(+cost * 1e6) };
       case "secrets": return { kind };
+      case "secret_request": return { kind, names: lines.map((l) => l.toUpperCase()) };
       default: return { kind: "text" };
     }
   };
@@ -367,13 +370,13 @@ function NewLivePolicy({ names, onAdded, onClose }: { names: string[]; onAdded: 
           <button className={mode === "allow" ? "active" : ""} onClick={() => setMode("allow")}>Trip on anything else</button>
         </div>
       )}
-      {["command", "path", "host"].includes(kind) ? (
-        <Field label={kind === "command" ? "Patterns" : kind === "path" ? "Folders" : "Hosts"} error={errors.entries} hint={hint}>
+      {["command", "path", "host", "secret_request"].includes(kind) ? (
+        <Field label={kind === "command" ? "Patterns" : kind === "path" ? "Folders" : kind === "secret_request" ? "Secrets" : "Hosts"} error={errors.entries} hint={hint}>
           <textarea
             className="textarea mono"
             value={entries}
             onChange={(e) => { setEntries(e.target.value); clear("entries"); }}
-            placeholder={kind === "command" ? "\\bgit\\s+push\\b.*--force" : kind === "path" ? "/etc/**\n/root/**" : "pastebin.com\n*.ngrok.io"}
+            placeholder={kind === "command" ? "\\bgit\\s+push\\b.*--force" : kind === "path" ? "/etc/**\n/root/**" : kind === "secret_request" ? "STRIPE_*\nDATABASE_URL" : "pastebin.com\n*.ngrok.io"}
           />
         </Field>
       ) : kind === "cost" ? (

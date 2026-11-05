@@ -57,6 +57,13 @@ pub enum Spec {
     },
     /// Plain language only; checked by the judge (#30), not here.
     Text,
+    /// Requests for on-request secrets (#87) by name; globs like `STRIPE_*`, empty for any.
+    /// With `warn`, matching requests run without asking; `approve` and `block` as usual.
+    /// A request no policy matches asks the user.
+    SecretRequest {
+        #[serde(default)]
+        names: Vec<String>,
+    },
 }
 
 /// LLM provider format used by the text-policy judge.
@@ -238,6 +245,15 @@ pub fn validate_spec(spec: &Spec) -> Result<()> {
             }
         }
         Spec::Cost { max } if *max <= 0 => return bad("the cost limit must be more than $0".into()),
+        Spec::SecretRequest { names } => {
+            for n in names {
+                let ok =
+                    !n.is_empty() && n.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_' || c == '*' || c == '?');
+                if !ok || glob(n).is_err() {
+                    return bad(format!("{n} is not a secret name or pattern (use STRIPE_KEY or STRIPE_*)"));
+                }
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -290,6 +306,14 @@ fn check_spec(spec: &Spec, call: &ToolCall, secrets: &[String]) -> Option<String
             (cost > *max).then(|| format!("estimated {} is over the {} limit", crate::budget::usd(cost), crate::budget::usd(*max)))
         }
         Spec::Text => None,
+        Spec::SecretRequest { names } => {
+            if call.kind != "secret" {
+                return None;
+            }
+            let name = call.tool.as_deref()?;
+            let matches = names.is_empty() || names.iter().any(|n| glob(n).is_ok_and(|g| g.is_match(name)));
+            matches.then(|| format!("a request for the secret {name}"))
+        }
     }
 }
 
@@ -406,6 +430,19 @@ pub async fn judge_text(
 
 /// One line describing the call for logs and approval prompts, with secret values hidden.
 pub fn describe(call: &ToolCall, secrets: &[String]) -> String {
+    if call.kind == "secret" {
+        // "secret STRIPE_KEY for `npm test`: run the billing tests"
+        let mut line = format!(
+            "secret {} for `{}`: {}",
+            call.tool.as_deref().unwrap_or("?"),
+            call.command.as_deref().unwrap_or_default().replace('\n', " "),
+            call.content.as_deref().unwrap_or("no reason given").replace('\n', " ")
+        );
+        if line.chars().count() > 300 {
+            line = line.chars().take(299).collect::<String>() + "…";
+        }
+        return line;
+    }
     let what =
         call.command.clone().or_else(|| call.url.clone()).or_else(|| call.path.clone()).or_else(|| call.tool.clone()).unwrap_or_default();
     let mut line = format!("{}: {}", call.kind, what.replace('\n', " "));

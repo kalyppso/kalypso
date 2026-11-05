@@ -347,39 +347,11 @@ impl SandboxProvider for OciProvider {
     }
 
     async fn open_process(&self, ns: &str, id: &str, cmd: &[&str], cwd: &str, env: &[String]) -> Result<(ExecStream, String)> {
-        let env: Vec<&str> = env.iter().map(String::as_str).collect();
-        let created = self
-            .docker
-            .create_exec(
-                &container_name(ns, id),
-                CreateExecOptions {
-                    cmd: Some(cmd.to_vec()),
-                    user: Some(EXEC_USER),
-                    working_dir: Some(cwd),
-                    env: Some(env),
-                    attach_stdin: Some(true),
-                    attach_stdout: Some(true),
-                    attach_stderr: Some(true),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(rt_err)?;
-        let StartExecResults::Attached { output, input } = self.docker.start_exec(&created.id, None).await.map_err(rt_err)? else {
-            return Err(KalypsoError::Runtime("exec unexpectedly detached".into()));
-        };
-        let output = output
-            .filter_map(|chunk| async move {
-                match chunk {
-                    Ok(LogOutput::StdOut { message } | LogOutput::StdErr { message } | LogOutput::Console { message }) => {
-                        Some(Ok(message.to_vec()))
-                    }
-                    Ok(_) => None,
-                    Err(e) => Some(Err(std::io::Error::other(e.to_string()))),
-                }
-            })
-            .boxed();
-        Ok((ExecStream { output, input }, created.id))
+        self.attach(ns, id, cmd, cwd, env, EXEC_USER, true).await
+    }
+
+    async fn run_as(&self, ns: &str, id: &str, cmd: &[&str], cwd: &str, env: &[String], user: &str) -> Result<(ExecStream, String)> {
+        self.attach(ns, id, cmd, cwd, env, user, false).await
     }
 
     async fn exit_code(&self, handle: &str) -> Result<Option<i64>> {
@@ -514,6 +486,55 @@ fn connect(endpoint: &str) -> Option<Docker> {
         return Docker::connect_with_http(endpoint, 120, v).ok();
     }
     None
+}
+
+impl OciProvider {
+    /// An exec with its output attached, as `user`.
+    #[allow(clippy::too_many_arguments)]
+    async fn attach(
+        &self,
+        ns: &str,
+        id: &str,
+        cmd: &[&str],
+        cwd: &str,
+        env: &[String],
+        user: &str,
+        stdin: bool,
+    ) -> Result<(ExecStream, String)> {
+        let env: Vec<&str> = env.iter().map(String::as_str).collect();
+        let created = self
+            .docker
+            .create_exec(
+                &container_name(ns, id),
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    user: Some(user),
+                    working_dir: Some(cwd),
+                    env: Some(env),
+                    attach_stdin: Some(stdin),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(rt_err)?;
+        let StartExecResults::Attached { output, input } = self.docker.start_exec(&created.id, None).await.map_err(rt_err)? else {
+            return Err(KalypsoError::Runtime("exec unexpectedly detached".into()));
+        };
+        let output = output
+            .filter_map(|chunk| async move {
+                match chunk {
+                    Ok(LogOutput::StdOut { message } | LogOutput::StdErr { message } | LogOutput::Console { message }) => {
+                        Some(Ok(message.to_vec()))
+                    }
+                    Ok(_) => None,
+                    Err(e) => Some(Err(std::io::Error::other(e.to_string()))),
+                }
+            })
+            .boxed();
+        Ok((ExecStream { output, input }, created.id))
+    }
 }
 
 #[cfg(test)]

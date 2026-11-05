@@ -98,8 +98,24 @@ Every IPC command takes `ns` as its first argument. The `ipc` layer checks that 
 ### 4.2 Secrets vault
 - Master key: 256-bit random, stored in the OS keychain (`keyring`). If no keychain service is reachable (headless Linux, WSL), it falls back to a `master.key` file in the app data dir with mode 0600; a passphrase-derived key (Argon2id) is planned as an alternative. The status bar shows which is in use.
 - Each namespace has its own data key, encrypted ("wrapped") with the master key. Each secret is stored as `nonce ‖ ciphertext` in SQLite.
-- **Delivery to agents:** when a sandbox starts, the vault decrypts the secrets the agent is allowed (namespace scope plus explicit agent grants). It mounts them as files in a tmpfs at `/run/kalypso/secrets/` and also exposes them as environment variables if the agent opted in.
+- **Delivery to agents:** when a sandbox starts, the vault decrypts the secrets the agent is allowed (namespace scope plus explicit agent grants). It mounts them as files in a tmpfs at `/run/kalypso/secrets/`, never as environment variables of the sandbox.
 - **Model API keys never enter sandboxes.** Agents call the gateway (§4.5) with a per-agent virtual key, and the gateway adds the real provider key.
+- **On-request secrets (secret gateway, #87).** Secrets with the `on-request` scope are never delivered at start. An agent runs `kx-secret run NAME --purpose "…" -- <command>` (in the agent runner image), which calls `POST /_kalypso/secrets/run`.
+  - **Socket only.** That route is only on the gateway's Unix socket, never on the TCP port.
+  - **Decision.** The policy engine checks the request: a `secret_request` spec, plus every other spec against the command. A request no policy matches always asks the user. Approvals can be remembered for the sandbox's current key.
+  - **Run.** KALYPSO then runs that command itself through the engine's exec API:
+    - as a fresh uid for each grant (20000+, group root), with no capabilities
+    - with the secret only in that process's environment
+    - with its output streamed back to the agent, the value replaced by `‹NAME›` even across chunk boundaries
+  - **Why the agent can't read it.** Reading another uid's `/proc/<pid>/environ`, or tracing it, needs `CAP_SYS_PTRACE`, which every sandbox process lacks, so the agent can't read the value even as root.
+  - **End and cleanup.**
+    - The grant ends when the command exits, at its TTL (10 s to 1 h, default 15 min), on revoke, or when `kx-secret` disconnects. Its processes are then killed by its own uid, the only one allowed to signal them.
+    - Files it left holding the value (under `/work`, `/tmp`, `/var/tmp` and `/dev/shm`) are removed, and the removal is audited.
+  - **Model calls.** While a grant is live, model calls through the gateway that contain its value are refused.
+  - **No values at rest.** The value is decrypted only to start the command and kept in zeroized memory. `secret_grants` records the command, purpose, outcome and leaks, never the value.
+  - **Audit entries:** `secret.request`, `secret.grant`, `secret.deny`, `secret.run`, `secret.expire`, `secret.revoke`, `secret.leak`, `secret.leak_blocked` and `secret.throttle`.
+  - **Limits.** A sandbox key may make at most 10 requests per 10 minutes and run 2 grants at once.
+  - **What it can't stop:** the approved command is code the agent may have written. Approve commands, not just secrets; network egress rules (§4.3) limit where a hostile command could send the value.
 - Revealing a secret in the UI requires a recent OS authentication (Touch ID, Windows Hello or polkit) when that's available. Every reveal is written to the audit log.
 
 ### 4.3 Sandboxes

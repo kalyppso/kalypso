@@ -3,4 +3,4 @@
 /**
  * The checkable part of a policy.
  */
-export type Spec = { "kind": "command", patterns: Array<string>, } | { "kind": "path", allow: Array<string>, deny: Array<string>, } | { "kind": "host", allow: Array<string>, deny: Array<string>, } | { "kind": "secrets" } | { "kind": "cost", max: number, } | { "kind": "text" };
+export type Spec = { "kind": "command", patterns: Array<string>, } | { "kind": "path", allow: Array<string>, deny: Array<string>, } | { "kind": "host", allow: Array<string>, deny: Array<string>, } | { "kind": "secrets" } | { "kind": "cost", max: number, } | { "kind": "text" } | { "kind": "secret_request", names: Array<string>, };
