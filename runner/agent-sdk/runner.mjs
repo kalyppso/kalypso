@@ -34,17 +34,27 @@ try {
 } catch {
   fail("This sandbox has no KALYPSO gateway key. Restart the sandbox so KALYPSO can deliver one.");
 }
-if (!fs.existsSync(SOCK)) fail("The KALYPSO gateway socket is not mounted in this sandbox.");
+// Linux engines mount the gateway's socket; engines in a VM (Docker Desktop, Podman
+// machine) can't, and reach it over a private network instead (KALYPSO_GATEWAY_URL).
+const RELAY = process.env.KALYPSO_GATEWAY_URL;
+const viaSocket = fs.existsSync(SOCK);
+if (!viaSocket && !RELAY) fail("This sandbox has no way to reach the KALYPSO gateway (no socket, no KALYPSO_GATEWAY_URL).");
+/** Where gateway requests go: the socket, or the relay's host and port. */
+const target = viaSocket ? { socketPath: SOCK } : (() => { const u = new URL(RELAY); return { host: u.hostname, port: Number(u.port || 80) }; })();
 
-// The SDK speaks TCP; the gateway listens on a Unix socket. Pipe one to the other.
-const shim = net.createServer((client) => {
-  const upstream = net.connect(SOCK);
-  client.pipe(upstream).pipe(client);
-  client.on("error", () => upstream.destroy());
-  upstream.on("error", () => client.destroy());
-});
-await new Promise((resolve) => shim.listen(0, "127.0.0.1", resolve));
-const port = shim.address().port;
+// The SDK speaks TCP; over a socket, pipe a loopback port to it. The relay is TCP already.
+let shim = null;
+let base = RELAY;
+if (viaSocket) {
+  shim = net.createServer((client) => {
+    const upstream = net.connect(SOCK);
+    client.pipe(upstream).pipe(client);
+    client.on("error", () => upstream.destroy());
+    upstream.on("error", () => client.destroy());
+  });
+  await new Promise((resolve) => shim.listen(0, "127.0.0.1", resolve));
+  base = `http://127.0.0.1:${shim.address().port}`;
+}
 
 /** Ask KALYPSO whether a tool call may run. Approvals hold the answer until the user decides. */
 function check(call) {
@@ -52,7 +62,7 @@ function check(call) {
     const body = JSON.stringify(call);
     const req = http.request(
       {
-        socketPath: SOCK,
+        ...target,
         path: "/_kalypso/policy/check",
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "content-length": Buffer.byteLength(body) },
@@ -190,7 +200,7 @@ const options = {
   settingSources: ["project"],
   env: {
     ...process.env,
-    ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}/anthropic`,
+    ANTHROPIC_BASE_URL: `${base}/anthropic`,
     ANTHROPIC_API_KEY: key,
     // The image's root file system is read-only; keep the SDK's files with the agent.
     HOME: path.join(STATE, "home"),
@@ -237,5 +247,5 @@ try {
   fail(`The agent stopped: ${e?.message ?? e}`, 1);
 }
 // stdin closed: the conversation is over. How the last task went is in the result event.
-shim.close();
+shim?.close();
 process.exit(0);

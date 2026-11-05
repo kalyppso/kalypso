@@ -154,6 +154,10 @@ pub fn run() {
                 if let Err(e) = gw.listen_tcp(gateway::DEFAULT_PORT).await {
                     tracing::error!(error = %e, "model gateway could not start");
                 }
+                // Engines in a VM (Docker Desktop, Podman machine) reach it through a relay to this port.
+                if let Err(e) = gw.listen_sandbox_tcp().await {
+                    tracing::warn!(error = %e, "sandbox gateway port unavailable; sandboxes on VM engines cannot reach the gateway");
+                }
                 // Sandboxes reach the gateway through this socket (Linux engines can mount it).
                 #[cfg(target_os = "linux")]
                 if let Err(e) = gw.listen_unix(dir.join("run")).await {

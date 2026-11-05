@@ -3,7 +3,7 @@
 The sandbox image for **Claude Agent SDK** agents: Node 22, the SDK, and
 `runner.mjs`, which KALYPSO starts inside the sandbox for each run.
 
-- **Model calls** go to the KALYPSO gateway over `/run/kalypso/gateway/gateway.sock`, through a loopback shim. They use the sandbox's virtual key from `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`. The provider key never enters the sandbox, and the gateway meters and budgets every call.
+- **Model calls** go to the KALYPSO gateway over `/run/kalypso/gateway/gateway.sock`, through a loopback shim. On engines that run in a VM (Docker Desktop, Podman machine), they go over the namespace's relay at `KALYPSO_GATEWAY_URL` instead. They use the sandbox's virtual key from `/run/kalypso/secrets/KALYPSO_GATEWAY_KEY`. The provider key never enters the sandbox, and the gateway meters and budgets every call.
 - **Every tool call** is first sent to KALYPSO's policy engine (`POST /_kalypso/policy/check`):
   - A denied call does not run, and Claude is told why.
   - Approval policies hold the call until you answer.

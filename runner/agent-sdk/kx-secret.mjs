@@ -62,10 +62,14 @@ try {
   die("this sandbox has no KALYPSO gateway key; restart the sandbox");
 }
 
+// The gateway socket on Linux engines, or the relay on engines that run in a VM.
+const RELAY = process.env.KALYPSO_GATEWAY_URL;
+const target = fs.existsSync(SOCK) || !RELAY ? { socketPath: SOCK } : (() => { const u = new URL(RELAY); return { host: u.hostname, port: Number(u.port || 80) }; })();
+
 const body = JSON.stringify({ name, purpose, command, cwd, ttl });
 const req = http.request(
   {
-    socketPath: SOCK,
+    ...target,
     path: "/_kalypso/secrets/run",
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "content-length": Buffer.byteLength(body) },

@@ -49,6 +49,19 @@ const MAX_REQUEST: usize = 64 << 20;
 
 static SOCKET_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// Where sandboxes on VM-backed engines (Docker Desktop, Podman machine) reach the
+/// gateway: they can't share a socket with the host, so a relay container in each
+/// namespace forwards to this port on the host (see `sandbox::oci`).
+pub const SANDBOX_PORT: u16 = 47822;
+/// The URL sandboxes use when they go through the relay.
+pub const RELAY_URL: &str = "http://gateway.kalypso:8080";
+static SANDBOX_TCP: OnceLock<u16> = OnceLock::new();
+
+/// The host port the sandbox listener got, once it listens.
+pub fn sandbox_port() -> Option<u16> {
+    SANDBOX_TCP.get().copied()
+}
+
 /// Host folder holding the gateway socket, once the gateway listens on one.
 /// Sandbox providers mount it at [`SANDBOX_SOCKET_DIR`].
 pub fn socket_dir() -> Option<&'static PathBuf> {
@@ -458,6 +471,43 @@ impl Gateway {
         Ok(addr)
     }
 
+    /// What sandboxes reach: everything the TCP port serves, plus the secret gateway (#87),
+    /// which is never on the TCP port tools on the host use.
+    fn sandbox_router(self: &Arc<Self>) -> Router {
+        Router::new()
+            .route("/_kalypso/secrets/run", post(secrets::run))
+            .layer(DefaultBodyLimit::max(64 << 10))
+            .with_state(self.clone())
+            .merge(self.router())
+    }
+
+    /// Listen for sandboxes on a host port, for engines that run in a VM and can't mount
+    /// the socket. Loopback only: Docker Desktop and Podman machine forward the relay's
+    /// `host-gateway` connections to it. `KALYPSO_SANDBOX_GATEWAY_BIND` overrides the
+    /// address, for tests on engines that can't reach host loopback.
+    pub async fn listen_sandbox_tcp(self: &Arc<Self>) -> std::io::Result<SocketAddr> {
+        let listener = match std::env::var("KALYPSO_SANDBOX_GATEWAY_BIND") {
+            Ok(bind) => tokio::net::TcpListener::bind(bind).await?,
+            Err(_) => match tokio::net::TcpListener::bind(("127.0.0.1", SANDBOX_PORT)).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::warn!(port = SANDBOX_PORT, error = %e, "sandbox gateway port is taken, using a free one");
+                    tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?
+                }
+            },
+        };
+        let addr = listener.local_addr()?;
+        let _ = SANDBOX_TCP.set(addr.port());
+        let app = self.sandbox_router();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                tracing::error!(error = %e, "sandbox gateway listener stopped");
+            }
+        });
+        tracing::info!(%addr, "sandbox gateway listening (for engines that run in a VM)");
+        Ok(addr)
+    }
+
     /// Also listen on `<dir>/gateway.sock`, the socket sandboxes get mounted.
     #[cfg(unix)]
     pub async fn listen_unix(self: &Arc<Self>, dir: PathBuf) -> std::io::Result<()> {
@@ -472,12 +522,7 @@ impl Gateway {
         let listener = tokio::net::UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666))?;
         let _ = SOCKET_DIR.set(dir);
-        // The secret gateway (#87) is only on the socket sandboxes get, never on the TCP port.
-        let app = Router::new()
-            .route("/_kalypso/secrets/run", post(secrets::run))
-            .layer(DefaultBodyLimit::max(64 << 10))
-            .with_state(self.clone())
-            .merge(self.router());
+        let app = self.sandbox_router();
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
                 tracing::error!(error = %e, "gateway socket stopped");
