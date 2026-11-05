@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ChevronRight, Pause, Play, Plus, Send, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Pause, Play, Plus, Send, Square, Trash2 } from "lucide-react";
 import { api, errorMessage, isLive, onAgentUpdate, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, initials, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
 import type { Agent } from "../types";
 import "../styles/agents.css";
 
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 
 export function Agents() {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const { agents, sandboxes } = useNamespaced();
   const [creating, setCreating] = useState(state.compose);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -25,7 +25,11 @@ export function Agents() {
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New agent</PrimaryButton>
       </PageHead>
 
-      {agents.length === 0 && <div className="empty">No agents in this namespace yet.</div>}
+      {agents.length === 0 && (
+        <EmptyState icon={Bot} title="No agents yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "agents", compose: true })}><Plus size={13} /> New agent</button>}>
+          An agent works in a sandbox with only the secrets, tools and integrations you grant it.
+        </EmptyState>
+      )}
 
       <div className="agent-list">
         {agents.map((a) => {

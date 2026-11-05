@@ -1,8 +1,8 @@
 import { formatTime, fromDb } from "../prefs";
 import { useEffect, useState } from "react";
-import { Ban, Eye, Hand, Plus, Trash2 } from "lucide-react";
+import { Ban, Eye, Hand, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
 import "../styles/pages.css";
 import type { Enforcement, Policy, PolicyCategory } from "../types";
 import { api, errorMessage, isLive, onPolicyLog, toPolicy } from "../backend";
@@ -189,7 +189,11 @@ export function Policies() {
             </div>
           );
         })}
-        {rows.length === 0 && <div className="empty">No policies yet. Add one or pick a suggestion above.</div>}
+        {rows.length === 0 && (
+          <EmptyState icon={ShieldCheck} title="No policies yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "policies", compose: true })}><Plus size={13} /> New policy</button>}>
+            Rules every tool call is checked against. Pick a suggestion above, or write your own in plain words.
+          </EmptyState>
+        )}
       </div>
 
       <div className="card flush">

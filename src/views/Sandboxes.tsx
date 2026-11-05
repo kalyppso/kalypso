@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { RUNNER_IMAGE } from "./Agents";
-import { Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
+import { Boxes, Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
-import { Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
+import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
 import "../styles/pages.css";
 import type { Sandbox } from "../types";
 import type { PortForward } from "../bindings/PortForward";
@@ -76,7 +76,11 @@ export function Sandboxes() {
             })}
           </tbody>
         </table>
-        {sandboxes.length === 0 && <div className="empty" style={{ margin: 16 }}>No sandboxes in this namespace.</div>}
+        {sandboxes.length === 0 && (
+          <EmptyState icon={Boxes} title="No sandboxes yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "sandboxes", compose: true })}><Plus size={13} /> New sandbox</button>}>
+            Isolated containers where agents work. For Claude agents, use the agent runner image.
+          </EmptyState>
+        )}
       </div>
 
       {creating && <NewSandbox onClose={() => setCreating(false)} />}

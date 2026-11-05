@@ -11,7 +11,7 @@ import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
 import { Sidebar, TopNav } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
-import { Toasts } from "./components/ui";
+import { PageBoundary, ShortcutsSheet, Toasts } from "./components/ui";
 import { useNamespaced, useStore, useToast } from "./store";
 import type { ViewId } from "./types";
 import { Overview } from "./views/Overview";
@@ -191,7 +191,9 @@ export function App() {
           <main className="content">
             {/* Remount on namespace or view change so per-view state never leaks across namespaces. */}
             <div className="page" key={`${state.ns}-${state.view}`}>
-              <View />
+              <PageBoundary page={state.view}>
+                <View />
+              </PageBoundary>
             </div>
           </main>
           {toolsSeen.current && <ToolsLayer />}
@@ -221,6 +223,7 @@ export function App() {
       </div>
       {state.paletteOpen && <CommandPalette />}
       <Toasts />
+      <ShortcutsSheet />
       <ApprovalPrompt />
     </>
   );

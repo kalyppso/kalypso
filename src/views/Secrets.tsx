@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Copy, Eye, EyeOff, Lock, Plus, Trash2 } from "lucide-react";
+import { Copy, Eye, EyeOff, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 import type { GatewayInfo } from "../bindings/GatewayInfo";
 import type { GatewayKey } from "../bindings/GatewayKey";
 import type { SecretGrant } from "../bindings/SecretGrant";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, onPolicyLog, syncNamespace } from "../backend";
-import { Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors } from "../components/ui";
+import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors } from "../components/ui";
 import "../styles/pages.css";
 
 export function Secrets() {
@@ -70,7 +70,11 @@ export function Secrets() {
             })}
           </tbody>
         </table>
-        {secrets.length === 0 && <div className="empty" style={{ margin: 16 }}>No secrets in this namespace.</div>}
+        {secrets.length === 0 && (
+          <EmptyState icon={KeyRound} title="No secrets yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "secrets", compose: true })}><Plus size={13} /> Add secret</button>}>
+            Encrypted in the vault. Agents get them as files, or on request for one approved command.
+          </EmptyState>
+        )}
       </div>
 
       {isLive() && <SecretGrants />}
@@ -218,7 +222,7 @@ function SecretGrants() {
   const { state } = useStore();
   const toast = useToast();
   const [grants, setGrants] = useState<SecretGrant[]>([]);
-  const load = () => api.secretGrants(state.ns).then(setGrants).catch(() => setGrants([]));
+  const load = () => api.secretGrants(state.ns).then((g) => setGrants(Array.isArray(g) ? g : [])).catch(() => setGrants([]));
   useEffect(() => {
     load();
     const off = onPolicyLog((ns) => ns === state.ns && load());
