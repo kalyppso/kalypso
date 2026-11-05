@@ -76,6 +76,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::policy_update,
         ipc::policy_delete,
         ipc::policy_events,
+        ipc::secret_grants,
+        ipc::secret_grant_revoke,
         ipc::policy_pending,
         ipc::policy_decide,
         ipc::sandbox_providers,
@@ -158,10 +160,13 @@ pub fn run() {
                     tracing::warn!(error = %e, "model gateway socket unavailable; sandboxes cannot reach the gateway");
                 }
             });
+            // Approved secret commands (#87) run in sandboxes through the engine.
+            gw.set_runtime(rt.clone());
             events::spawn_usage_events(app.handle().clone(), gw.subscribe());
             events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
             events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
             // Agents that were running when KALYPSO quit aren't supervised any more.
+            gateway::secrets::reset_after_restart(&db)?;
             let reset = agent::reset_after_restart(&db)?;
             if reset > 0 {
                 tracing::info!(agents = reset, "marked agents from the last session as stopped");

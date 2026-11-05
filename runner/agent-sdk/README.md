@@ -8,6 +8,7 @@ The sandbox image for **Claude Agent SDK** agents: Node 22, the SDK, and
   - A denied call does not run, and Claude is told why.
   - Approval policies hold the call until you answer.
   - If KALYPSO cannot be reached, the call is denied.
+- **Secrets on request:** `kx-secret run NAME --purpose "why" -- <command>` asks KALYPSO to run one command with an on-request secret in its environment. KALYPSO runs it as another user, after approval if a policy or you require it, and sends back its output with the value replaced by `‹NAME›`. The agent never holds the value (see ARCHITECTURE §4.2).
 - **State** lives in `/work/.kalypso/agents/<id>/`, so a restarted agent resumes its conversation.
 
 ## Protocol

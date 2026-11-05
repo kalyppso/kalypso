@@ -2282,6 +2282,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "ts-rs",
+ "zeroize",
 ]
 
 [[package]]

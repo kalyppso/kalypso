@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Copy, Eye, EyeOff, Lock, Plus, Trash2 } from "lucide-react";
 import type { GatewayInfo } from "../bindings/GatewayInfo";
 import type { GatewayKey } from "../bindings/GatewayKey";
+import type { SecretGrant } from "../bindings/SecretGrant";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { api, errorMessage, isLive, syncNamespace } from "../backend";
+import { api, errorMessage, isLive, onPolicyLog, syncNamespace } from "../backend";
 import { Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors } from "../components/ui";
 import "../styles/pages.css";
 
@@ -55,7 +56,7 @@ export function Secrets() {
                     {shown ? revealed[s.id] : "•".repeat(16)}
                   </td>
                   <td><span className="badge">{s.scope}</span></td>
-                  <td className="dim">{s.scope === "namespace" ? "all agents" : s.scope === "gateway" ? "model gateway" : users.map((a) => a.name).join(", ") || "None"}</td>
+                  <td className="dim">{s.scope === "namespace" ? "all agents" : s.scope === "gateway" ? "model gateway" : s.scope === "on-request" ? "approved commands" : users.map((a) => a.name).join(", ") || "None"}</td>
                   <td className="dim">{s.updatedAt}</td>
                   <td>
                     <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -72,6 +73,7 @@ export function Secrets() {
         {secrets.length === 0 && <div className="empty" style={{ margin: 16 }}>No secrets in this namespace.</div>}
       </div>
 
+      {isLive() && <SecretGrants />}
       {isLive() && <GatewayKeys />}
 
       {creating && <NewSecret onClose={() => setCreating(false)} />}
@@ -151,7 +153,7 @@ function NewSecret({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const [scope, setScope] = useState<"namespace" | "agent" | "gateway">("namespace");
+  const [scope, setScope] = useState<"namespace" | "agent" | "gateway" | "on-request">("namespace");
   const [scopeTouched, setScopeTouched] = useState(false);
   const { errors, check, clear } = useErrors();
   const { secrets } = useNamespaced();
@@ -197,9 +199,58 @@ function NewSecret({ onClose }: { onClose: () => void }) {
           <option value="namespace">Every agent in {state.ns}</option>
           <option value="agent">Only agents you grant it to</option>
           <option value="gateway">Model gateway only (never sent to sandboxes)</option>
+          {isLive() && <option value="on-request">On request: only to commands you approve</option>}
         </select>
       </label>
+      {scope === "on-request" && (
+        <p className="faint small" style={{ margin: 0 }}>
+          Never in a sandbox. An agent asks with <span className="mono">kx-secret run {key.trim() || "NAME"} -- command</span>; once a policy or you approve,
+          KALYPSO runs that command with the secret in its environment, as a user the agent can't read, and hides the value in what the agent sees.
+        </p>
+      )}
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Save secret" />
     </Modal>
+  );
+}
+
+/** Commands that ran, or are running, with an on-request secret (#87). Never shows values. */
+function SecretGrants() {
+  const { state } = useStore();
+  const toast = useToast();
+  const [grants, setGrants] = useState<SecretGrant[]>([]);
+  const load = () => api.secretGrants(state.ns).then(setGrants).catch(() => setGrants([]));
+  useEffect(() => {
+    load();
+    const off = onPolicyLog((ns) => ns === state.ns && load());
+    // Running grants count down; refresh now and then so "expires" stays honest.
+    const t = setInterval(load, 15000);
+    return () => { off.then((f) => f()); clearInterval(t); };
+  }, [state.ns]);
+  if (!grants.length) return null;
+  const revoke = (g: SecretGrant) =>
+    api.secretGrantRevoke(state.ns, g.id).then(() => { toast(`Stopped the command using ${g.secret}`, "warn"); load(); }).catch((e) => toast(errorMessage(e), "err"));
+
+  return (
+    <section className="card" style={{ marginTop: 24 }}>
+      <div className="card-head"><span className="card-title">Commands with secrets</span><span className="faint small">Last {grants.length}</span></div>
+      <table className="table">
+        <thead><tr><th>Secret</th><th>Command</th><th>Asked by</th><th>Started</th><th>Outcome</th><th /></tr></thead>
+        <tbody>
+          {grants.map((g) => (
+            <tr key={g.id}>
+              <td className="mono">{g.secret}</td>
+              <td className="mono small clip" title={`${g.command}\n\nPurpose: ${g.purpose}`} style={{ maxWidth: 280 }}>{g.command}</td>
+              <td className="dim small">{g.source}</td>
+              <td className="dim small mono">{g.started_at.slice(11, 16)}</td>
+              <td className="small">
+                {g.outcome === "running" ? <>running · until {g.expires_at.slice(11, 16)}</> : g.outcome === "exited" ? `exited ${g.exit_code ?? "?"}` : g.outcome}
+                {g.leaks > 0 && <span className="badge" title="Files the command left holding the value were removed" style={{ marginLeft: 6 }}>{g.leaks} copy removed</span>}
+              </td>
+              <td>{g.outcome === "running" && <button className="btn sm" onClick={() => revoke(g)}>Revoke</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

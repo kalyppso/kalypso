@@ -171,6 +171,7 @@ const role = (process.env.KALYPSO_ROLE || "").trim();
 const append = [
   `You are ${process.env.KALYPSO_AGENT || "an agent"}, running inside a KALYPSO sandbox. Your working directory is /work.`,
   "KALYPSO checks every tool call against the workspace's policies. If a call is blocked, the reason says why: do not try to get around it, find another way or explain what you need.",
+  "Secrets marked on-request are not in your environment. To run a command that needs one, use: kx-secret run NAME --purpose \"why\" -- <command>. KALYPSO runs that command with the secret (after approval if needed) and shows you its output with the value hidden. Never try to read, print or copy secret values.",
   role && `Your role: ${role}`,
 ]
   .filter(Boolean)

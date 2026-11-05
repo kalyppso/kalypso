@@ -69,7 +69,7 @@ export interface Secret {
   ns: string;
   key: string;
   value: string;
-  scope: "namespace" | "agent" | "gateway";
+  scope: "namespace" | "agent" | "gateway" | "on-request";
   updatedAt: string;
 }
 

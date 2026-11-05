@@ -34,6 +34,9 @@ use crate::error::{KalypsoError, Result};
 use crate::store::Db;
 use crate::vault::Vault;
 use pricing::Pricing;
+
+pub mod secrets;
+pub use secrets::{Grants, SecretGrant};
 use usage::{Format, Meter, Usage};
 
 /// Preferred port on 127.0.0.1; a free one is used if it is taken.
@@ -330,6 +333,10 @@ pub struct Gateway {
     policy_log: tokio::sync::broadcast::Sender<String>,
     /// Requests refused for budget, so the supervisor can pause the agents behind them.
     blocks: tokio::sync::broadcast::Sender<BudgetBlocked>,
+    /// On-request secret grants in flight (#87).
+    pub grants: Grants,
+    /// The container engine, for running approved secret commands in sandboxes.
+    rt: OnceLock<crate::sandbox::Runtime>,
 }
 
 /// A model request the gateway refused because a budget was reached.
@@ -372,6 +379,8 @@ impl Gateway {
             approval_timeout: crate::policy::APPROVAL_TIMEOUT,
             policy_log: tokio::sync::broadcast::channel(64).0,
             blocks: tokio::sync::broadcast::channel(64).0,
+            grants: Grants::default(),
+            rt: OnceLock::new(),
         })
     }
 
@@ -394,6 +403,15 @@ impl Gateway {
 
     pub fn subscribe_blocks(&self) -> tokio::sync::broadcast::Receiver<BudgetBlocked> {
         self.blocks.subscribe()
+    }
+
+    /// The container engine, so approved secret commands can run in sandboxes (#87).
+    pub fn set_runtime(&self, rt: crate::sandbox::Runtime) {
+        let _ = self.rt.set(rt);
+    }
+
+    fn runtime(&self) -> Option<crate::sandbox::Runtime> {
+        self.rt.get().cloned()
     }
 
     pub fn subscribe_policy_log(&self) -> tokio::sync::broadcast::Receiver<String> {
@@ -454,7 +472,12 @@ impl Gateway {
         let listener = tokio::net::UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666))?;
         let _ = SOCKET_DIR.set(dir);
-        let app = self.router();
+        // The secret gateway (#87) is only on the socket sandboxes get, never on the TCP port.
+        let app = Router::new()
+            .route("/_kalypso/secrets/run", post(secrets::run))
+            .layer(DefaultBodyLimit::max(64 << 10))
+            .with_state(self.clone())
+            .merge(self.router());
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
                 tracing::error!(error = %e, "gateway socket stopped");
@@ -572,7 +595,7 @@ pub struct PolicyDecision {
 /// `POST /_kalypso/policy/check` with a [`crate::policy::ToolCall`]: an agent runtime asks
 /// before each tool call. Approve-level policies hold the response until the user answers.
 async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
-    use crate::policy::{self, Answer};
+    use crate::policy;
     let err = |status: StatusCode, msg: &str| (status, axum::Json(serde_json::json!({ "error": msg }))).into_response();
     let Some(tok) = token(&headers) else { return err(StatusCode::UNAUTHORIZED, "missing KALYPSO gateway key") };
     let (key_id, ns, source) = match resolve(&gw.db, tok) {
@@ -584,32 +607,67 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
         Ok(c) => c,
         Err(e) => return err(StatusCode::BAD_REQUEST, &format!("expected a tool call: {e}")),
     };
+    match decide(&gw, &key_id, &ns, &source, &call, None).await {
+        Ok(warnings) => axum::Json(PolicyDecision { decision: "allow".into(), policy: None, reason: None, warnings }).into_response(),
+        Err(denied) => axum::Json(denied).into_response(),
+    }
+}
+
+/// What to do when no policy matches: ask the user anyway, under this synthetic policy.
+/// Secret requests (#87) use it, so nothing runs with a secret without a yes.
+pub(crate) struct DefaultAsk {
+    pub policy_id: String,
+    pub name: String,
+    pub rule: String,
+    pub reason: String,
+}
+
+/// Run `call` past the namespace's policies, asking the user where needed.
+/// `Ok(warnings)` to go ahead, `Err(decision)` to refuse.
+pub(crate) async fn decide(
+    gw: &Arc<Gateway>,
+    key_id: &str,
+    ns: &str,
+    source: &str,
+    call: &crate::policy::ToolCall,
+    default_ask: Option<DefaultAsk>,
+) -> std::result::Result<Vec<String>, PolicyDecision> {
+    use crate::policy::{self, Answer};
+    let (key_id, ns, source) = (key_id.to_string(), ns.to_string(), source.to_string());
+    let internal = |e: &dyn std::fmt::Display| PolicyDecision {
+        decision: "deny".into(),
+        policy: None,
+        reason: Some(format!("KALYPSO could not check this call: {e}")),
+        warnings: vec![],
+    };
     let policies = match policy::applicable(&gw.db, &ns, &key_id) {
         Ok(p) => p,
-        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+        Err(e) => return Err(internal(&e)),
     };
     let secrets = if policies.iter().any(|p| p.spec == policy::Spec::Secrets) {
         match gw.vault.values_for_scan(&gw.db, &ns) {
             Ok(s) => s,
             // Can't check for leaks: fail closed.
-            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+            Err(e) => return Err(internal(&e)),
         }
     } else {
         Vec::new()
     };
-    let action = policy::describe(&call, &secrets);
+    let action = policy::describe(call, &secrets);
     let log = |p: &policy::Policy, outcome: &str| {
         if let Err(e) = policy::log(&gw.db, &ns, p, &source, &action, outcome) {
             tracing::error!(error = %e, "could not record a policy decision");
         }
         let _ = gw.policy_log.send(ns.clone());
     };
-    let deny = |p: &policy::Policy, reason: String| {
-        let d = PolicyDecision { decision: "deny".into(), policy: Some(p.name.clone()), reason: Some(reason), warnings: vec![] };
-        axum::Json(d).into_response()
+    let deny = |p: &policy::Policy, reason: String| PolicyDecision {
+        decision: "deny".into(),
+        policy: Some(p.name.clone()),
+        reason: Some(reason),
+        warnings: vec![],
     };
 
-    let mut hits = policy::evaluate(&policies, &call, &secrets);
+    let mut hits = policy::evaluate(&policies, call, &secrets);
 
     // Text policies go to the LLM judge (#30), all at once. It fails closed
     // (ARCHITECTURE §4.12): a rule that can't be judged counts as tripped.
@@ -617,7 +675,7 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
     if !text.is_empty() {
         let verdicts: Vec<std::result::Result<Option<String>, String>> = match policy::find_llm_config(&gw.db, &gw.vault, &ns) {
             Ok(Some((base, key, format))) => {
-                let judging = text.iter().map(|p| policy::judge_text(&p.rule, &call, &gw.http, &base, &key, format));
+                let judging = text.iter().map(|p| policy::judge_text(&p.rule, call, &gw.http, &base, &key, format));
                 futures_util::future::join_all(judging).await.into_iter().map(|v| v.map_err(|e| e.to_string())).collect()
             }
             Ok(None) => vec![Err("no ANTHROPIC_API_KEY or OPENAI_API_KEY in this namespace".into()); text.len()],
@@ -639,7 +697,7 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
 
     if let Some(h) = hits.iter().find(|h| h.policy.enforcement == "block") {
         log(&h.policy, "blocked");
-        return deny(&h.policy, format!("Blocked by policy \"{}\": {}. {}", h.policy.name, h.reason, h.policy.rule));
+        return Err(deny(&h.policy, format!("Blocked by policy \"{}\": {}. {}", h.policy.name, h.reason, h.policy.rule)));
     }
     for h in hits.iter().filter(|h| h.policy.enforcement == "approve") {
         if policy::granted(&gw.db, &key_id, &h.policy.id).unwrap_or(false) {
@@ -665,11 +723,54 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
             }
             Answer::Denied => {
                 log(&h.policy, "denied");
-                return deny(&h.policy, format!("Denied by the user (policy \"{}\": {}).", h.policy.name, h.reason));
+                return Err(deny(&h.policy, format!("Denied by the user (policy \"{}\": {}).", h.policy.name, h.reason)));
             }
             Answer::TimedOut => {
                 log(&h.policy, "denied");
-                return deny(&h.policy, format!("No answer in time, so denied (policy \"{}\": {}).", h.policy.name, h.reason));
+                return Err(deny(&h.policy, format!("No answer in time, so denied (policy \"{}\": {}).", h.policy.name, h.reason)));
+            }
+        }
+    }
+    // Nothing decided it: secret requests still need a yes.
+    if let Some(d) = default_ask {
+        if hits.is_empty() && !policy::granted(&gw.db, &key_id, &d.policy_id).unwrap_or(false) {
+            let synthetic = policy::Policy {
+                id: d.policy_id.clone(),
+                ns: ns.clone(),
+                name: d.name.clone(),
+                rule: d.rule.clone(),
+                category: "secrets".into(),
+                enforcement: "approve".into(),
+                applies_to: None,
+                enabled: true,
+                spec: policy::Spec::Text,
+            };
+            log(&synthetic, "asked");
+            let req = policy::ApprovalRequest {
+                id: crate::vault::new_id("ap"),
+                ns: ns.clone(),
+                policy_id: d.policy_id.clone(),
+                policy: d.name.clone(),
+                rule: d.rule.clone(),
+                reason: d.reason.clone(),
+                source: source.clone(),
+                action: action.clone(),
+            };
+            match gw.approvals.ask(req, gw.approval_wait()).await {
+                Answer::Approved { remember } => {
+                    log(&synthetic, "approved");
+                    if remember {
+                        let _ = policy::grant(&gw.db, &key_id, &d.policy_id);
+                    }
+                }
+                Answer::Denied => {
+                    log(&synthetic, "denied");
+                    return Err(deny(&synthetic, "Denied by the user.".into()));
+                }
+                Answer::TimedOut => {
+                    log(&synthetic, "denied");
+                    return Err(deny(&synthetic, "No answer in time, so denied.".into()));
+                }
             }
         }
     }
@@ -678,7 +779,7 @@ async fn policy_check(State(gw): State<Arc<Gateway>>, headers: HeaderMap, body: 
         log(&h.policy, "warned");
         warnings.push(format!("{}: {}", h.policy.name, h.reason));
     }
-    axum::Json(PolicyDecision { decision: "allow".into(), policy: None, reason: None, warnings }).into_response()
+    Ok(warnings)
 }
 
 async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
@@ -739,6 +840,15 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         Ok(b) => b,
         Err(_) => return fail(format, StatusCode::PAYLOAD_TOO_LARGE, "request body is larger than 64 MB"),
     };
+    // A secret granted to one command (#87) must never reach a model provider.
+    if let Some(name) = gw.grants.leak_in(&ns, &bytes) {
+        let _ = gw.db.audit(Some(&ns), &source, "secret.leak_blocked", &format!("{name} in a request to {provider}"));
+        return fail(
+            format,
+            StatusCode::FORBIDDEN,
+            &format!("blocked: this request contains the value of the secret {name}, which is only for the command it was granted to"),
+        );
+    }
     let mut model = String::from("unknown");
     let mut stream = false;
     if let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&bytes) {

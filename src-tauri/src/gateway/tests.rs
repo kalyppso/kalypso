@@ -443,3 +443,15 @@ async fn approval_wait_follows_preferences() {
     e.db.set_setting("preferences", &serde_json::json!({"approvalTimeoutMin": "soon"})).unwrap();
     assert_eq!(gw.approval_wait(), crate::policy::APPROVAL_TIMEOUT);
 }
+
+/// The secret gateway (#87) is only on the sandbox socket. On the TCP port, which any
+/// local process can reach, the path is just an unknown provider.
+#[tokio::test]
+async fn the_secret_gateway_is_not_on_the_tcp_port() {
+    let e = env().await;
+    let token = mint(&e.db, "work", None, "laptop").unwrap().token;
+    let body = serde_json::json!({ "name": "STRIPE_KEY", "purpose": "x", "command": ["true"] });
+    let res = reqwest::Client::new().post(format!("{}/_kalypso/secrets/run", e.gw)).bearer_auth(token).json(&body).send().await.unwrap();
+    assert_eq!(res.status(), 404);
+    assert!(res.text().await.unwrap().contains("use /<provider>/<path>"));
+}

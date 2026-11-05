@@ -11,7 +11,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::{NewSandbox, SandboxStatusEvent};
-use crate::error::Result;
+use crate::error::{KalypsoError, Result};
 
 /// A provider as the UI sees it: shown in the New sandbox form.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -90,6 +90,12 @@ pub trait SandboxProvider: Send + Sync + 'static {
 
     /// The exit code of a process from [`Self::open_process`] or [`Self::open_tty`],
     /// or `None` while it is still running.
+    /// Like `open_process`, but as `user` ("uid" or "uid:gid") with no stdin. The secret
+    /// gateway (#87) runs approved commands this way, as a user the agent isn't.
+    async fn run_as(&self, _ns: &str, _id: &str, _cmd: &[&str], _cwd: &str, _env: &[String], _user: &str) -> Result<(ExecStream, String)> {
+        Err(KalypsoError::Invalid("this sandbox provider can't run commands as another user".into()))
+    }
+
     async fn exit_code(&self, _handle: &str) -> Result<Option<i64>> {
         Ok(None)
     }

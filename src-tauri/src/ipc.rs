@@ -217,6 +217,24 @@ pub fn policy_events(s: State<'_, AppState>, ns: String, limit: Option<u32>) -> 
     policy::events(&s.db, &ns, limit.unwrap_or(200))
 }
 
+/// Recent on-request secret grants (#87), newest first. Never values.
+#[tauri::command]
+pub fn secret_grants(s: State<'_, AppState>, ns: String, limit: Option<u32>) -> Result<Vec<crate::gateway::SecretGrant>> {
+    ensure_ns(&s, &ns)?;
+    crate::gateway::secrets::list(&s.db, &ns, limit.unwrap_or(50).min(500))
+}
+
+/// Stop a command that is running with a secret, now.
+#[tauri::command]
+pub fn secret_grant_revoke(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    if !s.gateway.grants.revoke(&ns, &id) {
+        return Err(KalypsoError::NotFound(format!("running grant {id}")));
+    }
+    s.db.audit(Some(&ns), "user", "secret.revoke", &id)?;
+    Ok(())
+}
+
 /// Calls waiting for the user's decision.
 #[tauri::command]
 pub fn policy_pending(s: State<'_, AppState>, ns: String) -> Result<Vec<ApprovalRequest>> {
