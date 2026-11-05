@@ -150,13 +150,20 @@ svg.lucide { stroke-width: 1.5; flex: none; }
 /* ---------- Shell ---------- */
 /* Inset: the sidebar sits on the window background, the main area is a raised panel. */
 .shell {
-  position: relative; z-index: 1; display: grid; grid-template-columns: 224px 1fr; height: 100%;
-  background: var(--surface-2); transition: grid-template-columns 0.2s var(--ease);
+  --side-w: 224px;
+  position: relative; z-index: 1; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); height: 100%;
+  background: var(--surface-2); transition: grid-template-columns 0.22s var(--ease);
 }
-.shell.collapsed { grid-template-columns: 0 1fr; }
+.shell.mode-rail { --side-w: 56px; }
+.shell.mode-hidden { --side-w: 0px; }
+/* Sidebar on the right: the main panel comes first. */
+.shell.pos-right { grid-template-columns: minmax(0, 1fr) var(--side-w); }
+.shell.pos-right .sidebar { order: 2; }
+/* Navigation across the top. */
+.shell.pos-top { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 .sidebar { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 14px 10px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .sidebar::-webkit-scrollbar { display: none; }
-.shell.collapsed .sidebar { visibility: hidden; }
+.shell.mode-hidden .sidebar { visibility: hidden; }
 /* Mixed from the sidebar background so hover and active read on every theme, including custom. */
 .sidebar { --nav-hover: color-mix(in srgb, var(--text) 5%, var(--surface-2)); --nav-active: color-mix(in srgb, var(--text) 9%, var(--surface-2)); }
 .nav { position: relative; display: flex; flex-direction: column; gap: 2px; }
@@ -202,7 +209,42 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
   margin: 8px 8px 8px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--page-bg);
   transition: margin 0.2s var(--ease);
 }
-.shell.collapsed .main { margin-left: 8px; }
+.shell.mode-hidden .main { margin-left: 8px; }
+.shell.pos-right .main { margin: 8px 0 8px 8px; }
+.shell.pos-right.mode-hidden .main { margin-right: 8px; }
+.shell.pos-top .main { margin: 0 8px 8px; }
+
+/* ---------- Icon rail ---------- */
+.sidebar.rail { padding: 14px 8px; align-items: stretch; }
+.sidebar.rail .ns-card { padding: 6px; justify-content: center; }
+.sidebar.rail .ns-card > :not(:first-child) { display: none; }
+.sidebar.rail .nav-group { padding: 10px 0 6px; font-size: 0; cursor: default; justify-content: center; }
+.sidebar.rail .nav-group::before { content: ""; width: 20px; height: 1px; background: var(--border); }
+.sidebar.rail .nav-section:first-child .nav-group { padding-top: 6px; }
+.sidebar.rail .nav-group .nav-chevron { display: none; }
+.sidebar.rail .nav-item { justify-content: center; padding: 0; height: 34px; }
+.sidebar.rail .nav-item .clip { display: none; }
+.sidebar.rail .nav-mark::before { top: 9px; bottom: 9px; }
+/* Counts become a dot on the icon; the number is in the tooltip. */
+.sidebar.rail .nav-item .count { position: absolute; top: 6px; right: 8px; min-width: 0; width: 6px; height: 6px; padding: 0; font-size: 0; background: var(--accent-hi); }
+.sidebar.rail .sidebar-foot .user-btn { justify-content: center; padding: 4px 0; }
+.sidebar.rail .sidebar-foot .user-btn > :not(:first-child) { display: none; }
+
+/* ---------- Top navigation ---------- */
+.topnav { display: flex; align-items: center; gap: 6px; height: 48px; padding: 0 10px 0 8px; }
+.topnav-ns .ns-card { padding: 5px; }
+.topnav-ns .ns-card > :not(:first-child) { display: none; }
+.topnav-groups { display: flex; align-items: center; gap: 2px; margin-left: 6px; min-width: 0; }
+.topnav-group {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s;
+}
+.topnav-group:hover { background: color-mix(in srgb, var(--text) 5%, var(--surface-2)); color: var(--text); }
+.topnav-group.active { color: var(--text); font-weight: 500; background: color-mix(in srgb, var(--text) 9%, var(--surface-2)); }
+.topnav-group.active svg:first-child { color: var(--accent-hi); }
+.topnav .btn.icon.on { color: var(--accent-hi); }
+.topnav .user-btn { padding: 2px; }
+.topnav .user-btn > :not(:first-child) { display: none; }
 .topbar {
   display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 12px; flex: none;
   border-bottom: 1px solid var(--border);
@@ -569,10 +611,13 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 @keyframes app-in { from { opacity: 0; } }
 .chrome .topbar, .chrome .crumbs, .chrome .sidebar { -webkit-user-select: none; user-select: none; }
 /* macOS: room for the traffic lights over the sidebar. */
-.os-mac .sidebar { padding-top: 46px; }
-.os-mac .shell.collapsed .topbar { padding-left: 84px; }
+/* macOS: room for the traffic lights, wherever the top-left corner is. */
+.os-mac .shell.pos-left:not(.mode-hidden) .sidebar { padding-top: 46px; }
+.os-mac .shell.pos-left.mode-hidden .topbar, .os-mac .shell.pos-right .topbar { padding-left: 84px; }
+.os-mac .topnav { padding-left: 84px; }
+.os-mac .shell.pos-left.mode-rail .topbar { padding-left: 22px; }
 /* Windows and Linux: KALYPSO's own controls, at the end of the top bar. */
-.win-controls { display: flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border); height: 22px; }
+.win-controls { order: 100; display: flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border); height: 22px; }
 .win-btn {
   display: grid; place-items: center; width: 30px; height: 28px; border: 0; border-radius: 6px; background: none;
   color: var(--text-3); cursor: pointer; transition: background 0.12s, color 0.12s;
@@ -588,3 +633,11 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .preview-note { margin: -8px 0 20px; padding: 10px 14px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); color: var(--text-2); font-size: 13px; }
 .preview-note a { color: var(--accent-hi); text-decoration: none; }
 .preview-note a:hover { text-decoration: underline; }
+
+/* ---------- Density ---------- */
+.density-compact .page { padding: 24px 32px 48px; }
+.density-compact .table th { padding: 8px 12px; }
+.density-compact .table td { padding: 7px 12px; }
+.density-compact .list-row { padding-top: 7px; padding-bottom: 7px; }
+.density-compact .card { padding: 14px; }
+.density-compact .sidebar:not(.rail) .nav-item { height: 28px; }

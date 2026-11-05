@@ -9,7 +9,7 @@ import { api, errorMessage, isLive, onAgentUpdate, onBudgetAlert, onSandboxStatu
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, TopNav } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { Toasts } from "./components/ui";
 import { useNamespaced, useStore, useToast } from "./store";
@@ -141,6 +141,14 @@ export function App() {
     return () => void off.then((unlisten) => unlisten());
   }, [state.session, toast]);
 
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 1100px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1100px)");
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!state.session || !(e.ctrlKey || e.metaKey)) return;
@@ -168,11 +176,15 @@ export function App() {
   if (!state.session) return <><div className="win-strip" data-tauri-drag-region><WindowControls /></div><Auth /></>;
 
   const View = views[state.view];
+  const pos = state.prefs.sidebarPosition;
+  // Narrow windows fall back to the rail; the choice you made comes back when there's room.
+  const expanded = state.sidebarOpen && !narrow;
+  const mode = pos === "top" ? "top" : expanded ? "expanded" : state.prefs.collapseTo === "hidden" ? "hidden" : "rail";
   return (
     <>
       {state.ambient && <NeuralWeb theme={state.appearance.theme} active />}
-      <div className={`shell ${state.sidebarOpen ? "" : "collapsed"}`} data-tauri-drag-region>
-        <Sidebar />
+      <div className={`shell pos-${pos} mode-${mode} density-${state.prefs.density}`} data-tauri-drag-region>
+        {pos === "top" ? <TopNav /> : <Sidebar rail={mode === "rail"} hidden={mode === "hidden"} />}
         <div className="main">
           <Topbar />
           {state.ambient && <Spider />}

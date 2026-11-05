@@ -18,6 +18,12 @@ export interface Prefs {
   termScrollback: number;
   /** How long a held tool call waits for an answer before it is denied. */
   approvalTimeoutMin: number;
+  /** Where the navigation sits. */
+  sidebarPosition: "left" | "right" | "top";
+  /** What collapsing the sidebar leaves: an icon rail, or nothing. */
+  collapseTo: "rail" | "hidden";
+  /** Row height and padding in lists and tables. */
+  density: "comfortable" | "compact";
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -32,6 +38,9 @@ export const DEFAULT_PREFS: Prefs = {
   termCursor: "block",
   termScrollback: 5000,
   approvalTimeoutMin: 10,
+  sidebarPosition: "left",
+  collapseTo: "rail",
+  density: "comfortable",
 };
 
 export const TERM_FONT_SIZES = [11, 12, 12.5, 13, 14, 15, 16];
@@ -62,6 +71,9 @@ export function sanitizePrefs(x: unknown): Partial<Prefs> {
   if (o.termCursor === "block" || o.termCursor === "bar" || o.termCursor === "underline") out.termCursor = o.termCursor;
   if (typeof o.termScrollback === "number" && SCROLLBACK.includes(o.termScrollback)) out.termScrollback = o.termScrollback;
   if (typeof o.approvalTimeoutMin === "number" && APPROVAL_TIMEOUTS.includes(o.approvalTimeoutMin)) out.approvalTimeoutMin = o.approvalTimeoutMin;
+  if (o.sidebarPosition === "left" || o.sidebarPosition === "right" || o.sidebarPosition === "top") out.sidebarPosition = o.sidebarPosition;
+  if (o.collapseTo === "rail" || o.collapseTo === "hidden") out.collapseTo = o.collapseTo;
+  if (o.density === "comfortable" || o.density === "compact") out.density = o.density;
   return out;
 }
 

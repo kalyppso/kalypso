@@ -6,7 +6,7 @@ import "../styles/pages.css";
 import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
 import { themePatch, themes } from "../themes";
 import { ACCENTS, FONTS, contrast, fontFamily } from "../appearance";
-import { Field, PageHead, Toggle, useErrors } from "../components/ui";
+import { Field, PageHead, Toggle, modKey, useErrors } from "../components/ui";
 import { NAV } from "../components/Sidebar";
 import { APPROVAL_TIMEOUTS, DEFAULT_PREFS, SCROLLBACK, TERM_FONT_SIZES, formatDateTime, formatTime, fromDb, timeZones, type Prefs } from "../prefs";
 import { ColorPicker } from "../components/ColorPicker";
@@ -244,6 +244,38 @@ function AppearanceSection() {
             <button className="btn sm">Request changes</button>
           </div>
         </div>
+      </div>
+
+      <div className="field">
+        Navigation
+        <div className="segmented" role="radiogroup" aria-label="Navigation position" style={{ alignSelf: "flex-start" }}>
+          {([["left", "Left"], ["right", "Right"], ["top", "Top"]] as const).map(([v, l]) => (
+            <button key={v} role="radio" aria-checked={state.prefs.sidebarPosition === v} className={state.prefs.sidebarPosition === v ? "active" : ""} onClick={() => dispatch({ type: "prefs", patch: { sidebarPosition: v } })}>{l}</button>
+          ))}
+        </div>
+        <span className="faint small">A sidebar on either side, or a bar across the top with each group as a menu.</span>
+      </div>
+
+      {state.prefs.sidebarPosition !== "top" && (
+        <div className="field">
+          When collapsed
+          <div className="segmented" role="radiogroup" aria-label="When the sidebar is collapsed" style={{ alignSelf: "flex-start" }}>
+            {([["rail", "Keep the icons"], ["hidden", "Hide it"]] as const).map(([v, l]) => (
+              <button key={v} role="radio" aria-checked={state.prefs.collapseTo === v} className={state.prefs.collapseTo === v ? "active" : ""} onClick={() => dispatch({ type: "prefs", patch: { collapseTo: v } })}>{l}</button>
+            ))}
+          </div>
+          <span className="faint small">{modKey} B collapses and expands it. Narrow windows keep the icons.</span>
+        </div>
+      )}
+
+      <div className="field">
+        Density
+        <div className="segmented" role="radiogroup" aria-label="Density" style={{ alignSelf: "flex-start" }}>
+          {([["comfortable", "Comfortable"], ["compact", "Compact"]] as const).map(([v, l]) => (
+            <button key={v} role="radio" aria-checked={state.prefs.density === v} className={state.prefs.density === v ? "active" : ""} onClick={() => dispatch({ type: "prefs", patch: { density: v } })}>{l}</button>
+          ))}
+        </div>
+        <span className="faint small">Row height and spacing in lists and tables.</span>
       </div>
 
       <div className="row">

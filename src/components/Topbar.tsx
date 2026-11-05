@@ -1,4 +1,4 @@
-import { Check, Code2, Palette, PanelLeft, Search } from "lucide-react";
+import { Check, Code2, Palette, PanelLeft, PanelRight, Search } from "lucide-react";
 import { useStore } from "../store";
 import { themePatch, themes } from "../themes";
 import { viewLabel } from "./Sidebar";
@@ -11,15 +11,18 @@ export function Topbar() {
 
   return (
     <header className="topbar" data-tauri-drag-region>
-      <button
-        className="btn ghost icon"
-        title={`${state.sidebarOpen ? "Close" : "Open"} sidebar (${modKey} B)`}
-        aria-label={state.sidebarOpen ? "Close sidebar" : "Open sidebar"}
-        aria-expanded={state.sidebarOpen}
-        onClick={() => dispatch({ type: "sidebar", open: !state.sidebarOpen })}
-      >
-        <PanelLeft size={15} />
-      </button>
+      {state.prefs.sidebarPosition !== "top" && (
+        <button
+          className="btn ghost icon"
+          title={`${state.sidebarOpen ? "Collapse" : "Expand"} sidebar (${modKey} B)`}
+          aria-label={state.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          aria-expanded={state.sidebarOpen}
+          onClick={() => dispatch({ type: "sidebar", open: !state.sidebarOpen })}
+          style={state.prefs.sidebarPosition === "right" ? { order: 99 } : undefined}
+        >
+          {state.prefs.sidebarPosition === "right" ? <PanelRight size={15} /> : <PanelLeft size={15} />}
+        </button>
+      )}
       <div className="crumbs" data-tauri-drag-region>
         <strong>{viewLabel(state.view)}</strong>
       </div>

@@ -70,10 +70,10 @@ export const NAV: { title: string; items: NavDef[] }[] = [
 
 export const viewLabel = (id: ViewId) => NAV.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? id;
 
-export function Sidebar() {
-  const { state, dispatch } = useStore();
+/** Badge counts per page, from the current namespace. */
+function useCounts(): Partial<Record<ViewId, number>> {
   const scoped = useNamespaced();
-  const counts: Partial<Record<ViewId, number>> = {
+  return {
     agents: scoped.agents.length,
     tracker: scoped.tasks.filter((t) => t.status === "running").length,
     sandboxes: scoped.sandboxes.length,
@@ -82,6 +82,12 @@ export function Sidebar() {
     integrations: scoped.integrations.length,
     policies: scoped.policies.filter((p) => p.enabled).length,
   };
+}
+
+/** The vertical navigation, left or right. `rail` shows icons only; `hidden` takes it out of the way. */
+export function Sidebar({ rail = false, hidden = false }: { rail?: boolean; hidden?: boolean }) {
+  const { state, dispatch } = useStore();
+  const counts = useCounts();
 
   // Folded sections, remembered per machine. The page you are on stays visible.
   const [folded, setFolded] = useState<string[]>(() => {
@@ -104,19 +110,20 @@ export function Sidebar() {
   useLayoutEffect(() => {
     const el = navRef.current?.querySelector<HTMLElement>(".nav-item.active");
     setMark(el ? { top: el.offsetTop, height: el.offsetHeight } : null);
-  }, [state.view, folded]);
+  }, [state.view, folded, rail]);
 
   return (
-    <aside className="sidebar" aria-hidden={!state.sidebarOpen} data-tauri-drag-region>
-      <NamespaceSwitcher />
+    <aside className={`sidebar ${rail ? "rail" : ""}`} aria-hidden={hidden || undefined} aria-label="Navigation" data-tauri-drag-region>
+      <NamespaceSwitcher compact={rail} />
       <nav className="nav" ref={navRef}>
         <span className="nav-mark" style={{ transform: `translateY(${mark?.top ?? 0}px)`, height: mark?.height ?? 0, opacity: mark ? 1 : 0 }} aria-hidden />
         {NAV.map((g) => {
-          const isFolded = folded.includes(g.title);
+          // The rail shows every page: folding is for the labelled list.
+          const isFolded = !rail && folded.includes(g.title);
           const items = isFolded ? g.items.filter((i) => i.id === state.view) : g.items;
           return (
             <div key={g.title} className="nav-section">
-              <button className="nav-group" onClick={() => toggle(g.title)} aria-expanded={!isFolded}>
+              <button className="nav-group" onClick={() => !rail && toggle(g.title)} aria-expanded={!isFolded} tabIndex={rail ? -1 : undefined}>
                 {g.title}
                 <ChevronDown size={12} className="nav-chevron" style={{ transform: isFolded ? "rotate(-90deg)" : undefined }} />
               </button>
@@ -125,6 +132,8 @@ export function Sidebar() {
                   key={id}
                   className={`nav-item ${state.view === id ? "active" : ""}`}
                   aria-current={state.view === id ? "page" : undefined}
+                  aria-label={counts[id] ? `${label}, ${counts[id]}` : label}
+                  title={rail ? (counts[id] ? `${label} (${counts[id]})` : label) : undefined}
                   onClick={() => dispatch({ type: "view", view: id })}
                 >
                   <Icon size={15} />
@@ -137,7 +146,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="sidebar-foot">
-        <UserMenu />
+        <UserMenu compact={rail} />
       </div>
     </aside>
   );
@@ -145,14 +154,14 @@ export function Sidebar() {
 
 const FOLDED_KEY = "kalypso.nav.folded";
 
-function UserMenu() {
+function UserMenu({ compact = false, below = false }: { compact?: boolean; below?: boolean }) {
   const { state, dispatch } = useStore();
   const { open, setOpen, ref } = usePopover();
   const user = state.session;
   if (!user) return null;
   return (
     <div className="pop-wrap" ref={ref} style={{ marginTop: 4 }}>
-      <button className="user-btn" onClick={() => setOpen(!open)}>
+      <button className="user-btn" onClick={() => setOpen(!open)} title={compact ? user.name : undefined} aria-label={compact ? `Account: ${user.name}` : undefined}>
         <span className="avatar user-avatar">
           {user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
           <i className="presence" aria-hidden />
@@ -164,7 +173,7 @@ function UserMenu() {
         <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
       </button>
       {open && (
-        <div className="popover" style={{ top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: "100%", minWidth: 0 }}>
+        <div className="popover" style={below ? { right: 0, left: "auto", minWidth: 220 } : { top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: compact ? 220 : "100%", minWidth: 0 }}>
           <button className="pop-item" onClick={() => { dispatch({ type: "view", view: "settings" }); setOpen(false); }}><Settings size={14} /> Account and appearance</button>
           {user.provider !== "local" && <button className="pop-item" onClick={() => dispatch({ type: "logout" })}><LogOut size={14} /> Sign out</button>}
         </div>
@@ -173,7 +182,7 @@ function UserMenu() {
   );
 }
 
-function NamespaceSwitcher() {
+function NamespaceSwitcher({ compact = false }: { compact?: boolean }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { open, setOpen, ref } = usePopover();
@@ -206,7 +215,7 @@ function NamespaceSwitcher() {
 
   return (
     <div className="pop-wrap" ref={ref} style={{ marginBottom: 6 }}>
-      <button className="user-btn ns-card" onClick={() => setOpen(!open)} title="Switch namespace" aria-expanded={open}>
+      <button className="user-btn ns-card" onClick={() => setOpen(!open)} title={compact ? `Namespace: ${current?.name}` : "Switch namespace"} aria-label={compact ? `Namespace: ${current?.name}` : undefined} aria-expanded={open}>
         <Logo size={26} />
         <div style={{ minWidth: 0 }}>
           <div className="clip" style={{ fontWeight: 500 }}>{current?.name}</div>
@@ -215,7 +224,7 @@ function NamespaceSwitcher() {
         <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
       </button>
       {open && (
-        <div className="popover" style={{ left: 0, right: "auto", width: "100%", minWidth: 0, transformOrigin: "top left" }}>
+        <div className="popover" style={{ left: 0, right: "auto", width: compact ? 260 : "100%", minWidth: 0, transformOrigin: "top left" }}>
           <div className="pop-label">Namespaces</div>
           {state.namespaces.map((n) => (
             <button
@@ -242,6 +251,65 @@ function NamespaceSwitcher() {
           </Field>
           <ModalActions onCancel={closeModal} onConfirm={createNs} confirm="Create namespace" />
         </Modal>
+      )}
+    </div>
+  );
+}
+
+/** The navigation as a bar across the top: each group is a compact menu. */
+export function TopNav() {
+  const { state, dispatch } = useStore();
+  const counts = useCounts();
+  return (
+    <header className="topnav" data-tauri-drag-region>
+      <div className="topnav-ns"><NamespaceSwitcher compact /></div>
+      <nav className="topnav-groups" aria-label="Navigation">
+        {NAV.filter((g) => g.title !== "App").map((g) => (
+          <GroupMenu key={g.title} title={g.title} items={g.items} counts={counts} />
+        ))}
+      </nav>
+      <span className="spacer" data-tauri-drag-region />
+      <button
+        className={`btn ghost icon ${state.view === "settings" ? "on" : ""}`}
+        title="Settings"
+        aria-label="Settings"
+        aria-current={state.view === "settings" ? "page" : undefined}
+        onClick={() => dispatch({ type: "view", view: "settings" })}
+      >
+        <Settings size={15} />
+      </button>
+      <UserMenu compact below />
+    </header>
+  );
+}
+
+function GroupMenu({ title, items, counts }: { title: string; items: NavDef[]; counts: Partial<Record<ViewId, number>> }) {
+  const { state, dispatch } = useStore();
+  const { open, setOpen, ref } = usePopover();
+  const current = items.find((i) => i.id === state.view);
+  const Icon = current?.icon;
+  return (
+    <div className="pop-wrap" ref={ref}>
+      <button className={`topnav-group ${current ? "active" : ""}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
+        {Icon && <Icon size={14} />}
+        <span>{current ? current.label : title}</span>
+        <ChevronDown size={12} className="faint" />
+      </button>
+      {open && (
+        <div className="popover" role="menu" style={{ left: 0, right: "auto", minWidth: 220, transformOrigin: "top left" }}>
+          <div className="pop-label">{title}</div>
+          {items.map(({ id, label, icon: ItemIcon }) => (
+            <button
+              key={id}
+              role="menuitem"
+              className={`pop-item ${state.view === id ? "active" : ""}`}
+              onClick={() => { dispatch({ type: "view", view: id }); setOpen(false); }}
+            >
+              <ItemIcon size={14} /> {label}
+              {!!counts[id] && <span className="faint small" style={{ marginLeft: "auto" }}>{counts[id]}</span>}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
