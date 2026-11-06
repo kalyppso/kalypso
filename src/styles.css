@@ -686,3 +686,15 @@ table ~ .empty-state, .card > .empty-state { background: transparent; }
 .update-notice { position: fixed; right: 16px; bottom: 44px; z-index: 60; width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--pop-shadow); animation: pop-in 0.25s var(--ease); }
 .update-notes { max-height: 180px; overflow: auto; white-space: pre-wrap; color: var(--text-2); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .link-btn { padding: 0; border: 0; background: none; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- GitHub accounts (#100) ---------- */
+.gh-account { padding: 14px 0; display: flex; flex-direction: column; gap: 10px; }
+.gh-account + .gh-account { border-top: 1px solid var(--border); }
+.gh-avatar { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card-3); object-fit: cover; }
+.gh-reconnect { margin-top: 6px; color: var(--text); }
+.gh-ns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--border-strong); background: none; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip:hover { color: var(--text); }
+.chip.on { background: var(--accent-soft); border-color: transparent; color: var(--text); }
+.gh-device { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; }
+.gh-code { font: 600 22px var(--mono); letter-spacing: 0.12em; }

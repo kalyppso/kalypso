@@ -24,7 +24,16 @@ fn app() -> WebviewWindow<tauri::test::MockRuntime> {
     let vault = Arc::new(Vault::ephemeral());
     let gateway = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
     let agents = kalypso_lib::agent::supervisor::Supervisor::new(db.clone(), vault.clone(), Runtime::none());
-    app.manage(AppState { db, vault, rt: Runtime::none(), forwards: Default::default(), gateway, terminals: Default::default(), agents });
+    app.manage(AppState {
+        db,
+        vault,
+        rt: Runtime::none(),
+        forwards: Default::default(),
+        gateway,
+        terminals: Default::default(),
+        agents,
+        github: Default::default(),
+    });
     WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap()
 }
 
