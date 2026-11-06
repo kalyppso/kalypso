@@ -72,3 +72,64 @@ export function sanitizeAppearance(x: unknown): Partial<Appearance> {
   if (o.size === "compact" || o.size === "default" || o.size === "large") out.size = o.size;
   return out;
 }
+
+// ---------- Contrast for the theme being picked (#106) ----------
+
+const rgb = (hex: string) => {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const toHex = (c: number[]) => "#" + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+
+/** `color-mix(in srgb, a p%, b)`, as the stylesheet derives secondary colours. */
+export function mix(a: string, b: string, p: number) {
+  const [x, y] = [rgb(a), rgb(b)];
+  return toHex(x.map((v, i) => v * p + y[i] * (1 - p)));
+}
+
+/** Background and text of each built-in theme (their tokens live in styles.css). */
+const BUILT_IN: Record<string, { bg: string; text: string }> = {
+  black: { bg: "#000000", text: "#ffffff" },
+  white: { bg: "#ffffff", text: "#000000" },
+  blossom: { bg: "#fdf1f5", text: "#3d1029" },
+};
+
+export interface ContrastCheck {
+  id: "text" | "text-2" | "text-3" | "accent";
+  label: string;
+  ratio: number;
+  min: number;
+  ok: boolean;
+}
+
+/** WCAG AA checks for the theme as picked: text levels on the background (custom themes), and
+ *  the accent against the background (any theme), which buttons, focus rings and selection use. */
+export function themeChecks(a: Appearance): ContrastCheck[] {
+  const custom = a.theme === "custom";
+  const { bg, text } = custom ? { bg: a.bg, text: a.text } : BUILT_IN[a.theme] ?? BUILT_IN.black;
+  const check = (id: ContrastCheck["id"], label: string, fg: string, min: number): ContrastCheck => {
+    const ratio = contrast(fg, bg);
+    return { id, label, ratio, min, ok: ratio >= min };
+  };
+  const out: ContrastCheck[] = [];
+  if (custom) {
+    out.push(check("text", "Body text", text, 4.5));
+    out.push(check("text-2", "Secondary text", mix(text, bg, 0.66), 4.5));
+    out.push(check("text-3", "Hints and labels", mix(text, bg, 0.42), 3));
+  }
+  out.push(check("accent", "Accent (buttons, focus, selection)", a.accent, 3));
+  return out;
+}
+
+/** The text colour with the most contrast on `bg`: what "Fix" picks for failing text. */
+export const bestText = (bg: string) => (contrast("#000000", bg) >= contrast("#ffffff", bg) ? "#111111" : "#f5f5f7");
+
+/** The nearest accent that reaches 3:1 on `bg`: the same hue, lightened or darkened. */
+export function fixAccent(accent: string, bg: string) {
+  const toward = contrast("#ffffff", bg) > contrast("#000000", bg) ? "#ffffff" : "#000000";
+  for (let p = 0.05; p <= 1.0001; p += 0.05) {
+    const c = mix(toward, accent, p);
+    if (contrast(c, bg) >= 3) return c;
+  }
+  return toward;
+}

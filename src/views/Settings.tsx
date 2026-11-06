@@ -8,7 +8,7 @@ import { Check, Palette, RefreshCw, ScrollText, SlidersHorizontal, User } from "
 import "../styles/pages.css";
 import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
 import { themePatch, themes } from "../themes";
-import { ACCENTS, FONTS, contrast, fontFamily } from "../appearance";
+import { ACCENTS, FONTS, bestText, fixAccent, fontFamily, themeChecks } from "../appearance";
 import { Field, PageHead, Toggle, modKey, useErrors } from "../components/ui";
 import { NAV } from "../components/Sidebar";
 import { APPROVAL_TIMEOUTS, DEFAULT_PREFS, SCROLLBACK, TERM_FONT_SIZES, formatDateTime, formatTime, fromDb, timeZones, type Prefs } from "../prefs";
@@ -208,9 +208,7 @@ function AppearanceSection() {
           <ColorField label="Text" value={a.text} onChange={(text) => set({ text })} />
         </div>
       )}
-      {a.theme === "custom" && contrast(a.bg, a.text) < 4.5 && (
-        <div className="small" style={{ marginTop: -12 }}>Text and background are too close in brightness to read comfortably. Aim for more contrast.</div>
-      )}
+      <ContrastReport a={a} set={set} />
 
       <div className="field">
         Accent
@@ -496,5 +494,29 @@ function AuditLog() {
         )}
       </div>
     </>
+  );
+}
+
+/** Contrast for the theme as it's being picked (#106): what fails WCAG AA, and a one-click fix. */
+function ContrastReport({ a, set }: { a: Appearance; set: (p: Partial<Appearance>) => void }) {
+  const checks = themeChecks(a);
+  const failing = checks.filter((c) => !c.ok);
+  if (!failing.length) {
+    return a.theme === "custom" ? <div className="faint small contrast-ok" style={{ marginTop: -12 }}><Check size={12} /> Every text level and the accent pass WCAG AA on this background.</div> : null;
+  }
+  const bg = a.theme === "custom" ? a.bg : a.theme === "white" ? "#ffffff" : a.theme === "blossom" ? "#fdf1f5" : "#000000";
+  return (
+    <div className="contrast-report" role="status" style={{ marginTop: -12 }}>
+      {failing.map((c) => (
+        <div key={c.id} className="row small" style={{ gap: 8 }}>
+          <span className="badge err">{c.ratio.toFixed(1)}:1</span>
+          <span>{c.label} is hard to read here (needs {c.min}:1).</span>
+          <span className="spacer" />
+          {c.id === "accent"
+            ? <button className="btn ghost sm" onClick={() => set({ accent: fixAccent(a.accent, bg) })}>Adjust accent</button>
+            : <button className="btn ghost sm" onClick={() => set({ text: bestText(a.bg) })}>Fix text colour</button>}
+        </div>
+      ))}
+    </div>
   );
 }

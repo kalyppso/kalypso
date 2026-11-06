@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import "../styles/connections.css";
 import { ArrowLeftRight, Cable, Loader2, Plus, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors, StatusDot } from "../components/ui";
 import { Logo } from "./Integrations";
 import type { Agent, Connection, ConnectionKind, IntegrationKind } from "../types";
 
@@ -19,7 +19,7 @@ function AgentNode({ data }: NodeProps<Node<AgentNodeData>>) {
   return (
     <div className={`flow-agent ${sel ? "sel" : ""}`}>
       <Handle type="target" position={Position.Top} />
-      <span className={`dot ${agent.status === "running" ? "ok" : agent.status === "error" ? "err" : ""}`} />
+      <StatusDot value={agent.status} />
       <div style={{ minWidth: 0 }}>
         <div className="flow-name">{agent.name}</div>
         <div className="flow-sub">{agent.model.replace("claude-", "")}</div>

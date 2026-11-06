@@ -3,7 +3,7 @@ import { RUNNER_IMAGE } from "./Agents";
 import { Boxes, Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
-import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
+import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import "../styles/pages.css";
 import type { Sandbox } from "../types";
 import type { PortForward } from "../bindings/PortForward";
@@ -11,7 +11,7 @@ import type { ProviderInfo } from "../bindings/ProviderInfo";
 
 export function Sandboxes() {
   const { state, dispatch } = useStore();
-  const { sandboxes, agents } = useNamespaced();
+  const { loading, sandboxes, agents } = useNamespaced();
   const toast = useToast();
   const [creating, setCreating] = useState(state.compose);
   const [busy, setBusy] = useState<string | null>(null);
@@ -76,7 +76,8 @@ export function Sandboxes() {
             })}
           </tbody>
         </table>
-        {sandboxes.length === 0 && (
+        {loading && <Skeleton rows={3} />}
+        {!loading && sandboxes.length === 0 && (
           <EmptyState icon={Boxes} title="No sandboxes yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "sandboxes", compose: true })}><Plus size={13} /> New sandbox</button>}>
             Isolated containers where agents work. For Claude agents, use the agent runner image.
           </EmptyState>

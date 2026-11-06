@@ -3,15 +3,35 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle, type LucideIcon } from "lucide-react";
 import { useStore } from "../store";
 
+// One status language for every page, the transcript and the Inbox (#106): the same word always
+// gets the same colour. ok = working, warn = waiting or in between, err = stopped by a problem.
 const tone: Record<string, "ok" | "warn" | "err" | ""> = {
-  running: "ok", up: "ok", healthy: "ok", connected: "ok", approved: "ok",
+  running: "ok", up: "ok", healthy: "ok", connected: "ok", approved: "ok", ok: "ok", open: "ok", merged: "ok", done: "ok", allowed: "ok",
   idle: "warn", paused: "warn", degraded: "warn", syncing: "warn", warned: "warn", starting: "warn", restarting: "warn",
+  waiting: "warn", pending: "warn", queued: "warn", reconnect: "warn", draft: "warn",
   error: "err", down: "err", offline: "err", blocked: "err", denied: "err", failed: "err", crashed: "err",
-  stopped: "",
+  stopped: "", exited: "", closed: "", none: "",
 };
 
+/** The tone a status word gets everywhere. */
+export const statusTone = (value: string) => tone[value] ?? "";
+
+/** Just the dot, where a pill would be too much (graph nodes, dense rows). */
+export function StatusDot({ value, label }: { value: string; label?: string }) {
+  return <span className={`dot ${statusTone(value)}`} role="img" aria-label={label ?? value} title={label ?? value} />;
+}
+
+/** A placeholder in the shape of what's loading, instead of blank space or a spinner. */
+export function Skeleton({ rows = 3, height = 44 }: { rows?: number; height?: number }) {
+  return (
+    <div className="skeleton" role="status" aria-label="Loading" aria-busy="true">
+      {Array.from({ length: rows }, (_, i) => <span key={i} className="skeleton-row" style={{ height, opacity: 1 - i * 0.18 }} />)}
+    </div>
+  );
+}
+
 export function Status({ value }: { value: string }) {
-  const t = tone[value] ?? "";
+  const t = statusTone(value);
   return (
     <span className={`badge ${t}`}>
       <span className={`dot ${t}`} />
