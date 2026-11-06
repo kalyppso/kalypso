@@ -11,6 +11,7 @@ pub mod github;
 pub mod ipc;
 pub mod ns;
 pub mod policy;
+pub mod repo;
 pub mod sandbox;
 pub mod setup;
 pub mod store;
@@ -63,6 +64,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::gh_account_remove,
         ipc::gh_account_check,
         ipc::gh_repos,
+        ipc::agent_pull_requests,
         ipc::setup_engine,
         ipc::setup_key_check,
         ipc::app_restart,

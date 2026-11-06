@@ -24,4 +24,16 @@ status: string,
 /**
  * Why it is in that state, in words: "crashed 3 times (exit 137)", "budget: daily cap reached".
  */
-status_reason: string, created_at: string, };
+status_reason: string, created_at: string, 
+/**
+ * The GitHub repository it works on, "owner/name" (#100).
+ */
+repo: string | null, 
+/**
+ * The GitHub account whose access it uses for that repository.
+ */
+repo_account: string | null, 
+/**
+ * Its own branch in that repository, `agent/<name>/<task>`, set when first prepared.
+ */
+branch: string | null, };

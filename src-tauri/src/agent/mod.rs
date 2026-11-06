@@ -39,6 +39,12 @@ pub struct AgentRecord {
     /// Why it is in that state, in words: "crashed 3 times (exit 137)", "budget: daily cap reached".
     pub status_reason: String,
     pub created_at: String,
+    /// The GitHub repository it works on, "owner/name" (#100).
+    pub repo: Option<String>,
+    /// The GitHub account whose access it uses for that repository.
+    pub repo_account: Option<String>,
+    /// Its own branch in that repository, `agent/<name>/<task>`, set when first prepared.
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -67,6 +73,13 @@ pub struct NewAgent {
     #[serde(default)]
     #[ts(optional)]
     pub max_restarts: Option<u32>,
+    /// A GitHub repository, "owner/name", and the account to reach it with (#100).
+    #[serde(default)]
+    #[ts(optional)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub repo_account: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, TS)]
@@ -87,6 +100,11 @@ pub struct AgentPatch {
     pub restart: Option<String>,
     #[ts(optional)]
     pub max_restarts: Option<u32>,
+    /// Some("") unlinks the repository.
+    #[ts(optional)]
+    pub repo: Option<String>,
+    #[ts(optional)]
+    pub repo_account: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -121,7 +139,7 @@ pub struct AgentEvent {
 const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code"];
 const RESTARTS: &[&str] = &["never", "on-failure", "always"];
 const COLS: &str =
-    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at";
+    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
     Ok(AgentRecord {
@@ -139,6 +157,9 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
         status: r.get(11)?,
         status_reason: r.get(12)?,
         created_at: r.get(13)?,
+        repo: r.get(14)?,
+        repo_account: r.get(15)?,
+        branch: r.get(16)?,
     })
 }
 
@@ -191,6 +212,25 @@ fn check(runtime: &str, restart: &str, command: &str, max_restarts: u32, max_tur
     Ok(())
 }
 
+/// A linked repository must be "owner/name", reached with an account the namespace may use.
+fn check_repo(db: &Db, ns: &str, repo: Option<&str>, account: Option<&str>) -> Result<()> {
+    let Some(repo) = repo else { return Ok(()) };
+    let valid = |s: &str| {
+        !s.is_empty() && s.len() <= 100 && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)) && s != "." && s != ".."
+    };
+    match repo.split_once('/') {
+        Some((owner, name)) if valid(owner) && valid(name) => {}
+        _ => return Err(KalypsoError::Invalid(format!("{repo} isn't a GitHub repository; use owner/name"))),
+    }
+    let Some(account) = account else {
+        return Err(KalypsoError::Invalid("pick the GitHub account to reach the repository with".into()));
+    };
+    if !crate::github::for_ns(db, ns)?.iter().any(|a| a.id == account) {
+        return Err(KalypsoError::Invalid(format!("that GitHub account isn't allowed in namespace {ns}")));
+    }
+    Ok(())
+}
+
 fn check_sandbox(db: &Db, ns: &str, sandbox_id: Option<&str>) -> Result<()> {
     if let Some(sb) = sandbox_id {
         crate::sandbox::get(db, ns, sb).map_err(|_| KalypsoError::Invalid(format!("sandbox {sb} isn't in namespace {ns}")))?;
@@ -207,11 +247,14 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
     check(&new.runtime, &restart, &command, max_restarts, max_turns)?;
     let sandbox_id = new.sandbox_id.filter(|s| !s.is_empty());
     check_sandbox(db, ns, sandbox_id.as_deref())?;
+    let repo = new.repo.map(|r| r.trim().trim_end_matches(".git").to_string()).filter(|r| !r.is_empty());
+    let repo_account = new.repo_account.filter(|a| !a.is_empty() && repo.is_some());
+    check_repo(db, ns, repo.as_deref(), repo_account.as_deref())?;
     let id = crate::vault::new_id("ag");
     let inserted = db.with(|c| {
         Ok(c.execute(
-            "INSERT INTO agents (id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO agents (id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, repo, repo_account)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
                 id,
                 ns,
@@ -223,7 +266,9 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
                 command,
                 max_turns,
                 restart,
-                max_restarts
+                max_restarts,
+                repo,
+                repo_account
             ],
         )?)
     });
@@ -262,12 +307,41 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     if let Some(v) = p.max_restarts {
         a.max_restarts = v;
     }
+    if let Some(v) = p.repo {
+        let v = v.trim().trim_end_matches(".git").to_string();
+        let new = Some(v).filter(|r| !r.is_empty());
+        // A different repository means a fresh branch the next time it's prepared.
+        if new != a.repo {
+            a.branch = None;
+        }
+        a.repo = new;
+        if a.repo.is_none() {
+            a.repo_account = None;
+        }
+    }
+    if let Some(v) = p.repo_account {
+        a.repo_account = Some(v).filter(|s| !s.is_empty());
+    }
     check(&a.runtime, &a.restart, &a.command, a.max_restarts, a.max_turns)?;
     check_sandbox(db, ns, a.sandbox_id.as_deref())?;
+    check_repo(db, ns, a.repo.as_deref(), a.repo_account.as_deref())?;
     db.with(|c| {
         c.execute(
-            "UPDATE agents SET role = ?2, model = ?3, sandbox_id = ?4, command = ?5, max_turns = ?6, restart = ?7, max_restarts = ?8 WHERE id = ?1",
-            rusqlite::params![id, a.role, a.model, a.sandbox_id, a.command, a.max_turns, a.restart, a.max_restarts],
+            "UPDATE agents SET role = ?2, model = ?3, sandbox_id = ?4, command = ?5, max_turns = ?6, restart = ?7, max_restarts = ?8,
+             repo = ?9, repo_account = ?10, branch = ?11 WHERE id = ?1",
+            rusqlite::params![
+                id,
+                a.role,
+                a.model,
+                a.sandbox_id,
+                a.command,
+                a.max_turns,
+                a.restart,
+                a.max_restarts,
+                a.repo,
+                a.repo_account,
+                a.branch
+            ],
         )?;
         Ok(())
     })?;
@@ -280,6 +354,14 @@ pub fn delete(db: &Db, ns: &str, id: &str) -> Result<()> {
     let a = get(db, ns, id)?;
     db.with(|c| Ok(c.execute("DELETE FROM agents WHERE id = ?1", [id])?))?;
     db.audit(Some(ns), "user", "agent.delete", &a.name)
+}
+
+/// Remember the branch an agent works on in its repository.
+pub(crate) fn set_branch(db: &Db, id: &str, branch: &str) -> Result<()> {
+    db.with(|c| {
+        c.execute("UPDATE agents SET branch = ?2 WHERE id = ?1", (id, branch))?;
+        Ok(())
+    })
 }
 
 pub(crate) fn set_status(db: &Db, id: &str, status: &str, reason: &str) -> Result<()> {
@@ -397,6 +479,8 @@ mod tests {
             max_turns: None,
             restart: None,
             max_restarts: None,
+            repo: None,
+            repo_account: None,
         }
     }
 

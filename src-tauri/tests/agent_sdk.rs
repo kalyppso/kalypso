@@ -51,6 +51,8 @@ async fn an_sdk_agent_completes_a_task_in_its_sandbox_within_policy() {
         command: Some(common::TASK.into()),
         restart: Some("never".into()),
         max_restarts: Some(0),
+        repo: None,
+        repo_account: None,
         max_turns: Some(10),
     };
     let a = agent::create(&db, &ns, new).unwrap();

@@ -499,7 +499,7 @@ fn finish(gw: &Gateway, id: &str, outcome: &str, code: Option<i64>, leaks: i64) 
     }
 }
 
-fn sandbox_of(db: &Db, key_id: &str) -> Result<Option<String>> {
+pub(super) fn sandbox_of(db: &Db, key_id: &str) -> Result<Option<String>> {
     db.with(|c| {
         Ok(c.query_row("SELECT sandbox_id FROM gateway_keys WHERE id = ?1", [key_id], |r| r.get::<_, Option<String>>(0))
             .optional()?

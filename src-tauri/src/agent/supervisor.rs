@@ -121,6 +121,15 @@ impl Supervisor {
             sandbox::start(&self.db, &self.rt, ns, &sandbox_id).await?;
             sandbox::deliver_secrets(&self.db, &self.vault, &self.rt, ns, &sandbox_id).await?;
         }
+        // A repository-linked agent (#100) gets its repository cloned and its branch checked
+        // out first, so a clone that fails says why instead of the agent starting without it.
+        let agent = if agent.repo.is_some() {
+            let provider = self.rt.provider(&sb.runtime)?;
+            crate::repo::prepare(&self.db, &provider, ns, &sandbox_id, &agent, &crate::repo::clone_base()).await?;
+            super::get(&self.db, ns, id)?
+        } else {
+            agent
+        };
         let live = Arc::new(Live {
             ns: ns.into(),
             sandbox_id: sandbox_id.clone(),
@@ -419,6 +428,8 @@ mod tests {
                 max_turns: Some(max_turns),
                 restart: Some(restart.into()),
                 max_restarts: Some(max_restarts),
+                repo: None,
+                repo_account: None,
             };
             agent::create(&self.db, &self.ns, new).unwrap()
         }

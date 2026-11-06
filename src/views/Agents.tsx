@@ -6,6 +6,8 @@ import type { AgentRun } from "../bindings/AgentRun";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
 import type { Agent } from "../types";
+import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
+import type { PullRequest } from "../bindings/PullRequest";
 import "../styles/agents.css";
 
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
@@ -304,6 +306,8 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         )}
       </Section>
 
+      <RepoSection agent={a} />
+
       <Section title={a.runtime === "claude-sdk" ? "Task" : "Command"}>
         {a.runtime === "claude-sdk" ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}
       </Section>
@@ -335,6 +339,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
   const [restart, setRestart] = useState("on-failure");
   const [maxRestarts, setMaxRestarts] = useState("3");
   const [maxTurns, setMaxTurns] = useState("0");
+  const [repo, setRepo] = useState<RepoChoice>(null);
   const sdk = runtime === "claude-sdk";
   const picked = sandboxes.find((s) => s.id === sandboxId);
 
@@ -352,6 +357,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
     api.agentCreate(state.ns, {
       name: n, role: role.trim() || undefined, runtime, model: sdk ? model : undefined, command: command.trim(), sandbox_id: sandboxId,
       restart, max_restarts: Math.max(0, +maxRestarts || 0), max_turns: Math.max(0, +maxTurns || 0),
+      repo: repo?.repo, repo_account: repo?.account,
     })
       .then((rec) => { dispatch({ type: "hydrateAgents", ns: state.ns, agents: [...agents.filter((x) => x.ns === state.ns), toAgent(rec)] }); toast(`Agent ${n} created`); onClose(); })
       .catch((e) => toast(errorMessage(e), "err"));
@@ -390,6 +396,12 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
           {picked.name} runs <span className="mono">{picked.image}</span>, which has no agent runner. Use a sandbox with <span className="mono">{RUNNER_IMAGE}</span>, or an image built FROM it.
         </p>
       )}
+      {/* Not a <label>: it holds buttons, which a label would take over. */}
+      <div className="field" role="group" aria-labelledby="repo-field">
+        <span id="repo-field">Repository</span>
+        <RepoPicker value={repo} onChange={setRepo} />
+        <span className="faint small">Optional. Cloned into its sandbox on start; it works on its own branch and opens pull requests.</span>
+      </div>
       {sdk ? (
         <Field label="Task" hint="What to do first. Leave it empty to give it work later from the transcript.">
           <textarea className="input" rows={3} value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Fix the failing tests in /work/app and open a summary of what changed." />
@@ -416,5 +428,56 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Create agent" />
     </Modal>
+  );
+}
+
+/** The agent's GitHub repository (#100): its branch and pull requests, and changing or unlinking it. */
+function RepoSection({ agent: a }: { agent: Agent }) {
+  const { state, dispatch } = useStore();
+  const toast = useToast();
+  const { agents } = useNamespaced();
+  const [prs, setPrs] = useState<PullRequest[] | null>(null);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!a.repo || !a.branch) { setPrs([]); return; }
+    api.agentPullRequests(state.ns, a.id).then(setPrs).catch(() => setPrs([]));
+  }, [a.id, a.repo, a.branch]);
+  const save = (choice: RepoChoice) => {
+    api.agentUpdate(state.ns, a.id, { repo: choice?.repo ?? "", repo_account: choice?.account ?? "" })
+      .then((rec) => {
+        dispatch({ type: "hydrateAgents", ns: state.ns, agents: agents.map((x) => (x.id === a.id ? toAgent(rec) : x)) });
+        setEditing(false);
+        toast(choice ? `${a.name} will work on ${choice.repo} from its next start` : "Repository unlinked", "info");
+      })
+      .catch((e) => toast(errorMessage(e), "err"));
+  };
+  return (
+    <Section title="Repository">
+      {!a.repo || editing ? (
+        <RepoPicker value={null} onChange={(c) => c && save(c)} />
+      ) : (
+        <div className="repo-facts">
+          <div className="row" style={{ gap: 10 }}>
+            <a className="mono" href={`https://github.com/${a.repo}`} target="_blank" rel="noreferrer">{a.repo}</a>
+            {a.branch && <span className="badge mono">{a.branch}</span>}
+            <span className="spacer" />
+            <button className="btn ghost sm" onClick={() => setEditing(true)}>Change</button>
+            <button className="btn ghost sm" onClick={() => confirm(`Unlink ${a.repo} from ${a.name}? Its clone stays in the sandbox.`) && save(null)}>Unlink</button>
+          </div>
+          {!a.branch && <p className="faint small" style={{ margin: 0 }}>Cloned on its next start, onto its own branch.</p>}
+          {prs && prs.length > 0 && (
+            <ul className="pr-list">
+              {prs.map((p) => (
+                <li key={p.number}>
+                  <span className={`badge pr-${p.merged_at ? "merged" : p.draft ? "draft" : p.state}`}>{p.merged_at ? "merged" : p.draft ? "draft" : p.state}</span>
+                  <a href={p.html_url} target="_blank" rel="noreferrer">#{p.number} {p.title}</a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {prs && prs.length === 0 && a.branch && <p className="faint small" style={{ margin: 0 }}>No pull requests from {a.branch} yet.</p>}
+        </div>
+      )}
+    </Section>
   );
 }

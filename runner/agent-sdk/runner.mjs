@@ -178,10 +178,21 @@ const resume = fs.existsSync(sessionFile) ? fs.readFileSync(sessionFile, "utf8")
 
 const maxTurns = Number(process.env.KALYPSO_MAX_TURNS) || undefined;
 const role = (process.env.KALYPSO_ROLE || "").trim();
+// A repository-linked agent (#100) works inside its repository, on its own branch.
+const repo = process.env.KALYPSO_REPO;
+const repoDir = process.env.KALYPSO_REPO_DIR;
+const branch = process.env.KALYPSO_BRANCH;
+const workDir = repoDir || process.env.KALYPSO_CWD || "/work";
+const repoNotes = repo && [
+  `You work in the GitHub repository ${repo}, cloned at ${repoDir}, on your own branch ${branch}. Commit your work there.`,
+  `To share it, push your branch (git push -u origin ${branch}) and open a pull request with: gh-api POST /repos/${repo}/pulls '{"title":"…","head":"${branch}","base":"<default branch>","body":"…"}'. gh-api reaches the GitHub API for this repository only.`,
+  "Never push to main or master, and never force-push: KALYPSO refuses both. Git asks KALYPSO for credentials on its own; never look for, print or store a token.",
+];
 const append = [
-  `You are ${process.env.KALYPSO_AGENT || "an agent"}, running inside a KALYPSO sandbox. Your working directory is /work.`,
+  `You are ${process.env.KALYPSO_AGENT || "an agent"}, running inside a KALYPSO sandbox. Your working directory is ${workDir}.`,
   "KALYPSO checks every tool call against the workspace's policies. If a call is blocked, the reason says why: do not try to get around it, find another way or explain what you need.",
   "Secrets marked on-request are not in your environment. To run a command that needs one, use: kx-secret run NAME --purpose \"why\" -- <command>. KALYPSO runs that command with the secret (after approval if needed) and shows you its output with the value hidden. Never try to read, print or copy secret values.",
+  ...(repoNotes || []),
   role && `Your role: ${role}`,
 ]
   .filter(Boolean)
@@ -189,7 +200,7 @@ const append = [
 
 const options = {
   model: process.env.KALYPSO_MODEL || undefined,
-  cwd: process.env.KALYPSO_CWD || "/work",
+  cwd: workDir,
   maxTurns,
   resume,
   // KALYPSO is the permission system: the hook below asks it about every call.

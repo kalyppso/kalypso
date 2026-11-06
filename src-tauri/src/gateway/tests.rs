@@ -312,7 +312,8 @@ async fn force_push_to_main_is_blocked_and_logged() {
     let token = mint(&e.db, "work", None, "agent").unwrap().token;
     let d = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "git push --force origin main"})).await;
     assert_eq!(d.decision, "deny");
-    assert_eq!(d.policy.as_deref(), Some("No force-push to main"));
+    // Both git rules forbid this; either may be the one reported.
+    assert!(matches!(d.policy.as_deref(), Some("No force-push to main" | "No pushes to main")), "{:?}", d.policy);
     assert!(d.reason.unwrap().starts_with("Blocked by policy"));
     let ok = check(&e.gw, &token, serde_json::json!({"kind": "bash", "command": "git push origin feature"})).await;
     assert_eq!(ok.decision, "allow");
@@ -454,4 +455,153 @@ async fn the_secret_gateway_is_not_on_the_tcp_port() {
     let res = reqwest::Client::new().post(format!("{}/_kalypso/secrets/run", e.gw)).bearer_auth(token).json(&body).send().await.unwrap();
     assert_eq!(res.status(), 404);
     assert!(res.text().await.unwrap().contains("use /<provider>/<path>"));
+}
+
+// ---------- Git credentials and the GitHub API for repository-linked agents (#100) ----------
+
+/// A gateway serving the sandbox routes, a fake GitHub, an account allowed in `work`, a sandbox
+/// with an agent linked to acme/platform, and that sandbox's gateway key.
+struct GitEnv {
+    db: Arc<Db>,
+    url: String,
+    tcp: String,
+    key: String,
+    account: String,
+    github_seen: Arc<Mutex<Vec<String>>>,
+}
+
+async fn git_env() -> GitEnv {
+    use axum::routing::{any, get};
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    db.with(|c| Ok(c.execute_batch("INSERT INTO namespaces (id, name) VALUES ('work','work'), ('lab','lab');")?)).unwrap();
+    let vault = Arc::new(Vault::ephemeral());
+    vault.create_ns_key(&db, "work").unwrap();
+
+    // Fake GitHub: accepts ghp_acme, records what reaches it.
+    let seen: Arc<Mutex<Vec<String>>> = Default::default();
+    let s2 = seen.clone();
+    let gh_app = axum::Router::new()
+        .route(
+            "/user",
+            get(|h: axum::http::HeaderMap| async move {
+                if h.get("authorization").and_then(|v| v.to_str().ok()) != Some("Bearer ghp_acme") {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+                axum::Json(serde_json::json!({ "login": "ada" })).into_response()
+            }),
+        )
+        .route("/user/orgs", get(|| async { axum::Json(serde_json::json!([{ "login": "acme" }])) }))
+        .fallback(any(move |req: Request| {
+            let seen = s2.clone();
+            async move {
+                let auth = req.headers().get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                let line = format!("{} {} {}", req.method(), req.uri(), auth);
+                seen.lock().unwrap().push(line);
+                (StatusCode::CREATED, axum::Json(serde_json::json!({ "number": 7, "html_url": "https://github.com/acme/platform/pull/7" })))
+                    .into_response()
+            }
+        }));
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gh_url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, gh_app).await.unwrap() });
+    let gh = crate::github::GitHub::new(&gh_url, &gh_url);
+
+    let t =
+        crate::github::TokenSet { access_token: "ghp_acme".into(), refresh_token: None, expires_in: None, refresh_token_expires_in: None };
+    let account = crate::github::connect(&db, &vault, &gh, "acme", "token", t, &["work".into()], None).await.unwrap().id;
+    db.with(|c| Ok(c.execute("INSERT INTO sandboxes (id, ns, name, runtime, image, cpu, mem_mb, network) VALUES ('sb-1','work','box','docker','img',1,512,'isolated')", [])?)).unwrap();
+    let new = crate::agent::NewAgent {
+        name: "scout".into(),
+        role: Some("Fix the tests".into()),
+        runtime: "command".into(),
+        model: None,
+        sandbox_id: Some("sb-1".into()),
+        command: Some("true".into()),
+        max_turns: None,
+        restart: None,
+        max_restarts: None,
+        repo: Some("acme/platform".into()),
+        repo_account: Some(account.clone()),
+    };
+    crate::agent::create(&db, "work", new).unwrap();
+    crate::policy::seed_defaults(&db, "work").unwrap();
+    let key = mint_for_sandbox(&db, "work", "sb-1", "box").unwrap();
+
+    let gw = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
+    gw.set_github(gh);
+    let app = gw.sandbox_router();
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    let tcp = format!("http://{}", gw.listen_tcp(0).await.unwrap());
+    GitEnv { db, url, tcp, key, account, github_seen: seen }
+}
+
+async fn credential(e: &GitEnv, key: &str, path: &str) -> (u16, String) {
+    let body = format!("protocol=https\nhost=github.com\npath={path}\n");
+    let res =
+        reqwest::Client::new().post(format!("{}/_kalypso/git/credential", e.url)).header("x-api-key", key).body(body).send().await.unwrap();
+    (res.status().as_u16(), res.text().await.unwrap())
+}
+
+#[tokio::test]
+async fn git_credentials_only_for_the_linked_repository() {
+    let e = git_env().await;
+    let (code, body) = credential(&e, &e.key, "acme/platform.git").await;
+    assert_eq!(code, 200, "{body}");
+    assert!(body.contains("username=x-access-token\npassword=ghp_acme\n"), "{body}");
+
+    // Another repository, even of the same account: no.
+    assert_eq!(credential(&e, &e.key, "acme/billing.git").await.0, 403);
+    // A key that isn't a sandbox's: no.
+    let laptop = mint(&e.db, "work", None, "laptop").unwrap().token;
+    assert_eq!(credential(&e, &laptop, "acme/platform.git").await.0, 403);
+    // Once the namespace may no longer use the account: no.
+    crate::github::set_namespaces(&e.db, &e.account, &["lab".into()]).unwrap();
+    assert_eq!(credential(&e, &e.key, "acme/platform.git").await.0, 403);
+
+    let log = e.db.audit_list(Some("work"), Some("git."), 10).unwrap();
+    assert!(log.iter().any(|l| l.action == "git.credential" && l.target == "scout: acme/platform"));
+    assert!(log.iter().filter(|l| l.action == "git.credential_denied").count() >= 2);
+}
+
+#[tokio::test]
+async fn git_routes_are_not_on_the_tcp_port() {
+    let e = git_env().await;
+    let res = reqwest::Client::new()
+        .post(format!("{}/_kalypso/git/credential", e.tcp))
+        .header("x-api-key", &e.key)
+        .body("host=github.com\npath=acme/platform.git\n")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 404);
+}
+
+#[tokio::test]
+async fn the_github_api_is_proxied_for_the_linked_repository_only() {
+    let e = git_env().await;
+    let c = reqwest::Client::new();
+    let pr = serde_json::json!({ "title": "Fix the tests", "head": "agent/scout/fix-the-tests", "base": "main" });
+    let res =
+        c.post(format!("{}/_kalypso/github/repos/acme/platform/pulls", e.url)).header("x-api-key", &e.key).json(&pr).send().await.unwrap();
+    assert_eq!(res.status(), 201);
+    assert_eq!(res.json::<serde_json::Value>().await.unwrap()["number"], 7);
+    let res = c
+        .get(format!("{}/_kalypso/github/repos/acme/platform/pulls?head=acme:agent/scout/fix-the-tests", e.url))
+        .header("x-api-key", &e.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201, "the fake answers 201 to everything it forwards");
+    for path in ["/user", "/repos/acme/billing/pulls", "/repos/acme/platform-x/pulls", "/orgs/acme/repos"] {
+        let res = c.get(format!("{}/_kalypso/github{path}", e.url)).header("x-api-key", &e.key).send().await.unwrap();
+        assert_eq!(res.status(), 403, "{path}");
+    }
+    let seen = e.github_seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 2, "only the two allowed calls reached GitHub: {seen:?}");
+    assert!(seen[0].starts_with("POST /repos/acme/platform/pulls Bearer ghp_acme"), "{seen:?}");
+    assert!(seen[1].contains("?head=acme:agent/scout/fix-the-tests"), "{seen:?}");
+    let log = e.db.audit_list(Some("work"), Some("github."), 10).unwrap();
+    assert!(log.iter().any(|l| l.action == "github.api" && l.target.contains("POST /repos/acme/platform/pulls → 201")));
 }

@@ -650,6 +650,10 @@ pub const FORCE_PUSH: &[&str] = &[
     r"\bgit\s+push\b[^;&|]*\s\+(\S+:)?(main|master)\b",
 ];
 
+/// `git push` aimed at main or master (as `main`, `HEAD:main` or a `+` refspec). Agents push their
+/// own branch and open a pull request (#100).
+pub const PUSH_TO_MAIN: &[&str] = &[r"\bgit\s+push\b[^;&|]*\s\+?(\S+:)?(refs/heads/)?(main|master)\b"];
+
 pub fn defaults() -> Vec<NewPolicy> {
     let new = |name: &str, rule: &str, category: &str, enforcement: &str, spec: Spec| NewPolicy {
         name: name.into(),
@@ -683,6 +687,13 @@ pub fn defaults() -> Vec<NewPolicy> {
             Spec::Command { patterns: FORCE_PUSH.iter().map(|s| s.to_string()).collect() },
         ),
         new(
+            "No pushes to main",
+            "Push your own branch and open a pull request; never push to main or master.",
+            "git",
+            "block",
+            Spec::Command { patterns: PUSH_TO_MAIN.iter().map(|s| s.to_string()).collect() },
+        ),
+        new(
             "Ask before new hosts",
             "Ask before contacting a host that is not on the list.",
             "network",
@@ -692,16 +703,34 @@ pub fn defaults() -> Vec<NewPolicy> {
     ]
 }
 
+/// Defaults added after the first release, given once to namespaces seeded before them.
+const LATER_DEFAULTS: &[(&str, &str)] = &[("policy.seeded.v2", "No pushes to main")];
+
 /// Give `ns` the default policies, once. Deleting them later is respected.
 pub fn seed_defaults(db: &Db, ns: &str) -> Result<()> {
     let key = format!("policy.seeded.{ns}");
-    if db.setting(&key)?.is_some() {
+    if db.setting(&key)?.is_none() {
+        for p in defaults() {
+            create(db, ns, p)?;
+        }
+        db.set_setting(&key, &serde_json::Value::Bool(true))?;
+        for (flag, _) in LATER_DEFAULTS {
+            db.set_setting(&format!("{flag}.{ns}"), &serde_json::Value::Bool(true))?;
+        }
         return Ok(());
     }
-    for p in defaults() {
-        create(db, ns, p)?;
+    for (flag, name) in LATER_DEFAULTS {
+        let key = format!("{flag}.{ns}");
+        if db.setting(&key)?.is_some() {
+            continue;
+        }
+        let have = list(db, ns)?.iter().any(|p| p.name == *name);
+        if let (false, Some(p)) = (have, defaults().into_iter().find(|p| p.name == *name)) {
+            create(db, ns, p)?;
+        }
+        db.set_setting(&key, &serde_json::Value::Bool(true))?;
     }
-    db.set_setting(&key, &serde_json::Value::Bool(true))
+    Ok(())
 }
 
 // ---------- Approvals ----------
@@ -815,11 +844,51 @@ mod tests {
             "cd repo && git push origin +main",
             "git push origin +feature:main",
         ] {
-            assert_eq!(names(&evaluate(&ps, &bash(cmd), &[])), ["No force-push to main"], "{cmd}");
+            assert!(names(&evaluate(&ps, &bash(cmd), &[])).contains(&"No force-push to main"), "{cmd}");
         }
-        for cmd in ["git push origin main", "git push -f origin feature", "git push --force origin maintenance", "echo main --force"] {
+        for cmd in ["git push -f origin feature", "git push --force origin maintenance", "echo main --force"] {
             assert!(evaluate(&ps, &bash(cmd), &[]).is_empty(), "{cmd}");
         }
+    }
+
+    #[test]
+    fn pushing_to_main_is_blocked_but_an_agent_branch_is_not() {
+        let db = db();
+        seed_defaults(&db, "work").unwrap();
+        let ps = applicable(&db, "work", "k-box").unwrap();
+        for cmd in [
+            "git push origin main",
+            "git push -u origin master",
+            "git push origin HEAD:main",
+            "cd platform && git push origin refs/heads/main",
+        ] {
+            assert!(names(&evaluate(&ps, &bash(cmd), &[])).contains(&"No pushes to main"), "{cmd}");
+        }
+        for cmd in [
+            "git push -u origin agent/scout/fix-tests",
+            "git push origin feature-main",
+            "git push origin maintenance",
+            "git pull origin main",
+        ] {
+            assert!(evaluate(&ps, &bash(cmd), &[]).is_empty(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn namespaces_seeded_before_a_new_default_get_it_once() {
+        let db = db();
+        seed_defaults(&db, "work").unwrap();
+        let p = list(&db, "work").unwrap().into_iter().find(|p| p.name == "No pushes to main").unwrap();
+        // A namespace seeded by an older version: no v2 flag, and without the new policy.
+        delete(&db, "work", &p.id).unwrap();
+        db.with(|c| Ok(c.execute("DELETE FROM settings WHERE key = 'policy.seeded.v2.work'", [])?)).unwrap();
+        seed_defaults(&db, "work").unwrap();
+        assert!(list(&db, "work").unwrap().iter().any(|p| p.name == "No pushes to main"), "added once");
+        // Deleting it afterwards is respected.
+        let p = list(&db, "work").unwrap().into_iter().find(|p| p.name == "No pushes to main").unwrap();
+        delete(&db, "work", &p.id).unwrap();
+        seed_defaults(&db, "work").unwrap();
+        assert!(!list(&db, "work").unwrap().iter().any(|p| p.name == "No pushes to main"), "not re-added");
     }
 
     #[test]
@@ -889,10 +958,11 @@ mod tests {
         };
         let ps = applicable(&db, "work", "k-box").unwrap();
         let hits = evaluate(&ps, &both, &[]);
-        assert_eq!(hits.len(), 2);
+        // Force-push, push to main, and the path outside the workspace.
+        assert_eq!(hits.len(), 3);
         let fs = list(&db, "work").unwrap().into_iter().find(|p| p.name == "Stay inside the workspace").unwrap();
         update(&db, "work", &fs.id, PolicyPatch { enabled: Some(false), ..Default::default() }).unwrap();
-        assert_eq!(evaluate(&applicable(&db, "work", "k-box").unwrap(), &both, &[]).len(), 1);
+        assert_eq!(evaluate(&applicable(&db, "work", "k-box").unwrap(), &both, &[]).len(), 2);
 
         // A policy aimed at one sandbox leaves other keys alone.
         let only_box = NewPolicy {
@@ -915,10 +985,10 @@ mod tests {
         let db = db();
         seed_defaults(&db, "work").unwrap();
         let first = list(&db, "work").unwrap();
-        assert_eq!(first.len(), 4);
+        assert_eq!(first.len(), 5);
         delete(&db, "work", &first[0].id).unwrap();
         seed_defaults(&db, "work").unwrap();
-        assert_eq!(list(&db, "work").unwrap().len(), 3, "deleted defaults stay deleted");
+        assert_eq!(list(&db, "work").unwrap().len(), 4, "deleted defaults stay deleted");
 
         let bad = |spec: Spec| validate_spec(&spec).unwrap_err().code();
         assert_eq!(bad(Spec::Command { patterns: vec!["(".into()] }), "invalid");
