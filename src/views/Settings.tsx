@@ -279,7 +279,7 @@ function AppearanceSection() {
       </div>
 
       <div className="row">
-        <button className="btn ghost sm" style={{ marginLeft: -9 }} onClick={() => { set(DEFAULT_APPEARANCE); toast("Appearance reset", "info"); }}>Reset to black, white and purple</button>
+        <button className="btn ghost sm" style={{ marginLeft: -9 }} onClick={() => { set(DEFAULT_APPEARANCE); toast("Appearance reset", "info"); }}>Reset to black, white and grey</button>
       </div>
     </div>
   );

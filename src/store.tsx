@@ -141,7 +141,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   theme: "black",
   bg: "#0b0b0f",
   text: "#f2f2f5",
-  accent: "#5b2aaa",
+  accent: "#dddedf",
   font: "geist",
   size: "default",
 };
@@ -227,8 +227,9 @@ function load(): State {
       // Terminal, Browser and Phone used to be pages; they now live in the tools layer.
       if (["terminal", "browser", "phone"].includes(saved.view)) saved.view = "overview";
       delete (saved as Partial<State> & { terminals?: unknown }).terminals;
-      // The default accent moved to the logo purple; only migrate people who never changed it.
-      if (saved.appearance.accent === "#8b5cf6") saved.appearance = { ...saved.appearance, accent: DEFAULT_APPEARANCE.accent };
+      // The default accent follows the logo (now black, white and grey); only migrate people who never changed it.
+      if (["#8b5cf6", "#5b2aaa"].includes(saved.appearance.accent))
+        saved.appearance = { ...saved.appearance, accent: saved.appearance.theme === "white" ? "#1a1a1a" : DEFAULT_APPEARANCE.accent };
       if (live()) {
         // Keep the name someone gave themselves; drop the mock sign-in and every sample record.
         const mine = saved.session?.provider === "local" ? saved.session : null;

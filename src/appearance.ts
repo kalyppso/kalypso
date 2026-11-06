@@ -12,7 +12,7 @@ export const FONTS: { id: string; label: string; family: string }[] = [
   { id: "jetbrains-mono", label: "JetBrains Mono", family: '"JetBrains Mono Variable"' },
 ];
 
-export const ACCENTS = ["#5b2aaa", "#301365", "#7c3aed", "#c2185b", "#9d174d", "#1d4ed8", "#047857", "#b45309", "#ffffff"];
+export const ACCENTS = ["#dddedf", "#1a1a1a", "#5b2aaa", "#7c3aed", "#c2185b", "#9d174d", "#1d4ed8", "#047857", "#b45309", "#ffffff"];
 
 const SIZES: Record<Appearance["size"], number> = { compact: 0.92, default: 1, large: 1.1 };
 

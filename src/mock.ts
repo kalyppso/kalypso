@@ -20,9 +20,9 @@ import type {
 } from "./types";
 
 export const namespaces: Namespace[] = [
-  { id: "personal", name: "personal", color: "#5b2aaa", description: "Side projects and experiments" },
-  { id: "work", name: "work", color: "#5b2aaa", description: "Client agents, production credentials" },
-  { id: "lab", name: "lab", color: "#5b2aaa", description: "Throwaway sandboxes, no internet secrets" },
+  { id: "personal", name: "personal", color: "#dddedf", description: "Side projects and experiments" },
+  { id: "work", name: "work", color: "#dddedf", description: "Client agents, production credentials" },
+  { id: "lab", name: "lab", color: "#dddedf", description: "Throwaway sandboxes, no internet secrets" },
 ];
 
 const agentConfig = (name: string, model: string, tools: string[]) =>

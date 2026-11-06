@@ -5,8 +5,8 @@
    ===================================================================== */
 
 /* ---------- Theme tokens ----------
-   Black, white and greys in between. Purple is the only colour.
-   Status uses the same palette: running is purple, warnings are grey,
+   Black, white and greys in between, with #dddedf as the accent (near-black
+   on the white theme). Status uses the same palette: running is the accent, warnings are grey,
    errors are drawn inverted so they still stand out without red. */
 :root,
 [data-theme="black"] {
@@ -20,12 +20,12 @@
   --text: #ffffff;
   --text-2: #a3a3a3;
   --text-3: #6b6b6b;
-  --accent: #5b2aaa;
-  --accent-fg: #ffffff;
+  --accent: #dddedf;
+  --accent-fg: #000000;
   --ok: var(--accent-hi);
   --warn: #a3a3a3;
   --err: #ffffff;
-  --web: 91 42 170;
+  --web: 221 222 223;
   --page-bg: var(--bg);
   --overlay: rgba(0, 0, 0, 0.7);
   --pop-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.8);
@@ -42,12 +42,12 @@
   --text: #000000;
   --text-2: #525252;
   --text-3: #8b8b8b; /* 3:1 on bg and sidebar (scripts/contrast.mjs) */
-  --accent: #5b2aaa;
+  --accent: #1a1a1a;
   --accent-fg: #ffffff;
   --ok: var(--accent-hi);
   --warn: #737373;
   --err: #000000;
-  --web: 91 42 170;
+  --web: 26 26 26;
   --page-bg: var(--bg);
   --overlay: rgba(0, 0, 0, 0.25);
   --pop-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.2);
@@ -95,7 +95,7 @@
   --ok: var(--accent-hi);
   --warn: var(--text-2);
   --err: var(--text);
-  --web: 91 42 170;
+  --web: 221 222 223;
   --page-bg: var(--bg);
   --overlay: rgba(0, 0, 0, 0.5);
   --pop-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.5);

@@ -209,7 +209,7 @@ function NamespaceSwitcher({ compact = false }: { compact?: boolean }) {
         .catch((e) => toast(errorMessage(e), "err"));
       return;
     }
-    dispatch({ type: "addNamespace", ns: { id, name: id, color: "#5b2aaa", description: "New isolated namespace" } });
+    dispatch({ type: "addNamespace", ns: { id, name: id, color: "#dddedf", description: "New isolated namespace" } });
     done();
   };
 
