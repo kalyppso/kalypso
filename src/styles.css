@@ -712,3 +712,10 @@ button.repo-row:hover, button.repo-row:focus-visible { background: var(--hover);
 .pr-list li { display: flex; align-items: center; gap: 8px; }
 .badge.pr-open { color: var(--text); }
 .badge.pr-merged { background: var(--accent-soft); color: var(--text); }
+/* ---------- Loading skeletons and contrast report (#106) ---------- */
+.skeleton { display: flex; flex-direction: column; gap: 8px; }
+.skeleton-row { display: block; border-radius: 10px; background: linear-gradient(90deg, var(--surface-2) 0%, var(--hover) 50%, var(--surface-2) 100%); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .skeleton-row { animation: skeleton 1.4s ease-in-out infinite; } }
+@keyframes skeleton { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.contrast-report { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; }
+.contrast-ok { display: inline-flex; align-items: center; gap: 6px; }

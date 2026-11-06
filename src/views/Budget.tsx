@@ -3,7 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { dailySeries, monthSpend, uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, onUsage, useBudgetOverview } from "../backend";
 import type { BudgetOverview } from "../bindings/BudgetOverview";
-import { Field, Modal, ModalActions, PageHead, PrimaryButton, usd, useErrors } from "../components/ui";
+import { Field, Modal, ModalActions, PageHead, PrimaryButton, usd, useErrors, StatusDot } from "../components/ui";
 import "../styles/pages.css";
 import type { BudgetAction, BudgetPeriod, BudgetRule, UsageDay } from "../types";
 
@@ -24,7 +24,7 @@ export function BudgetBlocks({ overview }: { overview: BudgetOverview | null }) 
       <div className="card-title" style={{ marginBottom: 8 }}>Paused by budget</div>
       {overview.blocks.map((b) => (
         <div key={b.target} className="row small" style={{ gap: 8, padding: "4px 0" }}>
-          <span className="dot" style={{ background: "var(--err)" }} />
+          <StatusDot value="blocked" label="Paused by budget" />
           <span style={{ fontWeight: 500 }}>{b.label}</span>
           <span className="dim">{b.message}</span>
         </div>

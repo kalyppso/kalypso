@@ -2,7 +2,7 @@ import { formatTime, fromDb } from "../prefs";
 import { useEffect, useState } from "react";
 import { Ban, Eye, Hand, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors, Skeleton } from "../components/ui";
 import "../styles/pages.css";
 import type { Enforcement, Policy, PolicyCategory } from "../types";
 import { api, errorMessage, isLive, onPolicyLog, toPolicy } from "../backend";
@@ -76,7 +76,7 @@ const specFor = (name: string, rule: string, enforcement: Enforcement) =>
 export function Policies() {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const { policies, policyEvents, agents } = useNamespaced();
+  const { loading, policies, policyEvents, agents } = useNamespaced();
   const [creating, setCreating] = useState(state.compose);
   const [expanded, setExpanded] = useState<string | null>(null);
   const name = (id: string) => state.agents.find((a) => a.id === id)?.name ?? id;
@@ -189,7 +189,8 @@ export function Policies() {
             </div>
           );
         })}
-        {rows.length === 0 && (
+        {loading && <Skeleton rows={3} />}
+        {!loading && rows.length === 0 && (
           <EmptyState icon={ShieldCheck} title="No policies yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "policies", compose: true })}><Plus size={13} /> New policy</button>}>
             Rules every tool call is checked against. Pick a suggestion above, or write your own in plain words.
           </EmptyState>

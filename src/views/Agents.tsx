@@ -4,7 +4,7 @@ import { api, errorMessage, isLive, onAgentUpdate, syncNamespace, toAgent } from
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { uid, useNamespaced, useStore, useToast } from "../store";
-import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
 import type { PullRequest } from "../bindings/PullRequest";
@@ -14,7 +14,7 @@ const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 
 export function Agents() {
   const { state, dispatch } = useStore();
-  const { agents, sandboxes } = useNamespaced();
+  const { loading, agents, sandboxes } = useNamespaced();
   const [creating, setCreating] = useState(state.compose);
   const [openId, setOpenId] = useState<string | null>(null);
   const open = agents.find((a) => a.id === openId);
@@ -27,7 +27,8 @@ export function Agents() {
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New agent</PrimaryButton>
       </PageHead>
 
-      {agents.length === 0 && (
+      {loading && <Skeleton rows={3} />}
+      {!loading && agents.length === 0 && (
         <EmptyState icon={Bot} title="No agents yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "agents", compose: true })}><Plus size={13} /> New agent</button>}>
           An agent works in a sandbox with only the secrets, tools and integrations you grant it.
         </EmptyState>

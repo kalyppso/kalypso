@@ -5,12 +5,12 @@ import type { GatewayKey } from "../bindings/GatewayKey";
 import type { SecretGrant } from "../bindings/SecretGrant";
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, onPolicyLog, syncNamespace } from "../backend";
-import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors } from "../components/ui";
+import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors, Skeleton } from "../components/ui";
 import "../styles/pages.css";
 
 export function Secrets() {
   const { state, dispatch } = useStore();
-  const { secrets, agents } = useNamespaced();
+  const { loading, secrets, agents } = useNamespaced();
   const toast = useToast();
   // Decrypted values live only in this component, only after the user asks.
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -70,7 +70,8 @@ export function Secrets() {
             })}
           </tbody>
         </table>
-        {secrets.length === 0 && (
+        {loading && <Skeleton rows={3} />}
+        {!loading && secrets.length === 0 && (
           <EmptyState icon={KeyRound} title="No secrets yet" action={<button className="btn primary sm" onClick={() => dispatch({ type: "view", view: "secrets", compose: true })}><Plus size={13} /> Add secret</button>}>
             Encrypted in the vault. Agents get them as files, or on request for one approved command.
           </EmptyState>

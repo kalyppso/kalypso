@@ -57,6 +57,8 @@ export interface State {
   compose: boolean;
   toasts: Toast[];
   namespaces: Namespace[];
+  /** Namespaces whose data has arrived from the core this session (so pages can tell loading from empty). */
+  synced: string[];
   agents: Agent[];
   sandboxes: Sandbox[];
   secrets: Secret[];
@@ -147,6 +149,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
 };
 
 /** In the desktop app, data comes from the core; the sample data is only for the browser preview. */
+const isLiveStore = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const live = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 /** The desktop app has no accounts yet (#37): you are signed in as yourself, on this machine. */
@@ -192,6 +195,7 @@ function sample(): State {
     compose: false,
     toasts: [],
     namespaces: mock.namespaces,
+    synced: [],
     agents: mock.agents,
     sandboxes: mock.sandboxes,
     secrets: mock.secrets,
@@ -282,7 +286,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, namespaces: a.namespaces, budgets: [...s.budgets, ...missing], ns: ids.has(s.ns) ? s.ns : a.namespaces[0]?.id ?? s.ns };
     }
     case "hydrateAgents":
-      return { ...s, agents: [...s.agents.filter((x) => x.ns !== a.ns), ...a.agents] };
+      // Agents arrive last in a namespace sync, so the namespace counts as loaded now.
+      return { ...s, agents: [...s.agents.filter((x) => x.ns !== a.ns), ...a.agents], synced: s.synced.includes(a.ns) ? s.synced : [...s.synced, a.ns] };
     case "agentLive":
       return { ...s, agents: s.agents.map((x) => (x.id === a.id ? { ...x, status: a.status, statusReason: a.reason } : x)) };
     case "hydratePolicies":
@@ -445,6 +450,8 @@ export function useNamespaced() {
   const { state } = useStore();
   const ns = state.ns;
   return {
+    /** In the desktop app, until the namespace's data has arrived from the core. */
+    loading: isLiveStore() && !(state.synced ?? []).includes(ns),
     agents: state.agents.filter((x) => x.ns === ns),
     sandboxes: state.sandboxes.filter((x) => x.ns === ns),
     secrets: state.secrets.filter((x) => x.ns === ns),
