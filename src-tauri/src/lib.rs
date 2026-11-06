@@ -7,6 +7,7 @@ pub mod error;
 pub mod events;
 pub mod forward;
 pub mod gateway;
+pub mod github;
 pub mod ipc;
 pub mod ns;
 pub mod policy;
@@ -52,6 +53,16 @@ fn init_logging(dir: &std::path::Path) {
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![
         ipc::core_info,
+        ipc::gh_info,
+        ipc::gh_accounts,
+        ipc::gh_connect_token,
+        ipc::gh_device_start,
+        ipc::gh_device_poll,
+        ipc::gh_account_rename,
+        ipc::gh_account_namespaces,
+        ipc::gh_account_remove,
+        ipc::gh_account_check,
+        ipc::gh_repos,
         ipc::setup_engine,
         ipc::setup_key_check,
         ipc::app_restart,
@@ -118,7 +129,8 @@ pub fn run() {
         tauri::Builder::default()
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(tauri_plugin_process::init()),
+            .plugin(tauri_plugin_process::init())
+            .plugin(tauri_plugin_opener::init()),
     )
     .setup(|app| {
         let dir = app.path().app_data_dir()?;
@@ -186,7 +198,19 @@ pub fn run() {
         }
         let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
         events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
-        app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents });
+        // GitHub accounts (#100): checked as KALYPSO starts, then hourly, so a revoked token
+        // shows "Reconnect" and expiring ones are refreshed before they lapse.
+        let github = github::GitHub::default();
+        {
+            let (db, vault, github) = (db.clone(), vault.clone(), github.clone());
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    github::check_all(&db, &vault, &github).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                }
+            });
+        }
+        app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents, github });
         events::spawn_sandbox_watcher(app.handle().clone());
         Ok(())
     })

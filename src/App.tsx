@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { revealWindow } from "./window";
 import { WindowControls } from "./components/WindowControls";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
-import { api, errorMessage, isLive, onAgentUpdate, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
+import { api, errorMessage, isLive, openUrl, onAgentUpdate, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
@@ -55,6 +55,18 @@ export function App() {
   useEffect(() => applyAppearance(state.appearance), [state.appearance]);
   // Colours are applied, so the first frame is the real one: show the window now.
   useEffect(() => void revealWindow().catch(() => {}), []);
+  // The desktop webview can't open web links itself: send them to the system browser.
+  useEffect(() => {
+    if (!isLive()) return;
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || !/^https?:\/\//.test(a.href)) return;
+      e.preventDefault();
+      openUrl(a.href);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
 
   // Desktop build: namespaces, secrets and sandboxes come from the Rust core.
   const toast = useToast();

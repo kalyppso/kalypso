@@ -1,3 +1,4 @@
+import { GitHubAccounts } from "./GitHubAccounts";
 import { checkForUpdates } from "../components/UpdateNotice";
 import { openSetup } from "./Setup";
 import { useCallback, useEffect, useState } from "react";
@@ -368,6 +369,8 @@ function Account() {
           </div>
         </Setting>
       </Group>
+
+      {isLive() && <GitHubAccounts />}
 
       {!local && <Group title="Linked accounts">
         {all.map((prov) => {

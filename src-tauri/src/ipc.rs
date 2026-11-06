@@ -12,6 +12,7 @@ use crate::budget::{self, Budget, BudgetOverview, BudgetRule, NewBudgetRule};
 use crate::error::{KalypsoError, Result};
 use crate::forward::{Forwards, PortForward};
 use crate::gateway::{self, Gateway, GatewayInfo, GatewayKey, MintedKey, UsageSummary};
+use crate::github;
 use crate::ns::{self, Namespace};
 use crate::policy::{self, ApprovalRequest, NewPolicy, Policy, PolicyEvent, PolicyPatch};
 use crate::sandbox::{self, NewSandbox, ProviderInfo, Runtime, SandboxRecord};
@@ -27,6 +28,7 @@ pub struct AppState {
     pub gateway: Arc<Gateway>,
     pub terminals: Terminals,
     pub agents: Arc<Supervisor>,
+    pub github: crate::github::GitHub,
 }
 
 fn ensure_ns(s: &AppState, ns: &str) -> Result<()> {
@@ -68,6 +70,99 @@ pub async fn setup_key_check(s: State<'_, AppState>, ns: String) -> Result<crate
 #[tauri::command]
 pub fn app_restart<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
     app.restart();
+}
+
+// ---------- GitHub accounts (#100) ----------
+
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct GhInfo {
+    /// Whether "Sign in with GitHub" is set up (an OAuth App client ID is known).
+    pub sign_in: bool,
+}
+
+#[tauri::command]
+pub fn gh_info(s: State<'_, AppState>) -> GhInfo {
+    GhInfo { sign_in: github::client_id(&s.db).is_some() }
+}
+
+#[tauri::command]
+pub fn gh_accounts(s: State<'_, AppState>) -> Result<Vec<github::Account>> {
+    github::list(&s.db)
+}
+
+/// Connect an account with a pasted token, or reconnect `replace` with a new one.
+#[tauri::command]
+pub async fn gh_connect_token(
+    s: State<'_, AppState>,
+    label: String,
+    token: String,
+    namespaces: Vec<String>,
+    replace: Option<String>,
+) -> Result<github::Account> {
+    let token = zeroize::Zeroizing::new(token.trim().to_string());
+    if token.is_empty() {
+        return Err(KalypsoError::Invalid("Paste a token first.".into()));
+    }
+    let t = github::TokenSet { access_token: token.to_string(), refresh_token: None, expires_in: None, refresh_token_expires_in: None };
+    github::connect(&s.db, &s.vault, &s.github, &label, "token", t, &namespaces, replace.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn gh_device_start(s: State<'_, AppState>) -> Result<github::DeviceStart> {
+    let cid = github::client_id(&s.db)
+        .ok_or_else(|| KalypsoError::Invalid("Sign-in with GitHub isn't set up in this build. Paste a token instead.".into()))?;
+    s.github.device_start(&cid).await
+}
+
+/// One poll of a device sign-in; connects the account once the user has approved.
+#[tauri::command]
+pub async fn gh_device_poll(
+    s: State<'_, AppState>,
+    device_code: String,
+    label: String,
+    namespaces: Vec<String>,
+    replace: Option<String>,
+) -> Result<github::DevicePoll> {
+    let cid = github::client_id(&s.db).ok_or_else(|| KalypsoError::Invalid("Sign-in with GitHub isn't set up in this build.".into()))?;
+    Ok(match s.github.device_poll(&cid, &device_code).await? {
+        Ok(t) => github::DevicePoll::Done {
+            account: Box::new(github::connect(&s.db, &s.vault, &s.github, &label, "oauth", t, &namespaces, replace.as_deref()).await?),
+        },
+        Err("pending") => github::DevicePoll::Pending { interval: 5 },
+        Err("slow_down") => github::DevicePoll::Pending { interval: 10 },
+        Err("denied") => github::DevicePoll::Denied,
+        Err("expired") => github::DevicePoll::Expired,
+        Err(other) => return Err(KalypsoError::Invalid(format!("GitHub sign-in failed ({other}). Try again."))),
+    })
+}
+
+#[tauri::command]
+pub fn gh_account_rename(s: State<'_, AppState>, id: String, label: String) -> Result<github::Account> {
+    github::rename(&s.db, &id, &label)
+}
+
+#[tauri::command]
+pub fn gh_account_namespaces(s: State<'_, AppState>, id: String, namespaces: Vec<String>) -> Result<github::Account> {
+    github::set_namespaces(&s.db, &id, &namespaces)?;
+    github::get(&s.db, &id)
+}
+
+#[tauri::command]
+pub fn gh_account_remove(s: State<'_, AppState>, id: String) -> Result<()> {
+    github::remove(&s.db, &id)
+}
+
+#[tauri::command]
+pub async fn gh_account_check(s: State<'_, AppState>, id: String) -> Result<github::Account> {
+    github::check(&s.db, &s.vault, &s.github, &id).await
+}
+
+/// Repositories a namespace can reach, across the accounts it may use.
+#[tauri::command]
+pub async fn gh_repos(s: State<'_, AppState>, ns: String, query: String) -> Result<Vec<github::Repo>> {
+    ensure_ns(&s, &ns)?;
+    github::repos(&s.db, &s.vault, &s.github, &ns, &query).await
 }
 
 // ---------- Audit log ----------

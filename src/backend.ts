@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { GhInfo } from "./bindings/GhInfo";
+import type { Account } from "./bindings/Account";
+import type { DeviceStart } from "./bindings/DeviceStart";
+import type { DevicePoll } from "./bindings/DevicePoll";
+import type { Repo as GhRepo } from "./bindings/Repo";
 import type { EngineStatus } from "./bindings/EngineStatus";
 import type { KeyCheck } from "./bindings/KeyCheck";
 import type { AuditEntry } from "./bindings/AuditEntry";
@@ -48,6 +53,16 @@ export interface CoreInfo {
 
 export const api = {
   coreInfo: () => invoke<CoreInfo>("core_info"),
+  ghInfo: () => invoke<GhInfo>("gh_info"),
+  ghAccounts: () => invoke<Account[]>("gh_accounts"),
+  ghConnectToken: (label: string, token: string, namespaces: string[], replace?: string) => invoke<Account>("gh_connect_token", { label, token, namespaces, replace: replace ?? null }),
+  ghDeviceStart: () => invoke<DeviceStart>("gh_device_start"),
+  ghDevicePoll: (deviceCode: string, label: string, namespaces: string[], replace?: string) => invoke<DevicePoll>("gh_device_poll", { deviceCode, label, namespaces, replace: replace ?? null }),
+  ghAccountRename: (id: string, label: string) => invoke<Account>("gh_account_rename", { id, label }),
+  ghAccountNamespaces: (id: string, namespaces: string[]) => invoke<Account>("gh_account_namespaces", { id, namespaces }),
+  ghAccountRemove: (id: string) => invoke<void>("gh_account_remove", { id }),
+  ghAccountCheck: (id: string) => invoke<Account>("gh_account_check", { id }),
+  ghRepos: (ns: string, query: string) => invoke<GhRepo[]>("gh_repos", { ns, query }),
   setupEngine: () => invoke<EngineStatus>("setup_engine"),
   setupKeyCheck: (ns: string) => invoke<KeyCheck>("setup_key_check", { ns }),
   appRestart: () => invoke<void>("app_restart"),
@@ -186,3 +201,9 @@ export const onTermExit = (pane: string, fn: () => void) => listen(`term://exit/
 
 /** Agent status changes and transcript lines (src-tauri/src/agent/supervisor.rs). */
 export const onAgentUpdate = (fn: (e: AgentUpdate) => void) => listen<AgentUpdate>("agent://update", (e) => fn(e.payload));
+
+/** Open a link in the system browser (the desktop app's webview can't), or a new tab in the browser preview. */
+export function openUrl(url: string) {
+  if (!isLive()) { window.open(url, "_blank", "noopener"); return; }
+  import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url)).catch(() => {});
+}

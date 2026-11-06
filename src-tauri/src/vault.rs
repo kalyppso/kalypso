@@ -221,6 +221,21 @@ impl Vault {
     }
 }
 
+impl Vault {
+    /// Seal a value that belongs to the user rather than a namespace (GitHub account tokens,
+    /// #100) with the master key. Returns (ciphertext, nonce).
+    pub fn seal_user(&self, plain: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+        seal(&self.master, plain.as_bytes())
+    }
+
+    /// Open a value sealed with [`Vault::seal_user`]. The plaintext is wiped when dropped.
+    pub fn open_user(&self, ct: &[u8], nonce: &[u8]) -> Result<zeroize::Zeroizing<String>> {
+        let plain = zeroize::Zeroizing::new(open(&self.master, ct, nonce)?);
+        let text = std::str::from_utf8(&plain).map_err(|_| KalypsoError::Vault("sealed value is not UTF-8".into()))?;
+        Ok(zeroize::Zeroizing::new(text.to_string()))
+    }
+}
+
 fn seal(key: &Key, plain: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let cipher = XChaCha20Poly1305::new(key);
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
