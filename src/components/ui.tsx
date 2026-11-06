@@ -24,7 +24,7 @@ export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boo
   return <button className={`toggle ${on ? "on" : ""}`} onClick={() => onChange(!on)} aria-pressed={on} aria-label={label} />;
 }
 
-export function Modal({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, subtitle, onClose, children, wide }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -34,7 +34,7 @@ export function Modal({ title, subtitle, onClose, children }: { title: string; s
   // would position the fixed overlay against the page instead of the window.
   return createPortal(
     <div className="overlay" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={`modal${wide ? " wide" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="row" style={{ alignItems: "flex-start" }}>
           <div>
             <h2>{title}</h2>

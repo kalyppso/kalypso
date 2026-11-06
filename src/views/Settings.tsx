@@ -1,3 +1,4 @@
+import { openSetup } from "./Setup";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, isLive } from "../backend";
 import type { AuditEntry } from "../bindings/AuditEntry";
@@ -134,6 +135,14 @@ function Preferences() {
           <Toggle on={state.ambient} onChange={(v) => dispatch({ type: "ambient", value: v })} label="Ambient web" />
         </Setting>
       </Group>
+
+      {live && (
+        <Group title="Setup">
+          <Setting title="First-run setup" desc="Walks through the container engine, your model key, a first sandbox and a first agent. Steps that are already done are skipped.">
+            <button className="btn" onClick={openSetup}>Run setup</button>
+          </Setting>
+        </Group>
+      )}
 
       <Group title="Reset">
         <Setting title="Default preferences" desc="Puts everything on this page back to how it started. Your account and appearance stay.">

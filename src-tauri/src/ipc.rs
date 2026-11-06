@@ -49,6 +49,27 @@ pub fn core_info(s: State<'_, AppState>) -> CoreInfo {
     CoreInfo { version: env!("CARGO_PKG_VERSION"), runtime: s.rt.kind.clone(), key_source: s.vault.source }
 }
 
+// ---------- First-run setup (#94) ----------
+
+/// The container engine KALYPSO is connected to, and whether one can be found now.
+#[tauri::command]
+pub async fn setup_engine(s: State<'_, AppState>) -> Result<crate::setup::EngineStatus> {
+    Ok(crate::setup::engine_status(&s.rt).await)
+}
+
+/// Try the namespace's Anthropic key with a free call.
+#[tauri::command]
+pub async fn setup_key_check(s: State<'_, AppState>, ns: String) -> Result<crate::setup::KeyCheck> {
+    ensure_ns(&s, &ns)?;
+    crate::setup::check_anthropic_key(&s.db, &s.vault, &ns).await
+}
+
+/// Restart the app: how an engine started after KALYPSO gets connected.
+#[tauri::command]
+pub fn app_restart<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    app.restart();
+}
+
 // ---------- Audit log ----------
 
 #[tauri::command]

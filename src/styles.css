@@ -656,3 +656,28 @@ table ~ .empty-state, .card > .empty-state { background: transparent; }
 .shortcuts > div + div { border-top: 1px solid var(--border); }
 .shortcuts dt { display: flex; gap: 4px; }
 .shortcuts dd { margin: 0; color: var(--text-2); }
+
+/* ---------- First-run setup (#94) ---------- */
+.modal.wide { width: min(780px, 100%); }
+.setup { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 300px; }
+.setup-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border); padding-right: 16px; }
+.setup-step { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.setup-step:hover { background: var(--hover); color: var(--text); }
+.setup-step.on { background: var(--hover); color: var(--text); }
+.setup-step.done .gs-mark { background: var(--accent-soft); color: var(--accent-hi); box-shadow: none; }
+.setup-panel h3 { margin: 0 0 6px; font-size: 17px; }
+.setup-lead { margin: 0 0 14px; color: var(--text-2); line-height: 1.55; }
+.setup-status { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.setup-status.ok { color: var(--text); }
+.setup-status.bad { color: var(--text-2); }
+.setup-problem { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+.setup-problem code { display: block; margin-top: 6px; white-space: pre-wrap; word-break: break-word; color: var(--text-2); }
+.setup-howto { margin: 0 0 12px; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; color: var(--text-2); }
+.setup-cmd { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 6px 6px 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.setup-cmd code { flex: 1; min-width: 0; font: 12.5px var(--mono); color: var(--text); white-space: pre-wrap; word-break: break-all; }
+.setup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.setup-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+@media (max-width: 720px) {
+  .setup { grid-template-columns: 1fr; }
+  .setup-steps { flex-direction: row; flex-wrap: wrap; border-right: 0; padding-right: 0; }
+}
