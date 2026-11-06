@@ -122,7 +122,8 @@ jobs:
         with:
           workspaces: src-tauri
       - name: Build installers
-        run: npm run tauri build
+        # CI bundles aren't published, so they skip the signed update files (only releases make those, with the key).
+        run: npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - uses: actions/upload-artifact@v4
         with:
           name: kalypso-${{ runner.os }}
