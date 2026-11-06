@@ -32,7 +32,7 @@ const PAIRS = [
   ["text-2", "surface-2", 4.5, "secondary text on the sidebar"],
   ["text-3", "bg", 3, "hints and labels"],
   ["text-3", "surface-2", 3, "hints on the sidebar"],
-  ["#ffffff", "accent", 4.5, "primary button label"],
+  ["accent-fg", "accent", 4.5, "primary button label"],
 ];
 
 let failed = 0;
