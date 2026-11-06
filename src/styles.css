@@ -681,3 +681,8 @@ table ~ .empty-state, .card > .empty-state { background: transparent; }
   .setup { grid-template-columns: 1fr; }
   .setup-steps { flex-direction: row; flex-wrap: wrap; border-right: 0; padding-right: 0; }
 }
+
+/* ---------- Update available (#95) ---------- */
+.update-notice { position: fixed; right: 16px; bottom: 44px; z-index: 60; width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--pop-shadow); animation: pop-in 0.25s var(--ease); }
+.update-notes { max-height: 180px; overflow: auto; white-space: pre-wrap; color: var(--text-2); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.link-btn { padding: 0; border: 0; background: none; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }

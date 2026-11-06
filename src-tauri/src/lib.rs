@@ -114,77 +114,82 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    register(tauri::Builder::default().plugin(tauri_plugin_notification::init()))
-        .setup(|app| {
-            let dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            init_logging(&dir.join("logs"));
-            // The window starts hidden and the page shows it once its first frame is painted,
-            // so it never opens blank. If the page fails to load, show it anyway.
-            if let Some(win) = app.get_webview_window("main") {
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    if !win.is_visible().unwrap_or(true) {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-                });
-            }
-            let db = std::sync::Arc::new(store::Db::open(&dir.join("kalypso.db"))?);
-            let vault = std::sync::Arc::new(vault::Vault::load(&dir)?);
-            let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());
-            tracing::info!(data = %dir.display(), runtime = %rt.kind, key = ?vault.source, "core ready");
-
-            // First run: start with the two namespaces the prototype shows.
-            if ns::list(&db)?.is_empty() {
-                for (id, desc) in SEED {
-                    tauri::async_runtime::block_on(ns::create(&db, &vault, &rt, id, desc))?;
-                }
-            }
-            // Namespaces made before policies existed get the defaults once.
-            for n in ns::list(&db)? {
-                policy::seed_defaults(&db, &n.id)?;
-            }
-            // Networks can vanish (engine reset, manual cleanup); make sure every namespace has one.
-            if rt.available() {
-                for n in ns::list(&db)? {
-                    if let Err(e) = tauri::async_runtime::block_on(rt.ensure_network(&n.id)) {
-                        tracing::warn!(ns = %n.id, error = %e, "could not ensure namespace network");
-                    }
-                }
-            }
-            let gw = gateway::Gateway::new(db.clone(), vault.clone(), gateway::pricing::Pricing::load(&dir)?);
-            tauri::async_runtime::block_on(async {
-                if let Err(e) = gw.listen_tcp(gateway::DEFAULT_PORT).await {
-                    tracing::error!(error = %e, "model gateway could not start");
-                }
-                // Engines in a VM (Docker Desktop, Podman machine) reach it through a relay to this port.
-                if let Err(e) = gw.listen_sandbox_tcp().await {
-                    tracing::warn!(error = %e, "sandbox gateway port unavailable; sandboxes on VM engines cannot reach the gateway");
-                }
-                // Sandboxes reach the gateway through this socket (Linux engines can mount it).
-                #[cfg(target_os = "linux")]
-                if let Err(e) = gw.listen_unix(dir.join("run")).await {
-                    tracing::warn!(error = %e, "model gateway socket unavailable; sandboxes cannot reach the gateway");
+    register(
+        tauri::Builder::default()
+            .plugin(tauri_plugin_notification::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init()),
+    )
+    .setup(|app| {
+        let dir = app.path().app_data_dir()?;
+        std::fs::create_dir_all(&dir)?;
+        init_logging(&dir.join("logs"));
+        // The window starts hidden and the page shows it once its first frame is painted,
+        // so it never opens blank. If the page fails to load, show it anyway.
+        if let Some(win) = app.get_webview_window("main") {
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                if !win.is_visible().unwrap_or(true) {
+                    let _ = win.show();
+                    let _ = win.set_focus();
                 }
             });
-            // Approved secret commands (#87) run in sandboxes through the engine.
-            gw.set_runtime(rt.clone());
-            events::spawn_usage_events(app.handle().clone(), gw.subscribe());
-            events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
-            events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
-            // Agents that were running when KALYPSO quit aren't supervised any more.
-            gateway::secrets::reset_after_restart(&db)?;
-            let reset = agent::reset_after_restart(&db)?;
-            if reset > 0 {
-                tracing::info!(agents = reset, "marked agents from the last session as stopped");
+        }
+        let db = std::sync::Arc::new(store::Db::open(&dir.join("kalypso.db"))?);
+        let vault = std::sync::Arc::new(vault::Vault::load(&dir)?);
+        let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());
+        tracing::info!(data = %dir.display(), runtime = %rt.kind, key = ?vault.source, "core ready");
+
+        // First run: start with the two namespaces the prototype shows.
+        if ns::list(&db)?.is_empty() {
+            for (id, desc) in SEED {
+                tauri::async_runtime::block_on(ns::create(&db, &vault, &rt, id, desc))?;
             }
-            let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
-            events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
-            app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents });
-            events::spawn_sandbox_watcher(app.handle().clone());
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running KALYPSO");
+        }
+        // Namespaces made before policies existed get the defaults once.
+        for n in ns::list(&db)? {
+            policy::seed_defaults(&db, &n.id)?;
+        }
+        // Networks can vanish (engine reset, manual cleanup); make sure every namespace has one.
+        if rt.available() {
+            for n in ns::list(&db)? {
+                if let Err(e) = tauri::async_runtime::block_on(rt.ensure_network(&n.id)) {
+                    tracing::warn!(ns = %n.id, error = %e, "could not ensure namespace network");
+                }
+            }
+        }
+        let gw = gateway::Gateway::new(db.clone(), vault.clone(), gateway::pricing::Pricing::load(&dir)?);
+        tauri::async_runtime::block_on(async {
+            if let Err(e) = gw.listen_tcp(gateway::DEFAULT_PORT).await {
+                tracing::error!(error = %e, "model gateway could not start");
+            }
+            // Engines in a VM (Docker Desktop, Podman machine) reach it through a relay to this port.
+            if let Err(e) = gw.listen_sandbox_tcp().await {
+                tracing::warn!(error = %e, "sandbox gateway port unavailable; sandboxes on VM engines cannot reach the gateway");
+            }
+            // Sandboxes reach the gateway through this socket (Linux engines can mount it).
+            #[cfg(target_os = "linux")]
+            if let Err(e) = gw.listen_unix(dir.join("run")).await {
+                tracing::warn!(error = %e, "model gateway socket unavailable; sandboxes cannot reach the gateway");
+            }
+        });
+        // Approved secret commands (#87) run in sandboxes through the engine.
+        gw.set_runtime(rt.clone());
+        events::spawn_usage_events(app.handle().clone(), gw.subscribe());
+        events::spawn_budget_alerts(app.handle().clone(), gw.subscribe_alerts());
+        events::spawn_policy_events(app.handle().clone(), gw.approvals.subscribe(), gw.subscribe_policy_log());
+        // Agents that were running when KALYPSO quit aren't supervised any more.
+        gateway::secrets::reset_after_restart(&db)?;
+        let reset = agent::reset_after_restart(&db)?;
+        if reset > 0 {
+            tracing::info!(agents = reset, "marked agents from the last session as stopped");
+        }
+        let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
+        events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
+        app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents });
+        events::spawn_sandbox_watcher(app.handle().clone());
+        Ok(())
+    })
+    .run(tauri::generate_context!())
+    .expect("error while running KALYPSO");
 }

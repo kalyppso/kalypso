@@ -1,8 +1,15 @@
 name: Release
 
-# Push a version tag (v0.1.0) to build installers for Windows, macOS and Linux and
-# publish them on a GitHub Release. 0.x releases are marked as pre-releases.
-# The website's download button reads the newest release from the GitHub API.
+# Push a version tag (v0.2.0) to build installers for Windows, macOS and Linux and
+# publish them on a GitHub Release. The website's download button reads the newest release
+# from the GitHub API, and installed apps update from its latest.json (signed, #95).
+#
+# Secrets:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD  required: sign updates
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID                        optional: sign and notarize the macOS app
+#   WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD optional: sign the Windows installers
+# Without the optional ones, installers are unsigned and the OS asks before the first launch.
 on:
   push:
     tags: ["v*"]
@@ -29,9 +36,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pre=""
-          case "${GITHUB_REF_NAME}" in v0.*) pre="--prerelease" ;; esac
-          gh release create "${GITHUB_REF_NAME}" --title "KALYPSO ${GITHUB_REF_NAME}" --generate-notes --draft $pre
+          # Full releases (not pre-releases), so /releases/latest/download/latest.json finds them.
+          gh release create "${GITHUB_REF_NAME}" --title "KALYPSO ${GITHUB_REF_NAME}" --generate-notes --draft
           echo "id=$(gh release view "${GITHUB_REF_NAME}" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
 
   build:
@@ -49,8 +55,38 @@ jobs:
           - os: ubuntu-24.04
             args: ""
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: macOS signing and notarization
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            { echo "$v<<__END__"; printenv "$v"; echo "__END__"; } >> "$GITHUB_ENV"
+          done
+      - name: Windows code signing
+        if: runner.os == 'Windows' && env.HAS_WINDOWS_CERT == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          Remove-Item $pfx
+          @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = "sha256"; timestampUrl = "http://timestamp.digicert.com" } } } |
+            ConvertTo-Json -Depth 5 | Set-Content src-tauri/tauri.windows.conf.json
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -69,7 +105,11 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Signs the update bundles and latest.json, which installed apps verify before updating.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          includeUpdaterJson: true
           releaseId: ${{ needs.create.outputs.id }}
           args: ${{ matrix.args }}
 

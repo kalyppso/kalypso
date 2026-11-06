@@ -1,3 +1,4 @@
+import { checkForUpdates } from "../components/UpdateNotice";
 import { openSetup } from "./Setup";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, isLive } from "../backend";
@@ -140,6 +141,14 @@ function Preferences() {
         <Group title="Setup">
           <Setting title="First-run setup" desc="Walks through the container engine, your model key, a first sandbox and a first agent. Steps that are already done are skipped.">
             <button className="btn" onClick={openSetup}>Run setup</button>
+          </Setting>
+        </Group>
+      )}
+
+      {live && (
+        <Group title="Updates">
+          <Setting title="KALYPSO updates" desc="KALYPSO checks for a new version when it starts. Updates are signed, and install when you restart.">
+            <button className="btn" onClick={checkForUpdates}>Check for updates</button>
           </Setting>
         </Group>
       )}
