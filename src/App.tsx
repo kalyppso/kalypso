@@ -29,6 +29,7 @@ import { Registry } from "./views/Registry";
 import { Integrations } from "./views/Integrations";
 import { Policies } from "./views/Policies";
 import { SettingsView } from "./views/Settings";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { Setup } from "./views/Setup";
 
 const views: Record<ViewId, () => JSX.Element> = {
@@ -226,6 +227,7 @@ export function App() {
       <Toasts />
       <ShortcutsSheet />
       <ApprovalPrompt />
+      <UpdateNotice />
       <Setup />
     </>
   );
