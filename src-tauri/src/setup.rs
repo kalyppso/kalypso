@@ -65,17 +65,34 @@ pub async fn check_anthropic_key(db: &Db, vault: &Vault, ns: &str) -> Result<Key
     };
     let base = vault.lookup(db, ns, "ANTHROPIC_BASE_URL")?.unwrap_or_else(|| "https://api.anthropic.com".into());
     let url = format!("{}/v1/models?limit=1", base.trim_end_matches('/'));
-    let http = reqwest::Client::builder().timeout(Duration::from_secs(15)).build().map_err(|e| crate::error::KalypsoError::Runtime(e.to_string()))?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| crate::error::KalypsoError::Runtime(e.to_string()))?;
     let res = http.get(&url).header("x-api-key", key).header("anthropic-version", "2023-06-01").send().await;
     Ok(match res {
-        Err(e) if e.is_timeout() => KeyCheck { ok: false, message: format!("{} didn't answer within 15 seconds. Check your connection, then try again.", host(&base)) },
-        Err(_) => KeyCheck { ok: false, message: format!("Couldn't reach {}. Check your internet connection or proxy, then try again.", host(&base)) },
+        Err(e) if e.is_timeout() => KeyCheck {
+            ok: false,
+            message: format!("{} didn't answer within 15 seconds. Check your connection, then try again.", host(&base)),
+        },
+        Err(_) => KeyCheck {
+            ok: false,
+            message: format!("Couldn't reach {}. Check your internet connection or proxy, then try again.", host(&base)),
+        },
         Ok(r) => match r.status().as_u16() {
             200..=299 => KeyCheck { ok: true, message: "The key works.".into() },
             // Rate-limited means the key itself was accepted.
-            429 => KeyCheck { ok: true, message: "The key works. Anthropic is rate-limiting it right now, so the first calls may wait.".into() },
-            401 => KeyCheck { ok: false, message: "Anthropic didn't accept this key. Check you copied all of it, then save it again.".into() },
-            403 => KeyCheck { ok: false, message: "This key isn't allowed to use the API. Check its permissions and billing in the Anthropic Console.".into() },
+            429 => KeyCheck {
+                ok: true,
+                message: "The key works. Anthropic is rate-limiting it right now, so the first calls may wait.".into(),
+            },
+            401 => {
+                KeyCheck { ok: false, message: "Anthropic didn't accept this key. Check you copied all of it, then save it again.".into() }
+            }
+            403 => KeyCheck {
+                ok: false,
+                message: "This key isn't allowed to use the API. Check its permissions and billing in the Anthropic Console.".into(),
+            },
             s => KeyCheck { ok: false, message: format!("{} answered with an error ({s}). Try again in a moment.", host(&base)) },
         },
     })
