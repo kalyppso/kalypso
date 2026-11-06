@@ -11,6 +11,7 @@ pub mod ipc;
 pub mod ns;
 pub mod policy;
 pub mod sandbox;
+pub mod setup;
 pub mod store;
 pub mod terminal;
 pub mod vault;
@@ -51,6 +52,9 @@ fn init_logging(dir: &std::path::Path) {
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![
         ipc::core_info,
+        ipc::setup_engine,
+        ipc::setup_key_check,
+        ipc::app_restart,
         ipc::audit_list,
         ipc::settings_get,
         ipc::settings_set,

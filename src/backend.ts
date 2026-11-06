@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { EngineStatus } from "./bindings/EngineStatus";
+import type { KeyCheck } from "./bindings/KeyCheck";
 import type { AuditEntry } from "./bindings/AuditEntry";
 import type { SecretGrant } from "./bindings/SecretGrant";
 import type { AgentEvent } from "./bindings/AgentEvent";
@@ -46,6 +48,9 @@ export interface CoreInfo {
 
 export const api = {
   coreInfo: () => invoke<CoreInfo>("core_info"),
+  setupEngine: () => invoke<EngineStatus>("setup_engine"),
+  setupKeyCheck: (ns: string) => invoke<KeyCheck>("setup_key_check", { ns }),
+  appRestart: () => invoke<void>("app_restart"),
   auditList: (ns: string | null, action: string | null, limit = 200) => invoke<AuditEntry[]>("audit_list", { ns, action, limit }),
   settingsGet: (key: string) => invoke<unknown>("settings_get", { key }),
   settingsSet: (key: string, value: unknown) => invoke<void>("settings_set", { key, value }),

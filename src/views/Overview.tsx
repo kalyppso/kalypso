@@ -1,3 +1,4 @@
+import { openSetup } from "./Setup";
 import { useEffect, useState } from "react";
 import { Bot, Boxes, Cable, Check, ChevronRight, KanbanSquare, KeyRound, ShieldCheck, SquareTerminal, type LucideIcon } from "lucide-react";
 import { useNamespaced, useStore } from "../store";
@@ -95,7 +96,10 @@ function GettingStarted() {
     <section className="card getting-started" aria-label="Getting started">
       <div className="card-head">
         <span className="card-title">Getting started in {state.ns}</span>
-        <span className="faint small">{steps.length - left} of {steps.length} done</span>
+        <span className="row" style={{ gap: 10 }}>
+          <span className="faint small">{steps.length - left} of {steps.length} done</span>
+          <button className="btn sm" onClick={openSetup}>Open setup</button>
+        </span>
       </div>
       <ol className="gs-steps">
         {steps.map((s, i) => (
