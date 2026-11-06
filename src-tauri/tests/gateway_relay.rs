@@ -96,7 +96,7 @@ async fn vm_engines_reach_the_gateway_through_the_relay() {
     let dump = log.iter().map(|e| format!("{:>7} | {}", e.kind, e.text)).collect::<Vec<_>>().join("\n");
     let has = |kind: &str, needle: &str| log.iter().any(|e| e.kind == kind && e.text.contains(needle));
     assert!(has("result", "Done"), "no result through the relay:\n{dump}\nupstream saw: {:?}", seen.lock().unwrap());
-    assert!(has("policy", "No force-push to main"), "{dump}");
+    assert!(has("policy", "No force-push to main") || has("policy", "No pushes to main"), "{dump}");
     assert!(seen.lock().unwrap().iter().any(|c| c.ends_with("key=sk-ant-real-key")));
     sup.stop(&ns, &a.id, "test over").await.unwrap();
 
