@@ -51,6 +51,8 @@ async fn an_sdk_agent_completes_a_task_in_its_sandbox_within_policy() {
         command: Some(common::TASK.into()),
         restart: Some("never".into()),
         max_restarts: Some(0),
+        repo: None,
+        repo_account: None,
         max_turns: Some(10),
     };
     let a = agent::create(&db, &ns, new).unwrap();
@@ -74,7 +76,8 @@ async fn an_sdk_agent_completes_a_task_in_its_sandbox_within_policy() {
 
     assert!(has("result", "Done"), "no successful result:\n{dump}\nupstream saw: {:?}", seen.lock().unwrap());
     assert!(has("tool", "Bash  echo kalypso-sdk"), "{dump}");
-    assert!(has("policy", "No force-push to main"), "the force-push was not blocked:\n{dump}");
+    // Both git rules forbid it; either may be the one reported.
+    assert!(has("policy", "No force-push to main") || has("policy", "No pushes to main"), "the force-push was not blocked:\n{dump}");
     assert!(has("text", "force-push was blocked"), "{dump}");
 
     // The allowed command really ran in the sandbox; the blocked one never did.

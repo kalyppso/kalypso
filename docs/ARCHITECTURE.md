@@ -322,6 +322,19 @@ The gateway (§4.5) checks the applicable caps before forwarding each request; w
 
 - **Overview contribution graph:** a GitHub-profile-style grid of daily commits for the last year. It can be filtered to agents or people, and uses the same agent attribution.
 
+### 4.19a GitHub accounts and repository-linked agents (#100)
+- **Accounts** (`github.rs`) belong to the user, not a namespace. Several at once, connected by **Sign in with GitHub** (OAuth device flow; the OAuth App's client ID is public and built in, or set as `github.client_id`) or a **pasted token**.
+  - Tokens are sealed with the master key in `github_accounts` and never leave the core.
+  - Accounts are checked at start and hourly. Expiring tokens are refreshed 10 minutes ahead; a token GitHub refuses marks the account **Reconnect**.
+  - `ns_github_accounts` says which namespaces may use which account. Repository search covers only those, organisation repositories included.
+- **Repository-linked agents** (`repo.rs`): an agent may have a `repo` ("owner/name"), the `repo_account` to reach it with, and its own `branch`, `agent/<name>/<task>`, set the first time.
+  - **On start**, the supervisor installs KALYPSO's helpers in the sandbox (`/work/.kalypso/bin`: `git-credential-kalypso`, `gh-api`; hooks in `/work/.kalypso/hooks`), clones the repository into `/work/<name>` (or reuses the clone) and checks out the branch. A failed clone fails the start, with the reason.
+  - **The agent** starts in the repository, with `KALYPSO_REPO`, `KALYPSO_REPO_DIR`, `KALYPSO_BRANCH`, the helpers on `PATH`, and `GIT_TERMINAL_PROMPT=0`.
+  - **Credentials** never enter the sandbox. Git's credential helper calls `POST /_kalypso/git/credential` on the gateway socket or relay (never the host TCP port) with the sandbox key. KALYPSO answers only for a repository linked to an agent in that sandbox, through an account that namespace may use, after the policy check. Each answer and refusal is audited (`git.credential`, `git.credential_denied`).
+  - **The GitHub API** is reached through `/_kalypso/github/<path>`, only for paths under `/repos/<linked repository>`. Writes are checked against policy and audited (`github.api`). `gh-api POST /repos/<repo>/pulls …` opens a pull request.
+  - **Guardrails:** a `commit-msg` hook adds the `KALYPSO-Agent: <name>` trailer (§4.19); a `pre-push` hook refuses pushes to main, master and the default branch; the **No pushes to main** default policy blocks the same through the policy engine.
+  - The end-to-end test (`tests/git_agent.rs`) checks all of this in a real sandbox, including that the token appears in no file, environment or command line there.
+
 ### 4.20 Terminal
 - **Panes:** each terminal pane is an **xterm.js** view attached to a sandbox. The layout is a binary split tree (`PaneNode`), saved per namespace. Panes split right or down, the dividers can be dragged, and Ctrl+Shift+D / E / W split and close.
 - **Backend** (`src-tauri/src/terminal.rs`): each pane opens an interactive shell through the sandbox provider's TTY exec. For Docker and Podman that is the engine API (`exec` with a TTY plus `resize`), so no `docker` CLI is needed, and microVM providers plug in through the same trait.

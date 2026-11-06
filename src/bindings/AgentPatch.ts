@@ -4,4 +4,8 @@ export type AgentPatch = { role?: string, model?: string,
 /**
  * Some("") detaches the agent from its sandbox.
  */
-sandbox_id?: string, command?: string, max_turns?: number, restart?: string, max_restarts?: number, };
+sandbox_id?: string, command?: string, max_turns?: number, restart?: string, max_restarts?: number, 
+/**
+ * Some("") unlinks the repository.
+ */
+repo?: string, repo_account?: string, };

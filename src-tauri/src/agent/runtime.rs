@@ -100,7 +100,8 @@ impl AgentRuntime for CommandRuntime {
             format!("KALYPSO_MODEL={}", ctx.agent.model),
             "PYTHONUNBUFFERED=1".to_string(),
         ];
-        let (stream, handle) = ctx.provider.open_process(&ctx.agent.ns, ctx.sandbox_id, &cmd, "/work", &env).await?;
+        let (env, cwd) = with_repo(env, ctx.agent);
+        let (stream, handle) = ctx.provider.open_process(&ctx.agent.ns, ctx.sandbox_id, &cmd, &cwd, &env).await?;
         Ok(Run { events: lines(stream.output), input: stream.input, handle, pid_file })
     }
 
@@ -143,7 +144,8 @@ impl AgentRuntime for ClaudeSdkRuntime {
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
         ];
-        let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, "/work", &env).await?;
+        let (env, cwd) = with_repo(env, a);
+        let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, &cwd, &env).await?;
         Ok(Run { events: lines(stream.output).map(sdk_event).boxed(), input: stream.input, handle, pid_file })
     }
 
@@ -247,4 +249,20 @@ mod sdk_tests {
         assert_eq!(ClaudeSdkRuntime.encode("hi\nthere"), b"{\"text\":\"hi\\nthere\",\"type\":\"message\"}\n".to_vec());
         assert!(ClaudeSdkRuntime.counts_turns() && !CommandRuntime.counts_turns());
     }
+}
+
+/// An agent linked to a repository (#100) works inside it: it starts there, knows which
+/// repository and branch it's on, has KALYPSO's git helpers on its PATH, and git never stops
+/// to ask for a password. Without a repository it starts in /work.
+fn with_repo(mut env: Vec<String>, a: &AgentRecord) -> (Vec<String>, String) {
+    let Some(repo) = a.repo.as_deref() else { return (env, "/work".into()) };
+    let dir = crate::repo::dir(repo);
+    env.push(format!("KALYPSO_REPO={repo}"));
+    env.push(format!("KALYPSO_REPO_DIR={dir}"));
+    if let Some(b) = &a.branch {
+        env.push(format!("KALYPSO_BRANCH={b}"));
+    }
+    env.push(format!("PATH={}", crate::repo::AGENT_PATH));
+    env.push("GIT_TERMINAL_PROMPT=0".into());
+    (env, dir)
 }

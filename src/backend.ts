@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { PullRequest } from "./bindings/PullRequest";
 import type { GhInfo } from "./bindings/GhInfo";
 import type { Account } from "./bindings/Account";
 import type { DeviceStart } from "./bindings/DeviceStart";
@@ -63,6 +64,7 @@ export const api = {
   ghAccountRemove: (id: string) => invoke<void>("gh_account_remove", { id }),
   ghAccountCheck: (id: string) => invoke<Account>("gh_account_check", { id }),
   ghRepos: (ns: string, query: string) => invoke<GhRepo[]>("gh_repos", { ns, query }),
+  agentPullRequests: (ns: string, id: string) => invoke<PullRequest[]>("agent_pull_requests", { ns, id }),
   setupEngine: () => invoke<EngineStatus>("setup_engine"),
   setupKeyCheck: (ns: string) => invoke<KeyCheck>("setup_key_check", { ns }),
   appRestart: () => invoke<void>("app_restart"),
@@ -156,6 +158,7 @@ export const toAgent = (a: AgentRecord): Agent => ({
   id: a.id, ns: a.ns, name: a.name, role: a.role, model: a.model, status: a.status as Agent["status"], sandboxId: a.sandbox_id,
   skills: [], mcps: [], secrets: [], statusReason: a.status_reason, runtime: a.runtime, command: a.command,
   restart: a.restart, maxRestarts: a.max_restarts, maxTurns: a.max_turns,
+  repo: a.repo, repoAccount: a.repo_account, branch: a.branch,
   config: [`# ${a.name} (${a.runtime})`, `command: ${a.command}`, `restart: ${a.restart}`, `max_restarts: ${a.max_restarts}`, `max_turns: ${a.max_turns || "no limit"}`].join("\n"),
 });
 

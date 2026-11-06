@@ -35,6 +35,7 @@ use crate::store::Db;
 use crate::vault::Vault;
 use pricing::Pricing;
 
+pub mod git;
 pub mod secrets;
 pub use secrets::{Grants, SecretGrant};
 use usage::{Format, Meter, Usage};
@@ -350,6 +351,8 @@ pub struct Gateway {
     pub grants: Grants,
     /// The container engine, for running approved secret commands in sandboxes.
     rt: OnceLock<crate::sandbox::Runtime>,
+    /// GitHub, for git credentials and the API proxy (#100). Tests point it at a fake.
+    github: OnceLock<crate::github::GitHub>,
 }
 
 /// A model request the gateway refused because a budget was reached.
@@ -394,6 +397,7 @@ impl Gateway {
             blocks: tokio::sync::broadcast::channel(64).0,
             grants: Grants::default(),
             rt: OnceLock::new(),
+            github: OnceLock::new(),
         })
     }
 
@@ -419,6 +423,15 @@ impl Gateway {
     }
 
     /// The container engine, so approved secret commands can run in sandboxes (#87).
+    /// Use this GitHub (a fake one, in tests) for git credentials and the API proxy.
+    pub fn set_github(&self, gh: crate::github::GitHub) {
+        let _ = self.github.set(gh);
+    }
+
+    pub(crate) fn github(&self) -> crate::github::GitHub {
+        self.github.get().cloned().unwrap_or_default()
+    }
+
     pub fn set_runtime(&self, rt: crate::sandbox::Runtime) {
         let _ = self.rt.set(rt);
     }
@@ -476,6 +489,8 @@ impl Gateway {
     fn sandbox_router(self: &Arc<Self>) -> Router {
         Router::new()
             .route("/_kalypso/secrets/run", post(secrets::run))
+            .route("/_kalypso/git/credential", post(git::credential))
+            .route("/_kalypso/github/{*path}", axum::routing::any(git::api))
             .layer(DefaultBodyLimit::max(64 << 10))
             .with_state(self.clone())
             .merge(self.router())

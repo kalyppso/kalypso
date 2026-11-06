@@ -165,6 +165,18 @@ pub async fn gh_repos(s: State<'_, AppState>, ns: String, query: String) -> Resu
     github::repos(&s.db, &s.vault, &s.github, &ns, &query).await
 }
 
+/// Pull requests opened from an agent's branch in its linked repository (#100).
+#[tauri::command]
+pub async fn agent_pull_requests(s: State<'_, AppState>, ns: String, id: String) -> Result<Vec<github::PullRequest>> {
+    let a = agent::get(&s.db, &ns, &id)?;
+    let (Some(repo), Some(branch), Some(account)) = (a.repo, a.branch, a.repo_account) else { return Ok(vec![]) };
+    if !github::for_ns(&s.db, &ns)?.iter().any(|x| x.id == account) {
+        return Err(KalypsoError::Invalid(format!("the GitHub account for {repo} isn't allowed in {ns} any more")));
+    }
+    let tok = github::token(&s.db, &s.vault, &s.github, &account).await?;
+    Ok(s.github.pull_requests(&tok, &repo, &branch).await?)
+}
+
 // ---------- Audit log ----------
 
 #[tauri::command]

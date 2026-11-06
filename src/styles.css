@@ -698,3 +698,17 @@ table ~ .empty-state, .card > .empty-state { background: transparent; }
 .chip.on { background: var(--accent-soft); border-color: transparent; color: var(--text); }
 .gh-device { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; }
 .gh-code { font: 600 22px var(--mono); letter-spacing: 0.12em; }
+
+/* ---------- Repository picker and agent repositories (#100) ---------- */
+.repo-picked { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.repo-picker { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.repo-search { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--border); color: var(--text-3); }
+.repo-search .input { border: 0; background: none; padding-left: 0; }
+.repo-results { max-height: 220px; overflow: auto; display: flex; flex-direction: column; }
+.repo-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+button.repo-row:hover, button.repo-row:focus-visible { background: var(--hover); }
+.repo-facts { display: flex; flex-direction: column; gap: 10px; }
+.pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pr-list li { display: flex; align-items: center; gap: 8px; }
+.badge.pr-open { color: var(--text); }
+.badge.pr-merged { background: var(--accent-soft); color: var(--text); }

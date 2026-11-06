@@ -194,6 +194,30 @@ impl GitHub {
         Ok(out)
     }
 
+    /// One GitHub API request on behalf of a sandbox (the gateway's `/_kalypso/github/…`).
+    pub async fn api_request(
+        &self,
+        method: reqwest::Method,
+        path_and_query: &str,
+        token: &str,
+        body: Vec<u8>,
+        content_type: Option<&str>,
+    ) -> std::result::Result<reqwest::Response, String> {
+        let mut req = self
+            .http
+            .request(method, format!("{}{path_and_query}", self.api))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "application/vnd.github+json")
+            .header("x-github-api-version", "2022-11-28");
+        if let Some(ct) = content_type {
+            req = req.header("content-type", ct);
+        }
+        if !body.is_empty() {
+            req = req.body(body);
+        }
+        req.send().await.map_err(|e| format!("couldn't reach GitHub: {}", e.without_url()))
+    }
+
     pub async fn device_start(&self, client_id: &str) -> Result<DeviceStart> {
         let res = self
             .http
@@ -253,6 +277,32 @@ impl GitHub {
             }));
         }
         Ok(Ok(serde_json::from_value(body).map_err(|e| KalypsoError::Invalid(e.to_string()))?))
+    }
+}
+
+/// A pull request opened from an agent's branch.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PullRequest {
+    #[ts(type = "number")]
+    pub number: u64,
+    pub title: String,
+    /// "open" or "closed".
+    pub state: String,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub merged_at: Option<String>,
+    pub html_url: String,
+    pub updated_at: String,
+}
+
+impl GitHub {
+    /// Pull requests whose head is `branch` in `repo` (the agent's own, #100).
+    pub async fn pull_requests(&self, token: &str, repo: &str, branch: &str) -> std::result::Result<Vec<PullRequest>, GhError> {
+        let owner = repo.split('/').next().unwrap_or(repo);
+        let path = format!("/repos/{repo}/pulls?state=all&per_page=20&head={owner}:{branch}");
+        self.get(token, &path).await?.json().await.map_err(|e| GhError::Other(e.to_string()))
     }
 }
 

@@ -47,6 +47,10 @@ export interface Agent {
   restart?: string;
   maxRestarts?: number;
   maxTurns?: number;
+  /** A linked GitHub repository, "owner/name" (#100), the account used for it, and the agent's branch. */
+  repo?: string | null;
+  repoAccount?: string | null;
+  branch?: string | null;
 }
 
 export type SandboxStatus = "running" | "paused" | "stopped";
