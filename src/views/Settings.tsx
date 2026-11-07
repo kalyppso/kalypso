@@ -6,7 +6,7 @@ import { api, errorMessage, isLive } from "../backend";
 import type { AuditEntry } from "../bindings/AuditEntry";
 import { Check, Palette, RefreshCw, ScrollText, SlidersHorizontal, User } from "lucide-react";
 import "../styles/pages.css";
-import { DEFAULT_APPEARANCE, useStore, useToast } from "../store";
+import { DEFAULT_APPEARANCE, useStore, useToast, type Action } from "../store";
 import { themePatch, themes } from "../themes";
 import { ACCENTS, FONTS, bestText, fixAccent, fontFamily, themeChecks } from "../appearance";
 import { Field, PageHead, Toggle, modKey, useErrors } from "../components/ui";
@@ -22,7 +22,7 @@ const SECTIONS = [
   { id: "audit", label: "Audit log", icon: ScrollText },
   { id: "preferences", label: "Preferences", icon: SlidersHorizontal },
 ] as const;
-type SectionId = (typeof SECTIONS)[number]["id"];
+export type SectionId = (typeof SECTIONS)[number]["id"];
 const SECTION_KEY = "kalypso.settings.section";
 
 function savedSection(): SectionId {
@@ -35,12 +35,24 @@ function savedSection(): SectionId {
   return "account";
 }
 
+/** Open Settings on one section, from anywhere (also when Settings is already open). */
+export function openSettings(dispatch: (a: Action) => void, id: SectionId) {
+  try { localStorage.setItem(SECTION_KEY, id); } catch { /* opens on the last section instead */ }
+  dispatch({ type: "view", view: "settings" });
+  window.dispatchEvent(new CustomEvent("kalypso:settings-section", { detail: id }));
+}
+
 export function SettingsView() {
   const [section, setSection] = useState<SectionId>(savedSection);
   const pick = (id: SectionId) => {
     setSection(id);
     try { localStorage.setItem(SECTION_KEY, id); } catch { /* not remembered, still works */ }
   };
+  useEffect(() => {
+    const on = (e: Event) => setSection((e as CustomEvent<SectionId>).detail);
+    window.addEventListener("kalypso:settings-section", on);
+    return () => window.removeEventListener("kalypso:settings-section", on);
+  }, []);
   const current = SECTIONS.find((s) => s.id === section)!;
 
   return (
@@ -256,9 +268,10 @@ function AppearanceSection() {
         <div className="card" style={{ fontFamily: `${fontFamily(a.font)}, system-ui`, color: "var(--text)" }}>
           <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.01em" }}>coder opened PR #482</div>
           <div className="dim" style={{ marginTop: 2 }}>Retry webhooks with exponential backoff. 3 files changed, 0123456789.</div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <button className="btn primary sm">Approve</button>
-            <button className="btn sm">Request changes</button>
+          {/* Look only: real buttons here would do nothing when clicked. */}
+          <div className="row" style={{ marginTop: 10, pointerEvents: "none" }} aria-hidden>
+            <span className="btn primary sm">Approve</span>
+            <span className="btn sm">Request changes</span>
           </div>
         </div>
       </div>
@@ -347,7 +360,7 @@ function Account() {
           </div>
           <div className="row" style={{ justifyContent: "flex-end" }}>
             {dirty && <button className="btn ghost" onClick={() => { setName(user.name); setEmail(user.email); check({}); }}>Discard</button>}
-            <button className="btn primary" disabled={!dirty} onClick={save}>Save profile</button>
+            <button className="btn primary" disabled={!dirty} title={dirty ? undefined : "Change your name or email first"} onClick={save}>Save profile</button>
           </div>
         </div>
       </Group>

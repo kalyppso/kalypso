@@ -1,7 +1,7 @@
 import { formatTime, fromDb } from "../prefs";
 import { useEffect, useState } from "react";
 import { Ban, Eye, Hand, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors, Skeleton } from "../components/ui";
 import "../styles/pages.css";
 import type { Enforcement, Policy, PolicyCategory } from "../types";
@@ -77,7 +77,8 @@ export function Policies() {
   const { state, dispatch } = useStore();
   const toast = useToast();
   const { loading, policies, policyEvents, agents } = useNamespaced();
-  const [creating, setCreating] = useState(state.compose);
+  const [creating, setCreating] = useState(false);
+  useCompose(() => setCreating(true));
   const [expanded, setExpanded] = useState<string | null>(null);
   const name = (id: string) => state.agents.find((a) => a.id === id)?.name ?? id;
   // In the desktop app policies live in the core and are enforced there.

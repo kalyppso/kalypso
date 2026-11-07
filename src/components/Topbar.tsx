@@ -4,6 +4,7 @@ import { themePatch, themes } from "../themes";
 import { viewLabel } from "./Sidebar";
 import { Toggle, modKey, usePopover } from "./ui";
 import { WindowControls } from "./WindowControls";
+import { openSettings } from "../views/Settings";
 
 export function Topbar() {
   const { state, dispatch } = useStore();
@@ -62,7 +63,7 @@ export function Topbar() {
                 {t.id === state.appearance.theme && <Check size={14} style={{ marginLeft: "auto", color: "var(--accent-hi)" }} />}
               </button>
             ))}
-            <button className="pop-item" onClick={() => { dispatch({ type: "view", view: "settings" }); themePop.setOpen(false); }}>
+            <button className="pop-item" onClick={() => { openSettings(dispatch, "appearance"); themePop.setOpen(false); }}>
               <Palette size={14} /> Customize colours and font
             </button>
           </div>

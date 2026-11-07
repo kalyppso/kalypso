@@ -95,10 +95,11 @@ export function Auth() {
             <label className="field">Name<input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></label>
           )}
           <label className="field">Email<input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></label>
-          <label className="field">
-            <span className="row">Password<span className="spacer" />{mode === "signin" && <button type="button" className="link small">Forgot password?</button>}</span>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} />
-          </label>
+          {/* Not a <label>: it holds a button, which a label would take over. */}
+          <div className="field">
+            <span className="row"><label htmlFor="auth-password">Password</label><span className="spacer" />{mode === "signin" && <button type="button" className="link small" disabled title="Password reset arrives with accounts (#37)">Forgot password?</button>}</span>
+            <input id="auth-password" className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} />
+          </div>
           {error && <div className="field-error" role="alert">{error}</div>}
           <button className="btn primary">{mode === "signin" ? "Sign in" : "Create account"}</button>
         </form>

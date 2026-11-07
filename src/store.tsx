@@ -1,5 +1,5 @@
 import { DEFAULT_PREFS, sanitizePrefs, type Prefs } from "./prefs";
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, type ReactNode } from "react";
 import * as mock from "./mock";
 import type { Activity } from "./mock";
 import type {
@@ -101,6 +101,7 @@ export type Action =
   | { type: "hydrateAgents"; ns: string; agents: Agent[] }
   | { type: "agentLive"; id: string; status: Agent["status"]; reason: string }
   | { type: "view"; view: ViewId; compose?: boolean }
+  | { type: "composed" }
   | { type: "ns"; ns: string }
   | { type: "showCode"; value: boolean }
   | { type: "prefs"; patch: Partial<Prefs> }
@@ -315,6 +316,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, tasks: s.tasks.filter((t) => t.id !== a.id) };
     case "view":
       return { ...s, view: a.view, paletteOpen: false, compose: a.compose ?? false };
+    case "composed":
+      return s.compose ? { ...s, compose: false } : s;
     case "ns":
       return { ...s, ns: a.ns, compose: false, toolsOpen: s.toolsOpen && (s.toolTabs[a.ns]?.length ?? 0) > 0 };
     case "showCode":
@@ -431,6 +434,20 @@ export function useStore() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("useStore must be used inside StoreProvider");
   return ctx;
+}
+
+/**
+ * Open a page's create form when a quick action asks for it ("New agent" on Overview, in the
+ * palette, or in an empty state). Also works when that page is already open: then nothing
+ * remounts, so reading `state.compose` once on mount would miss the request.
+ */
+export function useCompose(open: () => void) {
+  const { state, dispatch } = useStore();
+  useLayoutEffect(() => {
+    if (!state.compose) return;
+    open();
+    dispatch({ type: "composed" });
+  }, [state.compose]);
 }
 
 export function useToast() {

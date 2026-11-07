@@ -4,7 +4,7 @@ import { Bot, Boxes, Cable, Check, ChevronRight, KanbanSquare, KeyRound, ShieldC
 import { useNamespaced, useStore } from "../store";
 import { PageHead } from "../components/ui";
 import { ContributionGraph } from "../components/ContributionGraph";
-import { api, isLive, useBudgetOverview } from "../backend";
+import { api, isLive, openUrl, useBudgetOverview } from "../backend";
 import { BudgetBlocks } from "./Budget";
 import type { ViewId } from "../types";
 
@@ -62,7 +62,7 @@ function GettingStarted() {
       done: !!engine && engine !== "none",
       title: "Connect a container engine",
       hint: engine && engine !== "none" ? `${engine[0].toUpperCase()}${engine.slice(1)} is connected.` : "Install and start Docker or Podman. KALYPSO finds it on its own.",
-      go: () => window.open("https://podman-desktop.io/downloads", "_blank"), cta: "Get Podman",
+      go: () => openUrl("https://podman-desktop.io/downloads"), cta: "Get Podman",
     },
     {
       done: secrets.some((s) => /_API_KEY$/.test(s.key)),

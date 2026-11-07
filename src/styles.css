@@ -476,6 +476,7 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 .field-error { color: var(--text); font-size: 12px; }
 .link { background: none; border: 0; padding: 0; color: var(--accent-hi); cursor: pointer; font: inherit; }
 .link:hover { text-decoration: underline; }
+.link:disabled { color: var(--text-3); cursor: not-allowed; text-decoration: none; }
 
 /* ---------- Tracker board ---------- */
 /* Columns share the width and wrap to a new row on narrow windows; the board never scrolls sideways. */
