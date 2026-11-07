@@ -170,6 +170,9 @@ export const toPolicy = (p: PolicyRecord): Policy => ({
 /** Engine-reported sandbox changes (src-tauri/src/events.rs). Returns an unsubscribe function. */
 export const onSandboxStatus = (fn: (e: SandboxStatusEvent) => void) => listen<SandboxStatusEvent>("sandbox://status", (e) => fn(e.payload));
 
+/** A container engine connected after KALYPSO started (its kind: "podman", "docker"). */
+export const onEngine = (fn: (kind: string) => void) => listen<string>("core://engine", (e) => fn(e.payload));
+
 /** Every model request metered by the gateway (src-tauri/src/events.rs). */
 export const onUsage = (fn: (e: UsageEvent) => void) => listen<UsageEvent>("usage://event", (e) => fn(e.payload));
 

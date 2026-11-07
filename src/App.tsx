@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { revealWindow } from "./window";
 import { WindowControls } from "./components/WindowControls";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
-import { api, errorMessage, isLive, openUrl, onAgentUpdate, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
+import { api, errorMessage, isLive, openUrl, onAgentUpdate, onEngine, onBudgetAlert, onSandboxStatus, syncNamespace, toNamespace, type CoreInfo } from "./backend";
 import { applyAppearance, sanitizeAppearance } from "./appearance";
 import { NeuralWeb, Spider } from "./components/Ambient";
 import { CommandPalette } from "./components/CommandPalette";
@@ -135,6 +135,17 @@ export function App() {
     if (!isLive() || !state.session) return;
     const off = onSandboxStatus((e) => {
       if (e.ns === state.ns) syncNamespace(state.ns, dispatch).catch(() => {});
+    });
+    return () => void off.then((unlisten) => unlisten());
+  }, [state.ns, state.session, dispatch]);
+
+  // An engine started after KALYPSO connects by itself: refresh what depends on it, and say so.
+  useEffect(() => {
+    if (!isLive() || !state.session) return;
+    const off = onEngine((kind) => {
+      api.coreInfo().then(setCore).catch(() => {});
+      syncNamespace(state.ns, dispatch).catch(() => {});
+      toast(`${kind === "podman" ? "Podman" : kind === "docker" ? "Docker" : kind} connected. You can create sandboxes now.`);
     });
     return () => void off.then((unlisten) => unlisten());
   }, [state.ns, state.session, dispatch]);

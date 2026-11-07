@@ -48,7 +48,7 @@ pub struct CoreInfo {
 
 #[tauri::command]
 pub fn core_info(s: State<'_, AppState>) -> CoreInfo {
-    CoreInfo { version: env!("CARGO_PKG_VERSION"), runtime: s.rt.kind.clone(), key_source: s.vault.source }
+    CoreInfo { version: env!("CARGO_PKG_VERSION"), runtime: s.rt.kind(), key_source: s.vault.source }
 }
 
 // ---------- First-run setup (#94) ----------

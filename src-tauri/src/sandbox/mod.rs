@@ -64,23 +64,49 @@ pub struct SandboxStatusEvent {
 }
 
 /// The sandbox providers available on this machine. The first is the default.
+///
+/// Every clone shares one list, so when an engine is started after KALYPSO, [`Runtime::reconnect`]
+/// connects it for everyone (the IPC layer, the supervisor, the gateway) without a restart.
 #[derive(Clone)]
 pub struct Runtime {
-    providers: Vec<Arc<dyn SandboxProvider>>,
-    /// Kind of the default provider, or "none".
-    pub kind: String,
+    providers: Arc<std::sync::RwLock<Vec<Arc<dyn SandboxProvider>>>>,
 }
 
+const NO_ENGINE: &str =
+    "no Docker or Podman is running. Start one (Podman Desktop, Docker Desktop, or the Podman socket); KALYPSO connects to it on its own.";
+
 impl Runtime {
-    pub async fn detect() -> Self {
+    async fn detect_providers() -> Vec<Arc<dyn SandboxProvider>> {
         let mut providers: Vec<Arc<dyn SandboxProvider>> = Vec::new();
         if let Some(p) = oci::OciProvider::detect().await {
             providers.push(Arc::new(p));
         }
+        providers
+    }
+
+    pub async fn detect() -> Self {
+        let providers = Self::detect_providers().await;
         if providers.is_empty() {
-            tracing::warn!("no sandbox provider found; sandboxes are disabled");
+            tracing::warn!("no sandbox provider found yet; KALYPSO keeps looking");
         }
         Self::with(providers)
+    }
+
+    /// Look for an engine again, if none is connected. True when one just connected.
+    pub async fn reconnect(&self) -> bool {
+        if self.available() {
+            return false;
+        }
+        let found = Self::detect_providers().await;
+        if found.is_empty() {
+            return false;
+        }
+        let mut list = self.providers.write().unwrap();
+        if !list.is_empty() {
+            return false;
+        }
+        *list = found;
+        true
     }
 
     pub fn none() -> Self {
@@ -88,41 +114,47 @@ impl Runtime {
     }
 
     pub fn with(providers: Vec<Arc<dyn SandboxProvider>>) -> Self {
-        let kind = providers.first().map(|p| p.info().kind).unwrap_or_else(|| "none".into());
-        Self { providers, kind }
+        Self { providers: Arc::new(std::sync::RwLock::new(providers)) }
+    }
+
+    fn all(&self) -> Vec<Arc<dyn SandboxProvider>> {
+        self.providers.read().unwrap().clone()
+    }
+
+    /// Kind of the default provider ("docker", "podman", …), or "none".
+    pub fn kind(&self) -> String {
+        self.all().first().map(|p| p.info().kind).unwrap_or_else(|| "none".into())
     }
 
     pub fn available(&self) -> bool {
-        !self.providers.is_empty()
+        !self.providers.read().unwrap().is_empty()
     }
 
     pub fn infos(&self) -> Vec<ProviderInfo> {
-        self.providers.iter().map(|p| p.info()).collect()
+        self.all().iter().map(|p| p.info()).collect()
     }
 
     fn default_provider(&self) -> Result<Arc<dyn SandboxProvider>> {
-        self.providers
-            .first()
-            .cloned()
-            .ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found. Start one and restart KALYPSO.".into()))
+        self.all().first().cloned().ok_or_else(|| KalypsoError::Runtime(NO_ENGINE.into()))
     }
 
     /// The provider that owns sandboxes of this kind.
     pub fn provider(&self, kind: &str) -> Result<Arc<dyn SandboxProvider>> {
-        self.providers
-            .iter()
+        if !self.available() {
+            return Err(KalypsoError::Runtime(NO_ENGINE.into()));
+        }
+        self.all()
+            .into_iter()
             .find(|p| p.handles(kind))
-            .cloned()
             .ok_or_else(|| KalypsoError::Runtime(format!("the {kind} provider isn't available on this machine")))
     }
 
     /// The Docker client, when a Docker/Podman provider is present. Engine-specific test checks only.
     #[cfg(test)]
-    pub(crate) fn docker(&self) -> Result<&bollard::Docker> {
-        self.providers
+    pub(crate) fn docker(&self) -> Result<bollard::Docker> {
+        self.all()
             .iter()
-            .find_map(|p| p.as_any().downcast_ref::<oci::OciProvider>())
-            .map(|o| o.docker())
+            .find_map(|p| p.as_any().downcast_ref::<oci::OciProvider>().map(|o| o.docker().clone()))
             .ok_or_else(|| KalypsoError::Runtime("no Docker or Podman found".into()))
     }
 
@@ -131,14 +163,14 @@ impl Runtime {
         if !self.available() {
             return Err(self.default_provider().err().unwrap());
         }
-        for p in &self.providers {
+        for p in self.all() {
             p.prepare_namespace(ns).await?;
         }
         Ok(())
     }
 
     pub async fn remove_network(&self, ns: &str) -> Result<()> {
-        for p in &self.providers {
+        for p in self.all() {
             p.teardown_namespace(ns).await?;
         }
         Ok(())
@@ -149,7 +181,7 @@ impl Runtime {
         if !self.available() {
             return Err(self.default_provider().err().unwrap());
         }
-        let streams = self.providers.iter().map(|p| p.watch()).collect::<Result<Vec<_>>>()?;
+        let streams = self.all().iter().map(|p| p.watch()).collect::<Result<Vec<_>>>()?;
         Ok(stream::select_all(streams).boxed())
     }
 }
@@ -450,11 +482,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn an_engine_connected_later_reaches_every_copy() {
+        let rt = Runtime::none();
+        let supervisor_copy = rt.clone();
+        assert!(!supervisor_copy.available());
+        assert_eq!(supervisor_copy.kind(), "none");
+        assert!(supervisor_copy.provider("docker").err().unwrap().to_string().contains("connects to it on its own"));
+        // What reconnect() does once an engine answers: fill the shared list.
+        rt.providers.write().unwrap().push(Arc::new(FakeProvider::default()));
+        assert!(supervisor_copy.available(), "clones share the list");
+        assert_eq!(supervisor_copy.kind(), "fake");
+    }
+
     #[tokio::test]
     async fn a_second_provider_plugs_in_through_the_trait() {
         let fake = Arc::new(FakeProvider::default());
         let rt = Runtime::with(vec![fake.clone()]);
-        assert_eq!(rt.kind, "fake");
+        assert_eq!(rt.kind(), "fake");
         assert_eq!(rt.infos()[0].isolation, "microvm");
         let db = Db::open_in_memory().unwrap();
         db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES ('lab','lab')", [])?)).unwrap();

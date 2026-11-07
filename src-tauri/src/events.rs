@@ -18,6 +18,35 @@ pub const AGENT_UPDATE: &str = "agent://update";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
+/// Emitted when a container engine connects after KALYPSO started.
+pub const ENGINE: &str = "core://engine";
+
+/// While no container engine is connected, look for one every few seconds. When one answers,
+/// prepare every namespace's network, start watching sandbox events and tell the UI.
+pub fn spawn_engine_watcher(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let state = app.state::<AppState>();
+            if state.rt.available() {
+                return;
+            }
+            if state.rt.reconnect().await {
+                let kind = state.rt.kind();
+                tracing::info!(runtime = %kind, "container engine connected");
+                for n in crate::ns::list(&state.db).unwrap_or_default() {
+                    if let Err(e) = state.rt.ensure_network(&n.id).await {
+                        tracing::warn!(ns = %n.id, error = %e, "could not prepare namespace network");
+                    }
+                }
+                spawn_sandbox_watcher(app.clone());
+                let _ = app.emit(ENGINE, &kind);
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+}
+
 pub fn spawn_sandbox_watcher(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut backoff = Duration::from_secs(1);
