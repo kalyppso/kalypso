@@ -29,17 +29,14 @@ pub struct EngineStatus {
 }
 
 pub async fn engine_status(current: &Runtime) -> EngineStatus {
-    let found = if current.available() {
-        Some(current.kind.clone())
-    } else {
-        let rt = Runtime::detect().await;
-        rt.available().then_some(rt.kind)
-    };
+    // An engine started after KALYPSO connects right here, no restart needed.
+    current.reconnect().await;
+    let found = current.available().then(|| current.kind());
     EngineStatus {
-        connected: current.kind.clone(),
+        connected: current.kind(),
         found,
         os: std::env::consts::OS.to_string(),
-        podman_cli: on_path("podman"),
+        podman_cli: crate::sandbox::oci::podman_bin().is_some(),
         docker_cli: on_path("docker"),
     }
 }

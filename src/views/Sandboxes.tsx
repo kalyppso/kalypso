@@ -4,6 +4,8 @@ import { Boxes, Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "luci
 import { uid, useNamespaced, useStore, useToast } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
 import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
+import { useEngine } from "../engine";
+import { openSetup } from "./Setup";
 import "../styles/pages.css";
 import type { Sandbox } from "../types";
 import type { PortForward } from "../bindings/PortForward";
@@ -36,6 +38,7 @@ export function Sandboxes() {
       <PageHead title="Sandboxes" subtitle={`Containers and micro-VMs on the ns-${state.ns} network. Nothing here can reach other namespaces.`}>
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New sandbox</PrimaryButton>
       </PageHead>
+      <NoEngine />
 
       <div className="card flush">
         <table className="table">
@@ -107,7 +110,9 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (isLive()) api.sandboxProviders().then(setProviders).catch(() => {});
   }, []);
+  const engine = useEngine();
   const create = () => {
+    if (engine === "none") { toast("No container engine is connected yet. Start Podman or Docker; KALYPSO connects on its own.", "err"); return; }
     const name = form.name.trim();
     const ok = check({
       name: !name ? "Name the sandbox."
@@ -137,6 +142,7 @@ function NewSandbox({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="New sandbox" subtitle="Hardened by default: read-only root, all capabilities dropped." onClose={onClose}>
+      {engine === "none" && <NoEngine compact />}
       <Field label="Name" error={errors.name}>
         <input className="input" autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="repo-workspace" />
       </Field>
@@ -228,5 +234,20 @@ function Ports({ sandbox, onClose }: { sandbox: Sandbox; onClose: () => void }) 
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Why sandboxes can't be created yet, and how to fix it. Hidden once an engine is connected. */
+function NoEngine({ compact }: { compact?: boolean }) {
+  const engine = useEngine();
+  if (engine !== "none") return null;
+  return (
+    <div className="no-engine" role="status" style={compact ? { margin: 0 } : undefined}>
+      <div>
+        <div>No container engine is connected.</div>
+        <div className="faint small">Sandboxes run in Podman or Docker. Start Podman Desktop (and its Podman machine) or Docker Desktop; KALYPSO connects within a few seconds, no restart needed.</div>
+      </div>
+      {!compact && <button className="btn sm" onClick={openSetup}>Help me set it up</button>}
+    </div>
   );
 }

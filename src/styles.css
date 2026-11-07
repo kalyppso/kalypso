@@ -719,3 +719,6 @@ button.repo-row:hover, button.repo-row:focus-visible { background: var(--hover);
 @keyframes skeleton { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .contrast-report { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; }
 .contrast-ok { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- No container engine yet ---------- */
+.no-engine { display: flex; align-items: center; gap: 16px; justify-content: space-between; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 10px; }

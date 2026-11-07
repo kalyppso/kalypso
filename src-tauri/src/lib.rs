@@ -152,7 +152,7 @@ pub fn run() {
         let db = std::sync::Arc::new(store::Db::open(&dir.join("kalypso.db"))?);
         let vault = std::sync::Arc::new(vault::Vault::load(&dir)?);
         let rt = tauri::async_runtime::block_on(sandbox::Runtime::detect());
-        tracing::info!(data = %dir.display(), runtime = %rt.kind, key = ?vault.source, "core ready");
+        tracing::info!(data = %dir.display(), runtime = %rt.kind(), key = ?vault.source, "core ready");
 
         // First run: start with the two namespaces the prototype shows.
         if ns::list(&db)?.is_empty() {
@@ -214,6 +214,9 @@ pub fn run() {
         }
         app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents, github });
         events::spawn_sandbox_watcher(app.handle().clone());
+        // No engine yet (Podman or Docker not running, or started after KALYPSO): keep looking,
+        // and connect as soon as one answers, without a restart.
+        events::spawn_engine_watcher(app.handle().clone());
         Ok(())
     })
     .run(tauri::generate_context!())

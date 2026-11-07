@@ -46,7 +46,7 @@ impl OciProvider {
     /// Find a reachable engine: `DOCKER_HOST` first, then the usual places Docker,
     /// Podman, OrbStack and Colima put their sockets (named pipes on Windows).
     pub async fn detect() -> Option<Self> {
-        for (endpoint, kind) in candidates() {
+        for (endpoint, kind) in candidates().await {
             let Some(docker) = connect(&endpoint) else { continue };
             if docker.ping().await.is_ok() {
                 let vm = runs_in_vm(&docker).await;
@@ -627,11 +627,69 @@ fn kind_of(endpoint: &str) -> &'static str {
 }
 
 /// Where engines listen, most specific first. Missing ones are skipped cheaply.
-fn candidates() -> Vec<(String, &'static str)> {
+/// Where the `podman` command is: on PATH, or where its installers put it. A desktop app that was
+/// open while Podman was installed doesn't see the new PATH, so the usual places are checked too.
+pub fn podman_bin() -> Option<PathBuf> {
+    let exe = if cfg!(windows) { "podman.exe" } else { "podman" };
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if dir.join(exe).is_file() {
+                return Some(dir.join(exe));
+            }
+        }
+    }
+    let known: &[&str] = if cfg!(windows) {
+        &[r"C:\Program Files\RedHat\Podman\podman.exe", r"C:\Program Files\Podman\podman.exe"]
+    } else if cfg!(target_os = "macos") {
+        &["/opt/podman/bin/podman", "/opt/homebrew/bin/podman", "/usr/local/bin/podman"]
+    } else {
+        &["/usr/bin/podman", "/usr/local/bin/podman"]
+    };
+    known.iter().map(PathBuf::from).find(|p| p.is_file())
+}
+
+/// The API endpoints of running Podman machines (macOS, Windows, and Linux with a machine),
+/// as Podman itself reports them: whatever the machine is called and wherever its socket is.
+async fn podman_machine_endpoints() -> Vec<String> {
+    let Some(bin) = podman_bin() else { return vec![] };
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args(["machine", "inspect"]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        // No console window flashing up from a GUI app.
+        cmd.creation_flags(0x0800_0000);
+    }
+    let Ok(Ok(out)) = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output()).await else { return vec![] };
+    let Ok(machines) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else { return vec![] };
+    let mut found = Vec::new();
+    for m in machines.as_array().into_iter().flatten() {
+        if m.get("State").and_then(|s| s.as_str()).is_some_and(|s| s != "running") {
+            continue;
+        }
+        let info = m.get("ConnectionInfo");
+        let path = |key: &str| {
+            info.and_then(|i| i.get(key)).and_then(|k| k.get("Path")).and_then(|p| p.as_str()).filter(|p| !p.is_empty()).map(str::to_string)
+        };
+        if cfg!(windows) {
+            if let Some(pipe) = path("PodmanPipe") {
+                found.push(format!("npipe://{pipe}"));
+            }
+        } else if let Some(sock) = path("PodmanSocket") {
+            found.push(format!("unix://{sock}"));
+        }
+    }
+    found
+}
+
+async fn candidates() -> Vec<(String, &'static str)> {
     let mut out: Vec<(String, &'static str)> = Vec::new();
     if let Ok(host) = std::env::var("DOCKER_HOST") {
         let kind = kind_of(&host);
         out.push((host, kind));
+    }
+    // Podman machines first: they say exactly where they listen.
+    for e in podman_machine_endpoints().await {
+        out.push((e, "podman"));
     }
     #[cfg(unix)]
     {
@@ -639,13 +697,20 @@ fn candidates() -> Vec<(String, &'static str)> {
         if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
             socks.push(PathBuf::from(dir).join("podman/podman.sock"));
         }
+        // Podman 5 machines on macOS put their API socket in the per-user temporary folder.
+        if let Ok(tmp) = std::env::var("TMPDIR") {
+            if let Ok(entries) = std::fs::read_dir(PathBuf::from(tmp).join("podman")) {
+                socks.extend(entries.flatten().map(|e| e.path()).filter(|p| p.to_string_lossy().ends_with("-api.sock")));
+            }
+        }
         if let Ok(home) = std::env::var("HOME") {
             let home = PathBuf::from(home);
             socks.push(home.join(".docker/run/docker.sock")); // Docker Desktop (per-user)
             socks.push(home.join(".orbstack/run/docker.sock"));
             socks.push(home.join(".colima/default/docker.sock"));
             socks.push(home.join(".local/share/containers/podman/machine/podman.sock"));
-            // Podman machine (macOS)
+            socks.push(home.join(".local/share/containers/podman/machine/qemu/podman.sock"));
+            socks.push(home.join(".local/share/containers/podman/machine/applehv/podman.sock"));
         }
         socks.push("/var/run/docker.sock".into());
         socks.push("/run/podman/podman.sock".into());
@@ -657,9 +722,14 @@ fn candidates() -> Vec<(String, &'static str)> {
     }
     #[cfg(windows)]
     {
-        out.push((r"npipe:////./pipe/docker_engine".into(), "docker"));
-        out.push((r"npipe:////./pipe/podman-machine-default".into(), "podman"));
+        // Docker Desktop (newer and older pipe), then Podman's default machine and its Docker
+        // compatibility pipe.
+        out.push((r"npipe://\\.\pipe\dockerDesktopLinuxEngine".into(), "docker"));
+        out.push((r"npipe://\\.\pipe\docker_engine".into(), "docker"));
+        out.push((r"npipe://\\.\pipe\podman-machine-default".into(), "podman"));
     }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|(e, _)| seen.insert(e.clone()));
     out
 }
 

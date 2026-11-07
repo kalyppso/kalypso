@@ -166,13 +166,22 @@ function engineAdvice(e: EngineStatus): { text: string; cmd?: string; link?: str
       { text: "Then turn on its API socket:", cmd: "systemctl --user enable --now podman.socket" },
     ];
   }
-  if (e.podman_cli) return [{ text: "Podman is installed. Start its virtual machine:", cmd: "podman machine init; podman machine start" }];
+  if (e.podman_cli) return [
+    { text: "Podman is installed. Open Podman Desktop and start its Podman machine (Resources → Podman → Start), or run:", cmd: "podman machine start" },
+    { text: "If you've never created one, create it first:", cmd: "podman machine init" },
+  ];
   if (e.docker_cli) return [{ text: "Docker is installed but not running. Open Docker Desktop and wait until it says it's running." }];
   return [{ text: "Install Podman Desktop (or Docker Desktop), open it, and let it set up its machine.", link: "https://podman-desktop.io/downloads" }];
 }
 
 function EngineStep({ engine, recheck, ok, onNext }: { engine: EngineStatus | null; recheck: () => Promise<unknown>; ok: boolean; onNext: () => void }) {
   const [busy, setBusy] = useState(false);
+  // Keep checking while you start Podman or Docker: it connects without a restart.
+  useEffect(() => {
+    if (ok) return;
+    const t = setInterval(() => { recheck(); }, 5000);
+    return () => clearInterval(t);
+  }, [ok]);
   const again = () => { setBusy(true); recheck().finally(() => setBusy(false)); };
   return (
     <Panel title="Connect a container engine" lead="Every agent runs in its own container. KALYPSO uses Podman or Docker for that, and finds either on its own.">
@@ -187,7 +196,7 @@ function EngineStep({ engine, recheck, ok, onNext }: { engine: EngineStatus | nu
       )}
       {engine && !ok && !engine.found && (
         <>
-          <Problem what="No container engine is running." fix="Do this, then check again:" />
+          <Problem what="No container engine is running." fix="Do this. KALYPSO checks every few seconds and connects on its own:" />
           <ol className="setup-howto">
             {engineAdvice(engine).map((a) => (
               <li key={a.text}>
