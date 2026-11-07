@@ -626,10 +626,9 @@ fn kind_of(endpoint: &str) -> &'static str {
     }
 }
 
-/// Where engines listen, most specific first. Missing ones are skipped cheaply.
 /// Where the `podman` command is: on PATH, or where its installers put it. A desktop app that was
 /// open while Podman was installed doesn't see the new PATH, so the usual places are checked too.
-pub fn podman_bin() -> Option<PathBuf> {
+pub fn podman_bin() -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { "podman.exe" } else { "podman" };
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
@@ -645,7 +644,7 @@ pub fn podman_bin() -> Option<PathBuf> {
     } else {
         &["/usr/bin/podman", "/usr/local/bin/podman"]
     };
-    known.iter().map(PathBuf::from).find(|p| p.is_file())
+    known.iter().map(std::path::PathBuf::from).find(|p| p.is_file())
 }
 
 /// The API endpoints of running Podman machines (macOS, Windows, and Linux with a machine),
@@ -681,6 +680,7 @@ async fn podman_machine_endpoints() -> Vec<String> {
     found
 }
 
+/// Where engines listen, most specific first. Missing ones are skipped cheaply.
 async fn candidates() -> Vec<(String, &'static str)> {
     let mut out: Vec<(String, &'static str)> = Vec::new();
     if let Ok(host) = std::env::var("DOCKER_HOST") {
