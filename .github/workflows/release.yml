@@ -111,7 +111,9 @@ jobs:
         with:
           includeUpdaterJson: true
           releaseId: ${{ needs.create.outputs.id }}
-          args: ${{ matrix.args }}
+          # RPM can't hold a pre-release version (0.2.1-beta), so beta builds skip it on Linux;
+          # the .deb and the AppImage (which auto-update uses) still ship.
+          args: ${{ runner.os == 'Linux' && contains(github.ref_name, '-') && '--bundles deb,appimage' || matrix.args }}
 
   publish:
     name: Publish release
