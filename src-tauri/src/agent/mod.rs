@@ -136,7 +136,7 @@ pub struct AgentEvent {
     pub text: String,
 }
 
-const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code"];
+const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code", "openai-compat"];
 const RESTARTS: &[&str] = &["never", "on-failure", "always"];
 const COLS: &str =
     "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch";
@@ -200,6 +200,31 @@ fn check(runtime: &str, restart: &str, command: &str, max_restarts: u32, max_tur
     if !RUNTIMES.contains(&runtime) {
         return Err(KalypsoError::Invalid(format!("unknown runtime {runtime}")));
     }
+    check_limits(restart, command, max_restarts, max_turns)
+}
+
+/// Agents on other models name their model "provider/model", the provider being a gateway route
+/// (openai, openrouter, ollama, or any other with a <PROVIDER>_BASE_URL secret).
+fn check_model(runtime: &str, model: &str) -> Result<()> {
+    if runtime != "openai-compat" {
+        return Ok(());
+    }
+    let ok = model.split_once('/').is_some_and(|(p, m)| {
+        !p.is_empty()
+            && p.len() <= 40
+            && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && !m.trim().is_empty()
+    });
+    if ok {
+        Ok(())
+    } else {
+        Err(KalypsoError::Invalid(format!(
+            "{model:?} isn't a model for that runtime: use provider/model, for example ollama/llama3.1 or openrouter/qwen/qwen3-coder"
+        )))
+    }
+}
+
+fn check_limits(restart: &str, command: &str, max_restarts: u32, max_turns: u32) -> Result<()> {
     if !RESTARTS.contains(&restart) {
         return Err(KalypsoError::Invalid(format!("unknown restart policy {restart}")));
     }
@@ -245,6 +270,7 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
     let command = new.command.unwrap_or_default().trim().to_string();
     let (max_turns, max_restarts) = (new.max_turns.unwrap_or(0), new.max_restarts.unwrap_or(3));
     check(&new.runtime, &restart, &command, max_restarts, max_turns)?;
+    check_model(&new.runtime, new.model.as_deref().unwrap_or_default().trim())?;
     let sandbox_id = new.sandbox_id.filter(|s| !s.is_empty());
     check_sandbox(db, ns, sandbox_id.as_deref())?;
     let repo = new.repo.map(|r| r.trim().trim_end_matches(".git").to_string()).filter(|r| !r.is_empty());
@@ -323,6 +349,7 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
         a.repo_account = Some(v).filter(|s| !s.is_empty());
     }
     check(&a.runtime, &a.restart, &a.command, a.max_restarts, a.max_turns)?;
+    check_model(&a.runtime, &a.model)?;
     check_sandbox(db, ns, a.sandbox_id.as_deref())?;
     check_repo(db, ns, a.repo.as_deref(), a.repo_account.as_deref())?;
     db.with(|c| {

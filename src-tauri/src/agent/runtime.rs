@@ -64,6 +64,7 @@ pub fn for_kind(kind: &str) -> Result<Arc<dyn AgentRuntime>> {
     match kind {
         "command" => Ok(Arc::new(CommandRuntime)),
         "claude-sdk" => Ok(Arc::new(ClaudeSdkRuntime)),
+        "openai-compat" => Ok(Arc::new(OpenAiRuntime)),
         "claude-code" => Err(KalypsoError::Invalid("Claude Code agents arrive with #15".into())),
         other => Err(KalypsoError::Invalid(format!("unknown runtime {other}"))),
     }
@@ -140,6 +141,58 @@ impl AgentRuntime for ClaudeSdkRuntime {
             format!("KALYPSO_AGENT={}", a.name),
             format!("KALYPSO_AGENT_ID={}", a.id),
             format!("KALYPSO_MODEL={}", a.model),
+            format!("KALYPSO_ROLE={}", a.role),
+            format!("KALYPSO_TASK={}", a.command),
+            format!("KALYPSO_MAX_TURNS={}", a.max_turns),
+        ];
+        let (env, cwd) = with_repo(env, a);
+        let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, &cwd, &env).await?;
+        Ok(Run { events: lines(stream.output).map(sdk_event).boxed(), input: stream.input, handle, pid_file })
+    }
+
+    fn encode(&self, message: &str) -> Vec<u8> {
+        let mut b = serde_json::json!({ "type": "message", "text": message }).to_string().into_bytes();
+        b.push(b'\n');
+        b
+    }
+
+    fn counts_turns(&self) -> bool {
+        true
+    }
+}
+
+/// The runner for any OpenAI-compatible model, in the same image.
+pub const OPENAI_RUNNER: &str = "/opt/kalypso/runner/openai.mjs";
+
+/// An agent on any OpenAI-compatible model (OpenAI, OpenRouter, Ollama, vLLM, LM Studio, …).
+/// Its model is "provider/model"; calls go to the gateway's `/<provider>/chat/completions`, so the
+/// provider's key and base URL are gateway secrets, never in the sandbox. Same tools, policy
+/// checks and transcript as the Claude runner.
+pub struct OpenAiRuntime;
+
+#[async_trait]
+impl AgentRuntime for OpenAiRuntime {
+    fn kind(&self) -> &'static str {
+        "openai-compat"
+    }
+
+    async fn start(&self, ctx: &AgentCtx<'_>) -> Result<Run> {
+        let a = ctx.agent;
+        let Some((provider, model)) = a.model.split_once('/') else {
+            return Err(KalypsoError::Invalid(format!("{} needs a model as provider/model, for example ollama/llama3.1", a.name)));
+        };
+        let pid_file = pid_file(&a.id);
+        let missing = format!(
+            r#"{{"t":"error","text":"The sandbox image has no KALYPSO agent runner for other models. Use {RUNNER_IMAGE} (or an image built FROM it), and pull it again if it is older."}}"#
+        );
+        let wrapper =
+            format!("echo $$ > {pid_file}; [ -f {OPENAI_RUNNER} ] || {{ echo '{missing}'; exit 64; }}; exec node {OPENAI_RUNNER}");
+        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
+        let env = vec![
+            format!("KALYPSO_AGENT={}", a.name),
+            format!("KALYPSO_AGENT_ID={}", a.id),
+            format!("KALYPSO_PROVIDER={provider}"),
+            format!("KALYPSO_MODEL={model}"),
             format!("KALYPSO_ROLE={}", a.role),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),

@@ -269,10 +269,10 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       </div>
 
       <div className="agent-facts">
-        <Fact k="Runtime" v={a.runtime === "claude-sdk" ? <>Claude Agent SDK · <span className="mono">{a.model}</span></> : <span className="mono">{a.runtime}</span>} />
+        <Fact k="Runtime" v={a.runtime === "claude-sdk" ? <>Claude Agent SDK · <span className="mono">{a.model}</span></> : a.runtime === "openai-compat" ? <>Any model · <span className="mono">{a.model}</span></> : <span className="mono">{a.runtime}</span>} />
         <Fact k="Sandbox" v={sb ? sb.name : <span className="faint">None assigned</span>} />
         <Fact k="If it stops" v={a.restart === "never" ? "Leave it stopped" : a.restart === "always" ? `Restart, up to ${a.maxRestarts}x` : `Restart after crashes, up to ${a.maxRestarts}x`} />
-        <Fact k={a.runtime === "claude-sdk" ? "Turns per task" : "Turns per run"} v={a.maxTurns ? a.maxTurns : "No limit"} />
+        <Fact k={a.runtime === "claude-sdk" || a.runtime === "openai-compat" ? "Turns per task" : "Turns per run"} v={a.maxTurns ? a.maxTurns : "No limit"} />
       </div>
 
       <Section title="Transcript">
@@ -309,8 +309,8 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
 
       <RepoSection agent={a} />
 
-      <Section title={a.runtime === "claude-sdk" ? "Task" : "Command"}>
-        {a.runtime === "claude-sdk" ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}
+      <Section title={a.runtime === "claude-sdk" || a.runtime === "openai-compat" ? "Task" : "Command"}>
+        {a.runtime === "claude-sdk" || a.runtime === "openai-compat" ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}
       </Section>
     </>
   );
@@ -318,6 +318,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
 
 const RUNTIMES = [
   { id: "claude-sdk", label: "Claude Agent SDK", hint: "Claude works in the sandbox with its tools. KALYPSO checks every tool call against your policies.", ready: true },
+  { id: "openai-compat", label: "Any model (OpenAI-compatible)", hint: "OpenAI, OpenRouter, Ollama, vLLM, LM Studio… through the gateway, with the same tools and policy checks.", ready: true },
   { id: "command", label: "Command", hint: "Any program run in the sandbox. Messages go to its input; what it prints is the transcript.", ready: true },
   { id: "claude-code", label: "Claude Code", hint: "Coming with #15.", ready: false },
 ];
@@ -342,6 +343,12 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
   const [maxTurns, setMaxTurns] = useState("0");
   const [repo, setRepo] = useState<RepoChoice>(null);
   const sdk = runtime === "claude-sdk";
+  // Any OpenAI-compatible model: a gateway provider route and the model name there.
+  const anyModel = runtime === "openai-compat";
+  const runner = sdk || anyModel;
+  const [provider, setProvider] = useState("ollama");
+  const [otherModel, setOtherModel] = useState("");
+  const providerId = provider.trim().toLowerCase();
   const picked = sandboxes.find((s) => s.id === sandboxId);
 
   const create = () => {
@@ -351,12 +358,16 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         : !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(n) ? "Use letters, digits, - and _, starting with a letter or digit."
         : agents.some((a) => a.name.toLowerCase() === n.toLowerCase()) ? `An agent called ${n} already exists here.`
         : undefined,
-      command: sdk || command.trim() ? undefined : "Say what to run, for example: python agent.py",
+      command: runner || command.trim() ? undefined : "Say what to run, for example: python agent.py",
+      model: !anyModel ? undefined
+        : !/^[a-z0-9][a-z0-9-]*$/.test(providerId) ? "Name the provider with lowercase letters, digits and dashes, as in its secrets (OPENROUTER_… is openrouter)."
+        : !otherModel.trim() ? "Name the model, for example llama3.1 or qwen/qwen3-coder."
+        : undefined,
       sandbox: sandboxId ? undefined : sandboxes.length ? "Pick a sandbox." : "Create a sandbox first.",
     });
     if (!ok) return;
     api.agentCreate(state.ns, {
-      name: n, role: role.trim() || undefined, runtime, model: sdk ? model : undefined, command: command.trim(), sandbox_id: sandboxId,
+      name: n, role: role.trim() || undefined, runtime, model: sdk ? model : anyModel ? `${providerId}/${otherModel.trim()}` : undefined, command: command.trim(), sandbox_id: sandboxId,
       restart, max_restarts: Math.max(0, +maxRestarts || 0), max_turns: Math.max(0, +maxTurns || 0),
       repo: repo?.repo, repo_account: repo?.account,
     })
@@ -392,7 +403,27 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
           </label>
         )}
       </div>
-      {sdk && picked && !hasRunner(picked.image) && (
+      {anyModel && (
+        <div className="field-row">
+          <Field label="Provider" hint="A gateway route: openai, openrouter, ollama, or your own name.">
+            <input className="input mono" list="providers" value={provider} onChange={(e) => { setProvider(e.target.value); clear("model"); }} placeholder="ollama" />
+            <datalist id="providers">
+              {["ollama", "openai", "openrouter", "vllm", "lmstudio", "together", "groq"].map((p) => <option key={p} value={p} />)}
+            </datalist>
+          </Field>
+          <Field label="Model" error={errors.model}>
+            <input className="input mono" value={otherModel} onChange={(e) => { setOtherModel(e.target.value); clear("model"); }} placeholder={providerId === "openrouter" ? "qwen/qwen3-coder" : providerId === "openai" ? "gpt-5-mini" : "llama3.1"} />
+          </Field>
+        </div>
+      )}
+      {anyModel && /^[a-z0-9][a-z0-9-]*$/.test(providerId) && (
+        <p className="faint small" style={{ margin: 0 }}>
+          Needs {providerId === "openai" ? "" : <><span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL</span>{["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : " and "}</>}
+          {["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : <span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_API_KEY</span>}
+          {" "}in Secrets with the gateway scope. The agent never sees them.{providerId === "ollama" ? " For Ollama on this machine, the base URL is usually http://localhost:11434/v1 (the gateway calls it from your machine, not from the sandbox)." : ""}
+        </p>
+      )}
+      {runner && picked && !hasRunner(picked.image) && (
         <p className="agent-reason bad" style={{ margin: 0 }}>
           {picked.name} runs <span className="mono">{picked.image}</span>, which has no agent runner. Use a sandbox with <span className="mono">{RUNNER_IMAGE}</span>, or an image built FROM it.
         </p>
@@ -403,7 +434,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         <RepoPicker value={repo} onChange={setRepo} />
         <span className="faint small">Optional. Cloned into its sandbox on start; it works on its own branch and opens pull requests.</span>
       </div>
-      {sdk ? (
+      {runner ? (
         <Field label="Task" hint="What to do first. Leave it empty to give it work later from the transcript.">
           <textarea className="input" rows={3} value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Fix the failing tests in /work/app and open a summary of what changed." />
         </Field>
@@ -423,8 +454,8 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         <label className="field">Restarts, at most
           <input className="input mono" type="number" min={0} max={100} value={maxRestarts} disabled={restart === "never"} onChange={(e) => setMaxRestarts(e.target.value)} />
         </label>
-        <label className="field">{sdk ? "Turns per task" : "Turns per run"}
-          <input className="input mono" type="number" min={0} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} title={sdk ? "Model turns for each task or message; 0 means no limit" : "Messages per run; 0 means no limit"} />
+        <label className="field">{runner ? "Turns per task" : "Turns per run"}
+          <input className="input mono" type="number" min={0} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} title={runner ? "Model turns for each task or message; 0 means no limit" : "Messages per run; 0 means no limit"} />
         </label>
       </div>
       <ModalActions onCancel={onClose} onConfirm={create} confirm="Create agent" />

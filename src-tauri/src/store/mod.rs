@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0007_secret_grants.sql"),
     include_str!("migrations/0008_github_accounts.sql"),
     include_str!("migrations/0009_agent_repos.sql"),
+    include_str!("migrations/0010_any_model_agents.sql"),
 ];
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -111,10 +112,25 @@ impl Db {
 fn migrate(conn: &Connection) -> Result<()> {
     let applied: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(applied as usize) {
+        // A migration that rebuilds a referenced table runs with foreign keys off (they can't be
+        // turned off inside a transaction), then must leave no broken reference behind.
+        let fk_off = sql.starts_with("-- kalypso: foreign_keys off");
+        if fk_off {
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
+        }
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(sql)?;
+        if fk_off {
+            let broken: i64 = tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
+            if broken > 0 {
+                return Err(KalypsoError::Invalid(format!("migration {} would leave {broken} broken references", i + 1)));
+            }
+        }
         tx.pragma_update(None, "user_version", (i + 1) as i64)?;
         tx.commit()?;
+        if fk_off {
+            conn.pragma_update(None, "foreign_keys", "ON")?;
+        }
         tracing::info!(version = i + 1, "applied migration");
     }
     Ok(())
@@ -132,6 +148,38 @@ mod tests {
         let db = Db::open(&path).unwrap();
         let v: i64 = db.with(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).unwrap();
         assert_eq!(v as usize, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn rebuilding_agents_keeps_their_runs_and_events() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        // Up to just before the rebuild, with an agent that has a run and an event.
+        let before = MIGRATIONS.iter().position(|m| m.contains("agents_new")).unwrap();
+        for sql in &MIGRATIONS[..before] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", before as i64).unwrap();
+        conn.execute_batch(
+            "INSERT INTO namespaces (id, name) VALUES ('work','work');
+             INSERT INTO agents (id, ns, name, runtime) VALUES ('ag1','work','scout','claude-sdk');
+             INSERT INTO agent_runs (id, agent_id, ns, attempt) VALUES ('run1','ag1','work',1);
+             INSERT INTO agent_events (run_id, kind, text) VALUES ('run1','output','hello');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let count = |t: &str| conn.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!((count("agents"), count("agent_runs"), count("agent_events")), (1, 1, 1));
+        let fk: i64 = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
+        assert_eq!(fk, 1, "foreign keys are back on");
+        conn.execute(
+            "INSERT INTO agents (id, ns, name, runtime, model) VALUES ('ag2','work','local','openai-compat','ollama/llama3.1')",
+            [],
+        )
+        .unwrap();
+        // Deleting an agent still cascades to its runs.
+        conn.execute("DELETE FROM agents WHERE id = 'ag1'", []).unwrap();
+        assert_eq!(count("agent_runs"), 0);
     }
 
     #[test]

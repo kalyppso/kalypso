@@ -35,3 +35,17 @@ KALYPSO_TEST_RUNTIME=1 cargo test --manifest-path src-tauri/Cargo.toml --test ag
 ```
 
 To use your own tools, build `FROM ghcr.io/kalyppso/agent-runner:latest`.
+
+## Any OpenAI-compatible model (`openai.mjs`)
+
+The same image runs agents on any model that speaks `/chat/completions` with tools: OpenAI,
+OpenRouter, Ollama, vLLM, LM Studio and others. Pick the **Any model (OpenAI-compatible)** runtime
+and a model written as `provider/model` (`ollama/llama3.1`, `openrouter/qwen/qwen3-coder`).
+
+- Calls go to the gateway's `/<provider>/chat/completions`, so `<PROVIDER>_BASE_URL` and (unless the
+  model runs locally) `<PROVIDER>_API_KEY` are gateway-scoped secrets; the sandbox only has its `kx_` key.
+- Tools: `bash`, `read_file`, `write_file`, `edit_file`, `list_files`. Every call is checked with
+  `POST /_kalypso/policy/check` first; a blocked call never runs and the model gets the reason.
+- Same stdin and stdout as `runner.mjs`, and the conversation is kept in
+  `/work/.kalypso/agents/<id>/openai-messages.json`, so a restart picks it up.
+
