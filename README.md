@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
-    <img src="docs/images/logo-light.png" width="180" alt="KALYPSO logo: Kalypso drawn in fine wireframe lines, with coral in her hair">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+    <img src="docs/images/logo-light.svg" width="200" alt="KALYPSO logo: Kalypso drawn in fine wireframe lines, with coral in her hair">
   </picture>
 </p>
 
