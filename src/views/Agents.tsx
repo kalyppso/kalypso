@@ -3,7 +3,7 @@ import { ArrowLeft, Bot, ChevronRight, Pause, Play, Plus, Send, Square, Trash2 }
 import { api, errorMessage, isLive, onAgentUpdate, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
@@ -13,13 +13,16 @@ import "../styles/agents.css";
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 
 export function Agents() {
-  const { state, dispatch } = useStore();
+  const { dispatch } = useStore();
   const { loading, agents, sandboxes } = useNamespaced();
-  const [creating, setCreating] = useState(state.compose);
+  const [creating, setCreating] = useState(false);
+  useCompose(() => setCreating(true));
   const [openId, setOpenId] = useState<string | null>(null);
   const open = agents.find((a) => a.id === openId);
 
-  if (open) return isLive() ? <LiveAgentDetail agent={open} onBack={() => setOpenId(null)} /> : <AgentDetail agent={open} onBack={() => setOpenId(null)} />;
+  const form = creating && (isLive() ? <NewLiveAgent onClose={() => setCreating(false)} /> : <NewAgent onClose={() => setCreating(false)} />);
+  // "New agent" from the palette also works while an agent is open.
+  if (open) return <>{isLive() ? <LiveAgentDetail agent={open} onBack={() => setOpenId(null)} /> : <AgentDetail agent={open} onBack={() => setOpenId(null)} />}{form}</>;
 
   return (
     <>
@@ -54,7 +57,7 @@ export function Agents() {
         })}
       </div>
 
-      {creating && (isLive() ? <NewLiveAgent onClose={() => setCreating(false)} /> : <NewAgent onClose={() => setCreating(false)} />)}
+      {form}
     </>
   );
 }
@@ -302,7 +305,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         {a.status === "running" && (
           <div className="composer">
             <input className="input" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={`Send ${a.name} a message (a line on its input)`} />
-            <button className="btn" onClick={send} disabled={!message.trim()}><Send size={13} /> Send</button>
+            <button className="btn" onClick={send} disabled={!message.trim()} title={message.trim() ? undefined : "Type a message first"}><Send size={13} /> Send</button>
           </div>
         )}
       </Section>

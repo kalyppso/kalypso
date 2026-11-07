@@ -22,7 +22,7 @@ export function PhonePane() {
 
   return (
     <div className="phone-pane">
-      <form className="urlbar" onSubmit={(e) => { e.preventDefault(); setUrl(/^https?:\/\//.test(draft) ? draft : `https://${draft}`); }}>
+      <form className="urlbar" onSubmit={(e) => { e.preventDefault(); setUrl(/^https?:\/\//.test(draft) ? draft : `https://${draft}`); setNonce(nonce + 1); }}>
         <select className="select" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} aria-label="Device">
           {DEVICES.map((d) => <option key={d.id} value={d.id}>{d.label} ({d.w}×{d.h})</option>)}
         </select>

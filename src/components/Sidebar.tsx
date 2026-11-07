@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { openSettings } from "../views/Settings";
 import { Logo } from "./Logo";
 import {
   BarChart3,
@@ -174,7 +175,7 @@ function UserMenu({ compact = false, below = false }: { compact?: boolean; below
       </button>
       {open && (
         <div className="popover" style={below ? { right: 0, left: "auto", minWidth: 220 } : { top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: compact ? 220 : "100%", minWidth: 0 }}>
-          <button className="pop-item" onClick={() => { dispatch({ type: "view", view: "settings" }); setOpen(false); }}><Settings size={14} /> Account and appearance</button>
+          <button className="pop-item" onClick={() => { openSettings(dispatch, "account"); setOpen(false); }}><Settings size={14} /> Account and appearance</button>
           {user.provider !== "local" && <button className="pop-item" onClick={() => dispatch({ type: "logout" })}><LogOut size={14} /> Sign out</button>}
         </div>
       )}

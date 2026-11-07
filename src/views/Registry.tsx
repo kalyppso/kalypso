@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ExternalLink, Plug, Sparkles, Trash2 } from "lucide-react";
 import { siGithub } from "simple-icons";
 import { uid, useStore, useToast } from "../store";
-import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
+import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, Toggle, useErrors } from "../components/ui";
 import { BrandIcon } from "./Auth";
 import { lookupSkills, parseRepo, type SkillLookup } from "../github";
 import "../styles/integrations.css";
@@ -30,6 +30,10 @@ export function Registry() {
       <PageHead title="Skills & MCP servers" subtitle="Shared catalog across namespaces. Each agent only gets what you attach to it.">
         {tab === "skills" && <PrimaryButton onClick={() => setAdding(true)} icon={<BrandIcon icon={siGithub} size={14} />}>Add from GitHub</PrimaryButton>}
       </PageHead>
+
+      {tab === "skills"
+        ? <PreviewNote issue={24}>Skills you add are kept on this machine, but agents don't get them yet. That arrives with the skills registry in</PreviewNote>
+        : <PreviewNote issue={25}>Turning a server on or off is kept on this machine; agents get MCP servers with the registry in</PreviewNote>}
 
       <div className="ptabs" role="tablist">
         <button role="tab" aria-selected={tab === "skills"} className={`ptab ${tab === "skills" ? "active" : ""}`} onClick={() => setTab("skills")}>

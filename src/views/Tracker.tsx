@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, GitPullRequest, Plus, Ticket as TicketIcon, Trash2, X } from "lucide-react";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, initials, usd, useErrors } from "../components/ui";
 import "../styles/pages.css";
 import type { Task, TaskStatus } from "../types";
@@ -22,7 +22,8 @@ export function Tracker() {
   const [agentFilter, setAgentFilter] = useState("all");
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<TaskStatus | null>(null);
-  const [creating, setCreating] = useState(state.compose);
+  const [creating, setCreating] = useState(false);
+  useCompose(() => setCreating(true));
   const [importing, setImporting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const opened = state.tasks.find((t) => t.id === openId);

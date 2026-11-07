@@ -3,6 +3,7 @@ import { GitBranch, Loader2, Lock, Search, X } from "lucide-react";
 import { api, errorMessage } from "../backend";
 import type { Repo } from "../bindings/Repo";
 import { useStore } from "../store";
+import { openSettings } from "../views/Settings";
 
 // Pick a GitHub repository for an agent (#100), searching every account the namespace may use,
 // organisation repositories included.
@@ -45,7 +46,7 @@ export function RepoPicker({ value, onChange }: { value: RepoChoice; onChange: (
     return (
       <p className="faint small" style={{ margin: 0 }}>
         No GitHub account may be used in {state.ns} yet.{" "}
-        <button type="button" className="link-btn" onClick={() => dispatch({ type: "view", view: "settings" })}>Connect one in Settings</button>, and allow it here.
+        <button type="button" className="link-btn" onClick={() => openSettings(dispatch, "account")}>Connect one in Settings</button>, and allow it here.
       </p>
     );
   }

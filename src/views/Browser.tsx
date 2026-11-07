@@ -79,9 +79,9 @@ export function BrowserPane() {
           <button className="tab" onClick={add} aria-label="New tab"><Plus size={13} /></button>
         </div>
         <form className="urlbar" onSubmit={(e) => { e.preventDefault(); go(address); }}>
-          <button type="button" className="btn ghost sm" onClick={() => step(-1)} disabled={tab.index === 0}><ArrowLeft size={14} /></button>
-          <button type="button" className="btn ghost sm" onClick={() => step(1)} disabled={tab.index >= tab.history.length - 1}><ArrowRight size={14} /></button>
-          <button type="button" className="btn ghost sm" onClick={() => update(tab.id, (t) => ({ ...t, nonce: t.nonce + 1 }))}><RotateCw size={14} /></button>
+          <button type="button" className="btn ghost sm" onClick={() => step(-1)} disabled={tab.index === 0} title="Back" aria-label="Back"><ArrowLeft size={14} /></button>
+          <button type="button" className="btn ghost sm" onClick={() => step(1)} disabled={tab.index >= tab.history.length - 1} title="Forward" aria-label="Forward"><ArrowRight size={14} /></button>
+          <button type="button" className="btn ghost sm" onClick={() => update(tab.id, (t) => ({ ...t, nonce: t.nonce + 1 }))} title="Reload" aria-label="Reload"><RotateCw size={14} /></button>
           <input className="input mono" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search or enter address" />
         </form>
         {tabs.map((t) => (

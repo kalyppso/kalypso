@@ -321,15 +321,17 @@ function AgentStep({ ns, box, agent, keyOk, refresh, onNext }: {
   const [error, setError] = useState<{ what: string; detail: string } | null>(null);
   const [sent, setSent] = useState(false);
 
-  // Start it, wait until it's running, then hand it the starter task.
-  const run = async (id: string) => {
-    setBusy("Starting the agent…");
-    await api.agentStart(ns, id);
-    for (let i = 0; i < 30; i++) {
-      const a = (await api.agentList(ns)).find((x) => x.id === id);
-      if (a?.status === "running") break;
-      if (a && ["failed", "error", "stopped"].includes(a.status)) throw new Error(a.status_reason || `the agent ${a.status}`);
-      await new Promise((r) => setTimeout(r, 1000));
+  // Start it (unless it already runs: the core refuses a second start), wait until it's running, then hand it the starter task.
+  const run = async (id: string, started = false) => {
+    if (!started) {
+      setBusy("Starting the agent…");
+      await api.agentStart(ns, id);
+      for (let i = 0; i < 30; i++) {
+        const a = (await api.agentList(ns)).find((x) => x.id === id);
+        if (a?.status === "running") break;
+        if (a && ["failed", "error", "stopped"].includes(a.status)) throw new Error(a.status_reason || `the agent ${a.status}`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
     }
     setBusy("Giving it a first task…");
     await api.agentSend(ns, id, STARTER_TASK);
@@ -339,7 +341,7 @@ function AgentStep({ ns, box, agent, keyOk, refresh, onNext }: {
     if (!box) return;
     setError(null);
     try {
-      if (agent) await run(agent.id);
+      if (agent) await run(agent.id, agent.status === "running");
       else {
         setBusy("Creating the agent…");
         const rec = await api.agentCreate(ns, {
@@ -367,7 +369,7 @@ function AgentStep({ ns, box, agent, keyOk, refresh, onNext }: {
       {busy && <p className="faint"><Loader2 size={14} className="spin" /> {busy}</p>}
       {error && <Problem what={error.what} fix="Check the details, fix what they point at, and try again." detail={error.detail} />}
       <div className="setup-actions">
-        {(!running || !sent) && <button className="btn primary" disabled={!box || !!busy} onClick={go}>{agent ? (running ? "Give it the first task" : "Start it") : "Create and start"}</button>}
+        {(!running || !sent) && <button className="btn primary" disabled={!box || !!busy} title={box ? undefined : "Create the sandbox first"} onClick={go}>{agent ? (running ? "Give it the first task" : "Start it") : "Create and start"}</button>}
         {running && <button className={sent ? "btn primary" : "btn"} onClick={onNext}>Continue <ChevronRight size={13} /></button>}
       </div>
     </Panel>

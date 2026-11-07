@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { RUNNER_IMAGE } from "./Agents";
 import { Boxes, Copy, Network, Pause, Play, Plus, Square, Trash2, X } from "lucide-react";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
 import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import { useEngine } from "../engine";
@@ -15,7 +15,8 @@ export function Sandboxes() {
   const { state, dispatch } = useStore();
   const { loading, sandboxes, agents } = useNamespaced();
   const toast = useToast();
-  const [creating, setCreating] = useState(state.compose);
+  const [creating, setCreating] = useState(false);
+  useCompose(() => setCreating(true));
   const [busy, setBusy] = useState<string | null>(null);
   const [ports, setPorts] = useState<Sandbox | null>(null);
 

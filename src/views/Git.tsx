@@ -54,8 +54,8 @@ export function Git() {
       <>
         <PageHead title="Git tracker" subtitle={subtitle} />
         <EmptyState icon={GitBranch} title="No repositories yet">
-          Commits, pull requests and CI from the repositories your agents work on. Linking GitHub repositories to agents is coming in{" "}
-          <a href="https://github.com/kalyppso/kalypso/issues/100" target="_blank" rel="noreferrer">#100</a>.
+          Commits, pull requests and CI from the repositories your agents work on show here once the tracker syncs with GitHub, coming in{" "}
+          <a href="https://github.com/kalyppso/kalypso/issues/29" target="_blank" rel="noreferrer">#29</a>. Until then, each agent's pull requests are on its page.
         </EmptyState>
       </>
     );

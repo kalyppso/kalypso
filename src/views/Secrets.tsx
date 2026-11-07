@@ -3,7 +3,7 @@ import { Copy, Eye, EyeOff, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 import type { GatewayInfo } from "../bindings/GatewayInfo";
 import type { GatewayKey } from "../bindings/GatewayKey";
 import type { SecretGrant } from "../bindings/SecretGrant";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { api, errorMessage, isLive, onPolicyLog, syncNamespace } from "../backend";
 import { EmptyState, Field, Modal, ModalActions, PageHead, PrimaryButton, useErrors, Skeleton } from "../components/ui";
 import "../styles/pages.css";
@@ -14,7 +14,8 @@ export function Secrets() {
   const toast = useToast();
   // Decrypted values live only in this component, only after the user asks.
   const [revealed, setRevealed] = useState<Record<string, string>>({});
-  const [creating, setCreating] = useState(state.compose);
+  const [creating, setCreating] = useState(false);
+  useCompose(() => setCreating(true));
 
   const valueOf = async (id: string) => {
     if (revealed[id] !== undefined) return revealed[id];
@@ -129,7 +130,7 @@ function GatewayKeys() {
       {minted && (
         <div className="row" style={{ margin: "12px 16px 0" }}>
           <span className="mono small" style={{ wordBreak: "break-all" }}>{minted}</span>
-          <button className="btn sm" onClick={() => navigator.clipboard?.writeText(minted).then(() => toast("Copied"))}><Copy size={12} /></button>
+          <button className="btn sm" title="Copy" aria-label="Copy" onClick={() => navigator.clipboard?.writeText(minted).then(() => toast("Copied"))}><Copy size={12} /></button>
           <span className="faint small">Shown once.</span>
         </div>
       )}
@@ -147,7 +148,7 @@ function GatewayKeys() {
       </table>}
       <div className="row" style={{ padding: 16 }}>
         <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. laptop scripts" onKeyDown={(e) => e.key === "Enter" && create()} />
-        <button className="btn" onClick={create}>Create key</button>
+        <button className="btn" onClick={create} disabled={!label.trim()} title={label.trim() ? undefined : "Type a label first"}>Create key</button>
       </div>
     </div>
   );

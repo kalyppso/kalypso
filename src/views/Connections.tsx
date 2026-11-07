@@ -3,7 +3,7 @@ import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, a
 import "@xyflow/react/dist/style.css";
 import "../styles/connections.css";
 import { ArrowLeftRight, Cable, Loader2, Plus, Trash2 } from "lucide-react";
-import { uid, useNamespaced, useStore, useToast } from "../store";
+import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNote, PrimaryButton, Status, useErrors, StatusDot } from "../components/ui";
 import { Logo } from "./Integrations";
 import type { Agent, Connection, ConnectionKind, IntegrationKind } from "../types";
@@ -42,11 +42,12 @@ function ToolNode({ data }: NodeProps<Node<ToolNodeData>>) {
 const nodeTypes = { agent: AgentNode, tool: ToolNode };
 
 export function Connections() {
-  const { state, dispatch } = useStore();
+  const { dispatch } = useStore();
   const toast = useToast();
   const { agents, connections, integrations } = useNamespaced();
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ from?: string; to?: string } | null>(state.compose ? {} : null);
+  const [draft, setDraft] = useState<{ from?: string; to?: string } | null>(null);
+  useCompose(() => setDraft({}));
 
   const isAgent = (id: string) => agents.some((a) => a.id === id);
   const name = (id: string) => agents.find((a) => a.id === id)?.name ?? integrations.find((i) => i.id === id)?.name ?? id.replace(/^remote:/, "");
@@ -316,7 +317,7 @@ function NewConnection({ seed, onClose }: { seed: { from?: string; to?: string }
           <div className="field">How they connect
             <div style={{ display: "grid", gap: 6 }}>
               {KINDS.map((k) => (
-                <button key={k.id} type="button" className="tile" onClick={() => setKind(k.id)} style={{ padding: "8px 10px", borderColor: kind === k.id ? "var(--accent-hi)" : undefined }}>
+                <button key={k.id} type="button" className="tile" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} style={{ padding: "8px 10px", borderColor: kind === k.id ? "var(--accent-hi)" : undefined }}>
                   <span style={{ width: 14, height: 14, borderRadius: 99, border: "1px solid var(--border-strong)", display: "grid", placeItems: "center", flex: "none" }}>
                     {kind === k.id && <span style={{ width: 8, height: 8, borderRadius: 99, background: "var(--accent-hi)" }} />}
                   </span>
