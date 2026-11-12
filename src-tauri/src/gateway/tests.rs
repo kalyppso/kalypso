@@ -142,8 +142,8 @@ async fn meters_streams() {
 
     let ev = e.events.recv().await.unwrap();
     assert_eq!((ev.input_tokens, ev.output_tokens, ev.cache_read), (1000, 500, 2000));
-    // 1000 × $2 + 500 × $10 + 2000 × $0.20 (per 1M) = 2000 + 5000 + 400 micros.
-    assert_eq!(ev.cost_micros, Some(7_400));
+    // 1000 × $2 + 500 × $10 + 2000 × $0.10 (per 1M) = 2000 + 5000 + 200 micros.
+    assert_eq!(ev.cost_micros, Some(7_200));
     assert!(e.db.with(|c| Ok(c.query_row("SELECT stream FROM usage_events", [], |r| r.get::<_, bool>(0))?)).unwrap());
 }
 
