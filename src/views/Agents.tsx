@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Bot, ChevronRight, Pause, Play, Plus, Send, Square, Trash2 } from "lucide-react";
-import { api, errorMessage, isLive, onAgentUpdate, syncNamespace, toAgent } from "../backend";
-import type { AgentEvent } from "../bindings/AgentEvent";
-import type { AgentRun } from "../bindings/AgentRun";
-import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowLeft, Bot, ChevronRight, Pause, Play, Plus, Square, Trash2 } from "lucide-react";
+import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
+import { uid, useNamespaced, useStore, useToast, useCompose, useFocus } from "../store";
+import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
 import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
@@ -18,6 +17,7 @@ export function Agents() {
   const [creating, setCreating] = useState(false);
   useCompose(() => setCreating(true));
   const [openId, setOpenId] = useState<string | null>(null);
+  useFocus(setOpenId);
   const open = agents.find((a) => a.id === openId);
 
   const form = creating && (isLive() ? <NewLiveAgent onClose={() => setCreating(false)} /> : <NewAgent onClose={() => setCreating(false)} />);
@@ -103,6 +103,7 @@ function AgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void })
         <Fact k="Integrations" v={`${linked.length} linked`} />
       </div>
 
+      <Section title="Conversation"><SampleConversation agent={a} /></Section>
       <Section title="Skills"><Chips items={label(a.skills, state.skills)} /></Section>
       <Section title="MCP servers"><Chips items={label(a.mcps, state.mcps)} /></Section>
       <Section title="Secrets"><Chips items={label(a.secrets, secrets)} mono /></Section>
@@ -114,6 +115,17 @@ function AgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void })
       </Section>
       <Section title="Configuration"><CodeReveal code={a.config} /></Section>
     </>
+  );
+}
+
+function SampleConversation({ agent: a }: { agent: Agent }) {
+  const { state } = useStore();
+  const convo = useAgentConversation(state.ns, a);
+  return (
+    <div className="cv-panel">
+      <Conversation events={convo.events} working={false} empty={<>No runs yet. Start {a.name} and what it does shows up here.</>} />
+      <Composer onSend={convo.send} placeholder={`Message ${a.name}`} />
+    </div>
   );
 }
 
@@ -201,46 +213,13 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
   const toast = useToast();
   const { sandboxes } = useNamespaced();
   const sb = sandboxes.find((s) => s.id === a.sandboxId);
-  const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [runId, setRunId] = useState<string | null>(null);
-  const [lines, setLines] = useState<AgentEvent[]>([]);
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
-  const follow = useRef(true); // keep showing the newest run until one is picked
-
-  const loadRuns = () =>
-    api.agentRuns(state.ns, a.id).then((r) => {
-      setRuns(r);
-      if (follow.current) setRunId(r[0]?.id ?? null);
-    }).catch(() => {});
-
-  useEffect(() => { follow.current = true; loadRuns(); }, [a.id]);
-  useEffect(() => {
-    if (!runId) return setLines([]);
-    api.agentEvents(state.ns, runId).then(setLines).catch(() => setLines([]));
-  }, [runId]);
-  // New lines and new runs arrive as they happen.
-  useEffect(() => {
-    const off = onAgentUpdate((u) => {
-      if (u.agent_id !== a.id) return;
-      if (u.event) {
-        if (u.event.run_id === runId) setLines((l) => [...l, u.event!]);
-        else if (follow.current && u.event.kind === "status") loadRuns();
-      } else loadRuns();
-    });
-    return () => void off.then((f) => f());
-  }, [a.id, runId]);
-  useEffect(() => { bottom.current?.scrollIntoView({ block: "nearest" }); }, [lines.length]);
+  const convo = useAgentConversation(state.ns, a);
+  const gate = useAgentGate(a, () => syncNamespace(state.ns, dispatch));
 
   const act = (what: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     fn().then(() => syncNamespace(state.ns, dispatch)).then(() => toast(what)).catch((e) => toast(errorMessage(e), "err")).finally(() => setBusy(false));
-  };
-  const send = () => {
-    const m = message.trim();
-    if (!m) return;
-    api.agentSend(state.ns, a.id, m).then(() => setMessage("")).catch((e) => toast(errorMessage(e), "err"));
   };
   const remove = () => {
     if (!confirm(`Delete ${a.name} and its run history?`)) return;
@@ -278,36 +257,18 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         <Fact k={a.runtime === "claude-sdk" || a.runtime === "openai-compat" ? "Turns per task" : "Turns per run"} v={a.maxTurns ? a.maxTurns : "No limit"} />
       </div>
 
-      <Section title="Transcript">
-        {runs.length > 0 && (
-          <div className="runs" style={{ marginBottom: 10 }}>
-            {runs.slice(0, 6).map((r) => (
-              <button key={r.id} className={`run-row ${r.id === runId ? "on" : ""}`} onClick={() => { follow.current = false; setRunId(r.id); }}>
-                <span className="mono small faint">#{r.attempt}</span>
-                <span className="small clip">{r.reason || (r.outcome === "running" ? "running" : "")}</span>
-                <span className="mono small faint">{r.exit_code !== null ? `exit ${r.exit_code}` : ""}</span>
-                <Status value={r.outcome} />
-              </button>
-            ))}
-          </div>
-        )}
-        {runs.length === 0 ? (
-          <div className="empty">No runs yet. Start {a.name} to see what it prints here.</div>
-        ) : (
-          <pre className="transcript" aria-live="polite">
-            {lines.map((l) => (
-              <div key={l.id} className={`ev-${l.kind}`}>{l.kind === "input" ? `> ${l.text}` : l.text}</div>
-            ))}
-            {lines.length === 0 && <span className="faint">Nothing printed yet.</span>}
-            <div ref={bottom} />
-          </pre>
-        )}
-        {a.status === "running" && (
-          <div className="composer">
-            <input className="input" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={`Send ${a.name} a message (a line on its input)`} />
-            <button className="btn" onClick={send} disabled={!message.trim()} title={message.trim() ? undefined : "Type a message first"}><Send size={13} /> Send</button>
-          </div>
-        )}
+      <Section title="Conversation">
+        <div className="cv-panel">
+          <Conversation
+            events={convo.events}
+            runs={convo.runs}
+            loading={convo.loading}
+            working={gate.working}
+            onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}
+            empty={<>No runs yet. Start {a.name} and what it does shows up here.</>}
+          />
+          <Composer onSend={convo.send} placeholder={`Message ${a.name}`} blocked={gate.blocked} />
+        </div>
       </Section>
 
       <RepoSection agent={a} />

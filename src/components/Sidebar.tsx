@@ -15,6 +15,7 @@ import {
   KeyRound,
   LogOut,
   LayoutDashboard,
+  MessageSquare,
   Plus,
   Puzzle,
   Settings,
@@ -37,6 +38,7 @@ export const NAV: { title: string; items: NavDef[] }[] = [
   {
     title: "Workspace",
     items: [
+      { id: "chat", label: "Chat", icon: MessageSquare },
       { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "analytics", label: "Analytics", icon: BarChart3 },
       { id: "agents", label: "Agents", icon: Bot },

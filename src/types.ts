@@ -4,6 +4,7 @@
 export type ThemeId = "black" | "white" | "blossom" | "custom";
 
 export type ViewId =
+  | "chat"
   | "overview"
   | "analytics"
   | "agents"

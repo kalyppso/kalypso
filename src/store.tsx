@@ -55,6 +55,8 @@ export interface State {
   sidebarOpen: boolean;
   // Set by a quick action: the next view opens with its create form showing.
   compose: boolean;
+  // Set by a link from another page: the next view opens this record (an agent's id).
+  focus: string | null;
   toasts: Toast[];
   namespaces: Namespace[];
   /** Namespaces whose data has arrived from the core this session (so pages can tell loading from empty). */
@@ -100,8 +102,9 @@ export type Action =
   | { type: "hydratePolicies"; ns: string; policies: Policy[] }
   | { type: "hydrateAgents"; ns: string; agents: Agent[] }
   | { type: "agentLive"; id: string; status: Agent["status"]; reason: string }
-  | { type: "view"; view: ViewId; compose?: boolean }
+  | { type: "view"; view: ViewId; compose?: boolean; focus?: string }
   | { type: "composed" }
+  | { type: "focused" }
   | { type: "ns"; ns: string }
   | { type: "showCode"; value: boolean }
   | { type: "prefs"; patch: Partial<Prefs> }
@@ -194,6 +197,7 @@ function sample(): State {
     paletteOpen: false,
     sidebarOpen: true,
     compose: false,
+    focus: null,
     toasts: [],
     namespaces: mock.namespaces,
     synced: [],
@@ -226,7 +230,7 @@ function load(): State {
     const raw = localStorage.getItem(STORAGE_KEY);
     // Transient UI state never comes back from storage.
     if (raw) {
-      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, toolsOpen: false, toolsTab: null, toasts: [] } as State;
+      const saved = { ...initial(), ...JSON.parse(raw), paletteOpen: false, compose: false, focus: null, toolsOpen: false, toolsTab: null, toasts: [] } as State;
       // Preferences added after this was saved get their defaults; bad stored values are dropped.
       saved.prefs = { ...DEFAULT_PREFS, ...sanitizePrefs(saved.prefs) };
       // Terminal, Browser and Phone used to be pages; they now live in the tools layer.
@@ -315,9 +319,11 @@ function reducer(s: State, a: Action): State {
     case "removeTask":
       return { ...s, tasks: s.tasks.filter((t) => t.id !== a.id) };
     case "view":
-      return { ...s, view: a.view, paletteOpen: false, compose: a.compose ?? false };
+      return { ...s, view: a.view, paletteOpen: false, compose: a.compose ?? false, focus: a.focus ?? null };
     case "composed":
       return s.compose ? { ...s, compose: false } : s;
+    case "focused":
+      return s.focus ? { ...s, focus: null } : s;
     case "ns":
       return { ...s, ns: a.ns, compose: false, toolsOpen: s.toolsOpen && (s.toolTabs[a.ns]?.length ?? 0) > 0 };
     case "showCode":
@@ -419,7 +425,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const { paletteOpen: _p, toasts: _t, compose: _c, toolsOpen: _o, toolsTab: _tt, ...persisted } = state;
+      const { paletteOpen: _p, toasts: _t, compose: _c, focus: _f, toolsOpen: _o, toolsTab: _tt, ...persisted } = state;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
     } catch {
       // Persistence is a convenience in the prototype; ignore failures.
@@ -448,6 +454,16 @@ export function useCompose(open: () => void) {
     open();
     dispatch({ type: "composed" });
   }, [state.compose]);
+}
+
+/** Open one record when a link from another page asks for it ("Details" in Chat opens that agent). */
+export function useFocus(open: (id: string) => void) {
+  const { state, dispatch } = useStore();
+  useLayoutEffect(() => {
+    if (!state.focus) return;
+    open(state.focus);
+    dispatch({ type: "focused" });
+  }, [state.focus]);
 }
 
 export function useToast() {
