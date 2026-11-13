@@ -151,3 +151,7 @@ src/            React UI (views, components, store, generated bindings)
 src-tauri/src/  Rust core: store, ns, vault, sandbox, agent, policy, gateway, budget, events, terminal, ipc
 docs/           Architecture and images
 ```
+
+## License
+
+KALYPSO is open source under the [MIT License](LICENSE).
