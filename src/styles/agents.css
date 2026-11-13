@@ -54,3 +54,26 @@
 /* The master agent wears the wireframe mark instead of initials. */
 .agent-avatar.mark { background: var(--card-2); overflow: visible; }
 .agent-avatar.mark img { width: 88%; height: 88%; }
+
+/* ---------- An agent's page: the chat fills it, settings beside it ---------- */
+.agent-page { display: flex; flex-direction: column; height: calc(100dvh - 196px); min-height: 520px; animation: enter 0.25s var(--ease); }
+.agent-top { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.agent-top h1 { margin: 0; font-size: 22px; }
+.agent-top .agent-reason { margin: 4px 0 0; }
+.agent-mark { display: grid; place-items: center; flex: none; }
+.agent-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+/* The conversation scrolls on its own; its message box stays at the bottom. */
+.agent-convo { display: flex; flex-direction: column; min-height: 0; padding-bottom: 4px; }
+.agent-convo .cv-col { padding-top: 18px; }
+.agent-side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 18px 0 18px 22px; border-left: 1px solid var(--border); }
+.agent-side .agent-section { padding: 14px 0; }
+.agent-facts-list { display: grid; gap: 10px; margin: 0 0 10px; }
+.agent-facts-list > div { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.agent-facts-list dt { color: var(--text-3); font-size: 12.5px; }
+.agent-facts-list dd { margin: 0; font-size: 13.5px; }
+@media (max-width: 1000px) {
+  .agent-page { height: auto; }
+  .agent-split { grid-template-columns: 1fr; }
+  .agent-convo { height: 70vh; }
+  .agent-side { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; }
+}

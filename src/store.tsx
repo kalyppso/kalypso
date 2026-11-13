@@ -118,6 +118,7 @@ export type Action =
   | { type: "addNamespace"; ns: Namespace }
   | { type: "agentStatus"; id: string; status: AgentStatus }
   | { type: "addAgent"; agent: Agent }
+  | { type: "updateAgent"; id: string; patch: Partial<Agent> }
   | { type: "sandboxStatus"; id: string; status: SandboxStatus }
   | { type: "addSandbox"; sandbox: Sandbox }
   | { type: "removeSandbox"; id: string }
@@ -349,6 +350,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, toasts: s.toasts.filter((t) => t.id !== a.id) };
     case "addNamespace":
       return { ...s, namespaces: [...s.namespaces, a.ns], budgets: [...s.budgets, { ns: a.ns.id, monthlyLimit: 25, alertAt: 0.8 }], ns: a.ns.id };
+    case "updateAgent":
+      return { ...s, agents: s.agents.map((x) => (x.id === a.id ? { ...x, ...a.patch } : x)) };
     case "agentStatus":
       return { ...s, agents: mapIf(s.agents, a.id, (x) => ({ ...x, status: a.status })) };
     case "addAgent":
