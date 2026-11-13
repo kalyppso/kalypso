@@ -130,7 +130,7 @@ export function Chat() {
           ))}
         </div>
         <div className="chat-side-label">
-          Agents <span className="faint">{team.filter((a) => a.status === "running").length ? `${team.filter((a) => a.status === "running").length} working` : ""}</span>
+          Crew <span className="faint">{team.filter((a) => a.status === "running").length ? `${team.filter((a) => a.status === "running").length} working` : ""}</span>
         </div>
         <div className="chat-list agents">
           {team.map((a) => (
@@ -142,7 +142,7 @@ export function Chat() {
           ))}
           {team.length === 0 && <p className="chat-side-empty">kalypso creates agents as it needs them.</p>}
         </div>
-        <button className="btn ghost sm chat-manage" onClick={() => dispatch({ type: "view", view: "agents" })}><SlidersHorizontal size={12} /> Manage agents</button>
+        <button className="btn ghost sm chat-manage" onClick={() => dispatch({ type: "view", view: "agents" })}><SlidersHorizontal size={12} /> Manage crew</button>
       </aside>
     </div>
   );

@@ -230,7 +230,7 @@ try {
       // Say so at once instead of retrying in silence for minutes. A refused key won't fix itself.
       const status = m.error_status;
       if (status === 401 || status === 403) {
-        fail(`The model provider refused KALYPSO's request (${status}). Check the provider key in Secrets (gateway scope), for example ANTHROPIC_API_KEY.`, 3);
+        fail(`The model provider refused KALYPSO's request (${status}). Check the provider key in the Vault page (gateway scope), for example ANTHROPIC_API_KEY.`, 3);
       }
       if (m.attempt === 1 || m.attempt === m.max_retries) {
         const why = status ? `the model answered ${status}` : "couldn't reach the model";

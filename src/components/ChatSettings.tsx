@@ -110,11 +110,11 @@ export function ChatSettingsModal({ master, onClose }: { master: Agent | undefin
             placeholder={"For example:\nI work mostly in acme/platform. Ask before touching the database migrations.\nPrefer small pull requests, one change each."} />
           <div className="cs-row" style={{ borderTop: 0 }}>
             <div className="cs-row-text">
-              <b>Prompts from the Prompts page</b>
+              <b>From the Playbook</b>
               <span>{mine.length ? "Also given to kalypso:" : "None given to kalypso yet."}</span>
               {mine.length > 0 && <div className="cs-assigned">{mine.map((p) => <span key={p.id} className="badge">{p.kind === "persona" ? "Persona" : "Instruction"} · {p.name}</span>)}</div>}
             </div>
-            <button className="btn ghost sm" onClick={() => { onClose(); dispatch({ type: "view", view: "prompts" }); }}>Open Prompts</button>
+            <button className="btn ghost sm" onClick={() => { onClose(); dispatch({ type: "view", view: "prompts" }); }}>Open Playbook</button>
           </div>
         </>
       ) : tab === "memory" ? (

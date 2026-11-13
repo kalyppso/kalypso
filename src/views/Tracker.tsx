@@ -51,7 +51,7 @@ export function Tracker() {
 
   return (
     <>
-      <PageHead title="Tracker" subtitle="What each agent is working on. Drag a task to change its status.">
+      <PageHead title="Board" subtitle="What each agent is working on. Drag a task to change its status.">
         <select className="select" value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}>
           <option value="all">All agents</option>
           {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}

@@ -129,7 +129,7 @@ export function Policies() {
 
   return (
     <>
-      <PageHead title="Policies" subtitle="Rules your agents follow. Each one is checked before a tool call, message or model request runs.">
+      <PageHead title="Rules" subtitle="Policies your agents follow. Each one is checked before a tool call, message or model request runs.">
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New policy</PrimaryButton>
       </PageHead>
 

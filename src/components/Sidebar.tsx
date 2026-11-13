@@ -39,31 +39,31 @@ export const NAV: { title: string; items: NavDef[] }[] = [
   {
     title: "Workspace",
     items: [
-      { id: "chat", label: "Chat", icon: MessageSquare },
-      { id: "overview", label: "Overview", icon: LayoutDashboard },
-      { id: "analytics", label: "Analytics", icon: BarChart3 },
-      { id: "agents", label: "Agents", icon: Bot },
-      { id: "tracker", label: "Tracker", icon: KanbanSquare },
-      { id: "git", label: "Git tracker", icon: GitCommitHorizontal },
-      { id: "sandboxes", label: "Sandboxes", icon: Boxes },
-      { id: "connections", label: "Connections", icon: Cable },
+      { id: "chat", label: "Ask", icon: MessageSquare },
+      { id: "overview", label: "Today", icon: LayoutDashboard },
+      { id: "analytics", label: "Pulse", icon: BarChart3 },
+      { id: "agents", label: "Crew", icon: Bot },
+      { id: "tracker", label: "Board", icon: KanbanSquare },
+      { id: "git", label: "Changes", icon: GitCommitHorizontal },
+      { id: "sandboxes", label: "Rooms", icon: Boxes },
+      { id: "connections", label: "Links", icon: Cable },
     ],
   },
 
   {
     title: "Control",
     items: [
-      { id: "policies", label: "Policies", icon: ShieldCheck },
-      { id: "prompts", label: "Prompts", icon: ScrollText },
-      { id: "budget", label: "Budget", icon: Wallet },
-      { id: "secrets", label: "Secrets", icon: KeyRound },
+      { id: "policies", label: "Rules", icon: ShieldCheck },
+      { id: "prompts", label: "Playbook", icon: ScrollText },
+      { id: "budget", label: "Spend", icon: Wallet },
+      { id: "secrets", label: "Vault", icon: KeyRound },
     ],
   },
   {
     title: "Extend",
     items: [
-      { id: "integrations", label: "Integrations", icon: BrainCircuit },
-      { id: "registry", label: "Skills & MCPs", icon: Puzzle },
+      { id: "integrations", label: "Plug-ins", icon: BrainCircuit },
+      { id: "registry", label: "Toolkit", icon: Puzzle },
     ],
   },
   {

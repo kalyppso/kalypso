@@ -186,8 +186,8 @@ const save = () => { try { fs.writeFileSync(historyFile, JSON.stringify(messages
 
 function modelError(status, body) {
   const msg = typeof body === "object" ? body?.error?.message ?? body?.error ?? body?.message ?? JSON.stringify(body) : String(body);
-  if (status === 401) return `The gateway has no working key for ${PROVIDER}: ${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_API_KEY (gateway scope) in Secrets.`;
-  if (status === 400 && /BASE_URL/.test(msg)) return `${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_BASE_URL (gateway scope) in Secrets, for example http://localhost:11434/v1 for Ollama on this machine.`;
+  if (status === 401) return `The gateway has no working key for ${PROVIDER}: ${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_API_KEY (gateway scope) in the Vault page.`;
+  if (status === 400 && /BASE_URL/.test(msg)) return `${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_BASE_URL (gateway scope) in the Vault page, for example http://localhost:11434/v1 for Ollama on this machine.`;
   if (status === 402) return `Budget: ${msg}`;
   return `${PROVIDER} answered ${status}: ${msg}`;
 }

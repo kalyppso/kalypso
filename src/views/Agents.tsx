@@ -26,7 +26,7 @@ export function Agents() {
 
   return (
     <>
-      <PageHead title="Agents" subtitle="Each agent runs in a sandbox and only gets the secrets, tools and integrations you grant it.">
+      <PageHead title="Crew" subtitle="Your agents. Each one runs in a sandbox and only gets the secrets, tools and integrations you grant it.">
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New agent</PrimaryButton>
       </PageHead>
 
@@ -384,7 +384,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         <p className="faint small" style={{ margin: 0 }}>
           Needs {providerId === "openai" ? "" : <><span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL</span>{["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : " and "}</>}
           {["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : <span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_API_KEY</span>}
-          {" "}in Secrets with the gateway scope. The agent never sees them.{providerId === "ollama" ? " For Ollama on this machine, the base URL is usually http://localhost:11434/v1 (the gateway calls it from your machine, not from the sandbox)." : ""}
+          {" "}in the Vault with the gateway scope. The agent never sees them.{providerId === "ollama" ? " For Ollama on this machine, the base URL is usually http://localhost:11434/v1 (the gateway calls it from your machine, not from the sandbox)." : ""}
         </p>
       )}
       {runner && picked && !hasRunner(picked.image) && (

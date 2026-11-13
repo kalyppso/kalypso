@@ -51,7 +51,7 @@ export function Prompts() {
 
   return (
     <>
-      <PageHead title="Prompts" subtitle="Write a prompt once and give it to any of your agents. Personas say who an agent is; instructions say how it works.">
+      <PageHead title="Playbook" subtitle="Write a prompt once and give it to any of your agents. Personas say who an agent is; instructions say how it works.">
         <PrimaryButton onClick={() => setEditing({ kind: "instruction" })} icon={<Plus size={14} />}>New prompt</PrimaryButton>
       </PageHead>
 

@@ -20,7 +20,7 @@ Each agent works in its own sandbox. KALYPSO checks every tool call against your
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/overview-light.png">
-  <img src="docs/images/overview-dark.png" alt="KALYPSO Overview: quick actions for agents, tasks, sandboxes, secrets, policies and connections, above a year of commits by agents and people">
+  <img src="docs/images/overview-dark.png" alt="KALYPSO Today: quick actions for agents, tasks, sandboxes, secrets, policies and connections, above a year of commits by agents and people">
 </picture>
 
 ## What it does
@@ -30,15 +30,15 @@ Every call an agent makes goes through four layers before it reaches a model or 
 | Layer | What it does |
 |---|---|
 | **Sandbox** | Each agent runs in a hardened container: read-only root, no Linux capabilities, its own network. Reaching a new domain can be made to need your approval. |
-| **Policies** | Rules in plain words, such as "never force-push to main", checked before every tool call. Each one blocks, asks you, or warns. Risky calls wait for your answer. |
+| **Rules** | Policies in plain words, such as "never force-push to main", checked before every tool call. Each one blocks, asks you, or warns. Risky calls wait for your answer. |
 | **Vault** | Secrets are encrypted per namespace. Agents get a stand-in key, and the real one is added outside the sandbox. When an agent asks for a secret and you approve, only that one command gets it, and it is redacted from the output. |
 | **Gateway** | Every model call is metered per agent and per model, and stops at the budget you set. Works with Anthropic, OpenAI-compatible APIs and Ollama. |
 
 And around them:
 
-- **Agents.** Agents built on the Claude Agent SDK, supervised and restarted if they crash.
+- **Crew.** Agents built on the Claude Agent SDK, supervised and restarted if they crash.
 - **Namespaces.** Separate networks, keys, budgets and policies for each workspace (personal, work, a client). Nothing crosses between them.
-- **Connections.** Link agents to each other, to your tools (Obsidian, Notion, GitHub, any MCP server) or to other machines.
+- **Links.** Link agents to each other, to your tools (Obsidian, Notion, GitHub, any MCP server) or to other machines.
 - **Observe.** A tracker board, a Git tracker that tells agent and human commits apart, and a monitoring view.
 - **Tools.** Split terminals into sandboxes, a browser and a phone preview.
 - **Code only when you ask.** Configs, specs and diffs stay folded until you open them.
@@ -48,25 +48,25 @@ And around them:
 <table>
   <tr>
     <td width="50%"><img src="docs/images/agent.png" alt="An agent's page: its model, sandbox, policies, skills, MCP servers, secrets and linked integrations"></td>
-    <td width="50%"><img src="docs/images/policies.png" alt="Policies: block, ask me and warn rules in plain words, with suggested ones to add"></td>
+    <td width="50%"><img src="docs/images/policies.png" alt="Rules: block, ask me and warn rules in plain words, with suggested ones to add"></td>
   </tr>
   <tr>
-    <td><b>Agents.</b> What each one runs, where, and what it may touch.</td>
-    <td><b>Policies.</b> Block it, ask you first, or just flag it.</td>
+    <td><b>Crew.</b> What each one runs, where, and what it may touch.</td>
+    <td><b>Rules.</b> Block it, ask you first, or just flag it.</td>
   </tr>
   <tr>
-    <td><img src="docs/images/secrets.png" alt="Secrets: encrypted values with their scope and the agents that use them"></td>
-    <td><img src="docs/images/budget.png" alt="Budget: spend this month, daily spend per agent and budget rules"></td>
+    <td><img src="docs/images/secrets.png" alt="Vault: encrypted values with their scope and the agents that use them"></td>
+    <td><img src="docs/images/budget.png" alt="Spend: spend this month, daily spend per agent and budget rules"></td>
   </tr>
   <tr>
-    <td><b>Secrets.</b> Encrypted, scoped, never shown to an agent.</td>
-    <td><b>Budget.</b> Spend per agent and model, with caps that pause or downgrade.</td>
+    <td><b>Vault.</b> Encrypted, scoped, never shown to an agent.</td>
+    <td><b>Spend.</b> Spend per agent and model, with caps that pause or downgrade.</td>
   </tr>
 </table>
 
-**Tracker.** What each agent is working on, with time, cost and the pull request it opened. Drag a task to change its status; click it to open the details beside the board.
+**Board.** What each agent is working on, with time, cost and the pull request it opened. Drag a task to change its status; click it to open the details beside the board.
 
-![Tracker board with queued, running, in review, done and failed tasks](docs/images/tracker.png)
+![Board with queued, running, in review, done and failed tasks](docs/images/tracker.png)
 
 **Split terminals.** Shells into sandboxes, split right or down as many times as you like.
 
@@ -85,9 +85,9 @@ And around them:
 
 <table>
   <tr>
-    <td><img src="docs/images/overview-dark.png" alt="Overview in the Black theme"></td>
-    <td><img src="docs/images/overview-light.png" alt="Overview in the White theme"></td>
-    <td><img src="docs/images/overview-blossom.png" alt="Overview in the Blossom theme"></td>
+    <td><img src="docs/images/overview-dark.png" alt="Today in the Black theme"></td>
+    <td><img src="docs/images/overview-light.png" alt="Today in the White theme"></td>
+    <td><img src="docs/images/overview-blossom.png" alt="Today in the Blossom theme"></td>
   </tr>
   <tr>
     <td align="center">Black</td>

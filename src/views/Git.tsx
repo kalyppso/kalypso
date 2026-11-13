@@ -52,7 +52,7 @@ export function Git() {
   if (repos.length === 0) {
     return (
       <>
-        <PageHead title="Git tracker" subtitle={subtitle} />
+        <PageHead title="Changes" subtitle={subtitle} />
         <EmptyState icon={GitBranch} title="No repositories yet">
           Commits, pull requests and CI from the repositories your agents work on show here once the tracker syncs with GitHub, coming in{" "}
           <a href="https://github.com/kalyppso/kalypso/issues/29" target="_blank" rel="noreferrer">#29</a>. Until then, each agent's pull requests are on its page.
@@ -63,7 +63,7 @@ export function Git() {
 
   return (
     <>
-      <PageHead title="Git tracker" subtitle={subtitle}>
+      <PageHead title="Changes" subtitle={subtitle}>
         <select className="select" value={repo} onChange={(e) => setRepo(e.target.value)}>
           <option value="all">All repositories</option>
           {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}

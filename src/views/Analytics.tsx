@@ -37,7 +37,7 @@ export function Analytics() {
 
   return (
     <>
-      <PageHead title="Analytics" subtitle="Activity, spend and health for this namespace, and what needs you." />
+      <PageHead title="Pulse" subtitle="Activity, spend and health for this namespace, and what needs you." />
 
       <div className="stats">
         <Stat label="Agents running" value={`${running} / ${agents.length}`} sub={`${agents.length - running} idle or stopped`} onClick={() => go("agents")} art={<Ring value={running} total={agents.length} />} />
@@ -82,7 +82,7 @@ export function Analytics() {
       {isLive() ? (
         <section className="card">
           <div className="card-head"><span className="card-title">Monitoring</span></div>
-          <p className="faint" style={{ margin: 0 }}>Request rate, tokens, latency and errors per model arrive with the metrics store (#21). Until then, spend per model and per agent is on the Budget page.</p>
+          <p className="faint" style={{ margin: 0 }}>Request rate, tokens, latency and errors per model arrive with the metrics store (#21). Until then, spend per model and per agent is on the Spend page.</p>
         </section>
       ) : <MonitoringPanel />}
     </>
