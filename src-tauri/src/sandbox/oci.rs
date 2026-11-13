@@ -161,6 +161,124 @@ impl OciProvider {
         }
     }
 
+    /// Make sure the namespace's egress network and relay exist and point at the proxy
+    /// (src/egress.rs): through its socket on a local engine, its port on a VM engine.
+    async fn ensure_egress(&self, ns: &str) -> Result<()> {
+        let _guard = self.relay_lock.lock().await;
+        let net = egress_network_name(ns);
+        if self.docker.inspect_network::<String>(&net, None).await.is_err() {
+            self.docker
+                .create_network(CreateNetworkOptions {
+                    name: net.clone(),
+                    driver: "bridge".into(),
+                    internal: true,
+                    labels: HashMap::from([("kalypso.ns".to_string(), ns.to_string()), ("kalypso.egress".to_string(), ns.to_string())]),
+                    ..Default::default()
+                })
+                .await
+                .map_err(rt_err)?;
+        }
+        let unix = if self.vm { None } else { crate::egress::socket_dir().cloned() };
+        let target = match (&unix, crate::egress::tcp_port()) {
+            (Some(dir), _) => format!("unix:{}", dir.display()),
+            (None, Some(port)) => format!("tcp:{port}"),
+            (None, None) => {
+                return Err(KalypsoError::Runtime(
+                    "the egress proxy isn't running, so internet sandboxes can't start; restart KALYPSO".into(),
+                ))
+            }
+        };
+        let name = egress_relay_name(ns);
+        let current = match self.docker.inspect_container(&name, None::<InspectContainerOptions>).await {
+            Ok(info) => Some(info),
+            Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => None,
+            Err(e) => return Err(rt_err(e)),
+        };
+        let same = current
+            .as_ref()
+            .and_then(|i| i.config.as_ref()?.labels.as_ref()?.get("kalypso.egress_target").cloned())
+            .is_some_and(|t| t == target);
+        if let (Some(info), true) = (&current, same) {
+            if info.state.as_ref().and_then(|s| s.running) != Some(true) {
+                self.docker.start_container(&name, None::<StartContainerOptions<String>>).await.map_err(rt_err)?;
+            }
+            return Ok(());
+        }
+        if current.is_some() {
+            let opts = Some(RemoveContainerOptions { force: true, ..Default::default() });
+            self.docker.remove_container(&name, opts).await.map_err(rt_err)?;
+        }
+        self.pull(RELAY_IMAGE).await?;
+        const SOCK_DIR: &str = "/run/kalypso-egress";
+        let (upstream, network_mode, extra_hosts, mounts) = match &unix {
+            Some(dir) => (
+                format!("UNIX-CONNECT:{SOCK_DIR}/egress.sock"),
+                net.clone(),
+                None,
+                Some(vec![Mount {
+                    source: Some(dir.display().to_string()),
+                    target: Some(SOCK_DIR.into()),
+                    typ: Some(MountTypeEnum::BIND),
+                    read_only: Some(true),
+                    ..Default::default()
+                }]),
+            ),
+            None => (
+                format!("TCP:host.kalypso:{}", crate::egress::tcp_port().unwrap_or_default()),
+                "bridge".to_string(),
+                Some(vec!["host.kalypso:host-gateway".to_string()]),
+                None,
+            ),
+        };
+        let labels = HashMap::from([
+            ("kalypso.ns".to_string(), ns.to_string()),
+            ("kalypso.role".to_string(), "egress-relay".to_string()),
+            ("kalypso.egress_target".to_string(), target.clone()),
+        ]);
+        let host = |limits: bool| HostConfig {
+            network_mode: Some(network_mode.clone()),
+            extra_hosts: extra_hosts.clone(),
+            mounts: mounts.clone(),
+            readonly_rootfs: Some(true),
+            cap_drop: Some(vec!["ALL".into()]),
+            security_opt: Some(vec!["no-new-privileges".into()]),
+            memory: limits.then_some(64 * 1024 * 1024),
+            pids_limit: limits.then_some(512),
+            restart_policy: Some(bollard::models::RestartPolicy {
+                name: Some(bollard::models::RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+            ..Default::default()
+        };
+        // On the egress network from the start (local engines), named egress.kalypso there.
+        let endpoint = || bollard::models::EndpointSettings { aliases: Some(vec![crate::egress::HOST.into()]), ..Default::default() };
+        let networking = (network_mode == net)
+            .then(|| bollard::container::NetworkingConfig { endpoints_config: HashMap::from([(net.clone(), endpoint())]) });
+        let config = |limits: bool| Config {
+            image: Some(RELAY_IMAGE.to_string()),
+            cmd: Some(vec![format!("TCP-LISTEN:{},fork,reuseaddr,max-children=256", crate::egress::RELAY_PORT), upstream.clone()]),
+            labels: Some(labels.clone()),
+            host_config: Some(host(limits)),
+            networking_config: networking.clone(),
+            ..Default::default()
+        };
+        let opts = || Some(CreateContainerOptions { name: name.clone(), platform: None });
+        match self.docker.create_container(opts(), config(true)).await {
+            Ok(_) => {}
+            Err(e) if e.to_string().contains("cgroup") => {
+                self.docker.create_container(opts(), config(false)).await.map_err(rt_err)?;
+            }
+            Err(e) => return Err(rt_err(e)),
+        }
+        if network_mode != net {
+            let config = bollard::network::ConnectNetworkOptions { container: name.clone(), endpoint_config: endpoint() };
+            self.docker.connect_network(&net, config).await.map_err(rt_err)?;
+        }
+        self.docker.start_container(&name, None::<StartContainerOptions<String>>).await.map_err(rt_err)?;
+        tracing::info!(ns, target, "egress relay started");
+        Ok(())
+    }
+
     async fn pull(&self, image: &str) -> Result<()> {
         if self.docker.inspect_image(image).await.is_ok() {
             return Ok(());
@@ -222,6 +340,15 @@ impl SandboxProvider for OciProvider {
             Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
             Err(e) => return Err(rt_err(e)),
         }
+        match self.docker.remove_container(&egress_relay_name(ns), Some(RemoveContainerOptions { force: true, ..Default::default() })).await
+        {
+            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+            Err(e) => return Err(rt_err(e)),
+        }
+        match self.docker.remove_network(&egress_network_name(ns)).await {
+            Ok(()) | Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => {}
+            Err(e) => return Err(rt_err(e)),
+        }
         match self.docker.remove_network(&network_name(ns)).await {
             Ok(()) => Ok(()),
             Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(()),
@@ -259,9 +386,16 @@ impl SandboxProvider for OciProvider {
                 self.prepare_namespace(ns).await?;
                 network_name(ns)
             }
-            // TODO(#33): route through the egress proxy with the namespace allow-list.
-            _ => "bridge".to_string(),
+            // Out only through the egress proxy, which checks every host (#33).
+            _ => {
+                self.ensure_egress(ns).await?;
+                egress_network_name(ns)
+            }
         };
+        let mut env: Vec<String> = relay.map(|_| vec![format!("KALYPSO_GATEWAY_URL={}", crate::gateway::RELAY_URL)]).unwrap_or_default();
+        if spec.network == "internet" {
+            env.extend(crate::egress::sandbox_env(id));
+        }
         let labels = HashMap::from([("kalypso.ns".to_string(), ns.to_string()), ("kalypso.sandbox".to_string(), id.to_string())]);
         // Anonymous volume: removed together with the container.
         let mut mounts = vec![Mount { target: Some("/work".into()), typ: Some(MountTypeEnum::VOLUME), ..Default::default() }];
@@ -299,7 +433,7 @@ impl SandboxProvider for OciProvider {
             cmd: Some(vec!["infinity".to_string()]),
             working_dir: Some("/work".into()),
             labels: Some(labels.clone()),
-            env: relay.map(|_| vec![format!("KALYPSO_GATEWAY_URL={}", crate::gateway::RELAY_URL)]),
+            env: (!env.is_empty()).then(|| env.clone()),
             host_config: Some(host(limits)),
             ..Default::default()
         };
@@ -329,6 +463,12 @@ impl SandboxProvider for OciProvider {
         // The relay may be gone (engine restarted, KALYPSO on a new port): bring it back first.
         if let Some(port) = self.relay() {
             self.ensure_relay(ns, port).await?;
+        }
+        // An internet sandbox needs its egress relay (#33).
+        if let Ok(info) = self.docker.inspect_container(&container_name(ns, id), None::<InspectContainerOptions>).await {
+            if info.host_config.and_then(|h| h.network_mode).is_some_and(|m| m == egress_network_name(ns)) {
+                self.ensure_egress(ns).await?;
+            }
         }
         self.docker.start_container(&container_name(ns, id), None::<StartContainerOptions<String>>).await.map_err(rt_err)
     }
@@ -585,6 +725,16 @@ pub fn network_name(ns: &str) -> String {
 /// The namespace's gateway relay (VM engines only).
 pub fn relay_name(ns: &str) -> String {
     format!("kalypso-gw-{ns}")
+}
+
+/// The namespace's egress network (#33): `internet` sandboxes and the egress relay, no route out.
+pub fn egress_network_name(ns: &str) -> String {
+    format!("kalypso-eg-{ns}")
+}
+
+/// The namespace's egress relay, `egress.kalypso` on its egress network.
+pub fn egress_relay_name(ns: &str) -> String {
+    format!("kalypso-egress-{ns}")
 }
 
 /// A sandbox's private network to the relay (VM engines only).

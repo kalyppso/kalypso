@@ -138,7 +138,7 @@ Every IPC command takes `ns` as its first argument. The `ipc` layer checks that 
 - Network modes:
   - `isolated`: no network at all.
   - `namespace`: joins `kalypso-ns-X` only.
-  - `internet`: also allowed out through an egress proxy (squid or a Rust proxy) with an allow-list that can be configured per namespace.
+  - `internet`: out only through KALYPSO's egress proxy (`src-tauri/src/egress.rs`, #33). The sandbox sits on `kalypso-eg-X`, an internal network with no route out, next to the namespace's egress relay (`egress.kalypso:3128`, a pinned socat container) that forwards to the proxy: through its socket on local engines (a folder never mounted into sandboxes), its loopback port on VM engines. The sandbox gets `HTTP(S)_PROXY` with its own credentials (an HMAC of its id under a secret in settings), so the proxy knows which sandbox asks; it also refuses sandboxes that aren't in `internet` mode. Every host goes through the same policy check as a tool call (`kind: network`), so a `host` policy's allow-list applies, blocked hosts get a 403 with the reason, and "Ask before new hosts" holds the connection until you answer. Decisions are remembered per sandbox and host (10 minutes allowed, 30 seconds refused). Programs that ignore the proxy settings have no route out. Sandboxes made before #33 keep their old network until recreated.
 - Port forwarding to `localhost`, so the Phone and Browser panels can show an app an agent is building.
 - **Firecracker** (phase 4): same spec, run as a microVM through `firecracker-go-sdk` or a direct API client. Linux only; the option is hidden on other platforms.
 - The UI gets live status from the Docker events stream, sent as `sandbox://status` events.
