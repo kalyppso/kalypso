@@ -6,6 +6,7 @@ import type { AgentRun } from "../bindings/AgentRun";
 import { useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import { Orb } from "./Orb";
+import { useChatPrefs } from "./ChatSettings";
 import "../styles/chat.css";
 
 /**
@@ -297,7 +298,8 @@ function CopyText({ text }: { text: string }) {
 
 /** The work between messages. Long finished stretches fold into one line; the newest stays open. */
 function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
-  const foldable = steps.length > 4 && !live;
+  const [prefs] = useChatPrefs();
+  const foldable = steps.length > 4 && !live && !prefs.expandSteps;
   const [folded, setFolded] = useState(foldable);
   useEffect(() => { if (foldable) setFolded(true); }, [foldable]);
   if (foldable && folded) {
@@ -319,7 +321,8 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
 }
 
 function StepRow({ step: s }: { step: Step }) {
-  const [open, setOpen] = useState(false);
+  const [prefs] = useChatPrefs();
+  const [open, setOpen] = useState(prefs.expandSteps);
   const has = s.output.length > 0 || s.detail.includes("\n");
   const firstLine = s.detail.split("\n")[0];
   return (
@@ -490,8 +493,11 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
       .catch((e) => toast(errorMessage(e), "err"))
       .finally(() => { setSending(false); box.current?.focus(); });
   };
+  const [prefs] = useChatPrefs();
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (prefs.send === "enter" ? !e.shiftKey && !mod : mod) {
       e.preventDefault();
       send();
     }
@@ -502,7 +508,7 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
       <textarea ref={box} rows={1} value={text} disabled={!!blocked} autoFocus={autoFocus} placeholder={blocked ? "" : placeholder} aria-label={placeholder}
         onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
       <div className="cv-composer-foot">
-        <span className="cv-composer-hint">{blocked ?? "Enter to send, Shift+Enter for a new line"}</span>
+        <span className="cv-composer-hint">{blocked ?? (prefs.send === "enter" ? "Enter to send, Shift+Enter for a new line" : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send, Enter for a new line`)}</span>
         <button className="btn primary icon cv-send" onClick={send} disabled={!ready} aria-label="Send" title={blocked ? undefined : text.trim() ? "Send" : "Type a message first"}>
           <ArrowUp size={15} />
         </button>

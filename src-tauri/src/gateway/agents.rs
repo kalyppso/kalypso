@@ -391,3 +391,38 @@ fn recent(gw: &Gateway, a: &AgentRecord, limit: u32) -> Vec<Value> {
     let skip = events.len().saturating_sub(limit as usize);
     events[skip..].iter().map(|e| json!({ "kind": e.kind, "text": clip(&e.text) })).collect()
 }
+
+/// `GET /_kalypso/memory`: what the master agent remembers.
+pub async fn memories(State(gw): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
+    let (me, _) = match caller(&gw, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match crate::prompts::memories(&gw.db, &me.ns) {
+        Ok(m) => Json(m.into_iter().map(|m| json!({ "text": m.text, "source": m.source, "at": m.created_at })).collect::<Vec<_>>())
+            .into_response(),
+        Err(e) => error(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Remember {
+    text: String,
+}
+
+/// `POST /_kalypso/memory`: the master agent saves a lasting fact, if memory is on.
+pub async fn remember(State(gw): State<Arc<Gateway>>, headers: HeaderMap, Json(req): Json<Remember>) -> Response {
+    let (me, _) = match caller(&gw, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match crate::prompts::memory_on(&gw.db, &me.ns) {
+        Ok(false) => return fail(StatusCode::FORBIDDEN, "the user has turned memory off; don't save anything"),
+        Err(e) => return error(e),
+        Ok(true) => {}
+    }
+    match crate::prompts::remember(&gw.db, &me.ns, &req.text, &me.name) {
+        Ok(m) => Json(json!({ "saved": m.text })).into_response(),
+        Err(e) => error(e),
+    }
+}

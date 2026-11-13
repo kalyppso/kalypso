@@ -23,7 +23,9 @@ const USAGE = `usage:
   kx-agent send NAME "message" [--wait SECONDS]   (default: wait up to 600s for the answer; --wait 0 returns at once)
   kx-agent wait NAME [--timeout SECONDS]
   kx-agent log NAME [--limit N]
-  kx-agent start NAME | stop NAME | delete NAME`;
+  kx-agent start NAME | stop NAME | delete NAME
+  kx-agent remember "a lasting fact"            save to your memory (if the user allows it)
+  kx-agent memories                             what you remember`;
 
 function die(msg, code = 2) {
   process.stderr.write(`kx-agent: ${msg}\n`);
@@ -64,11 +66,11 @@ const target = fs.existsSync(SOCK)
     ? (() => { const u = new URL(RELAY); return { host: u.hostname, port: Number(u.port || 80) }; })()
     : die("this sandbox can't reach KALYPSO (no gateway socket, no KALYPSO_GATEWAY_URL)", 1);
 
-function call(method, path, body) {
+function call(method, path, body, base = "/_kalypso/agents") {
   return new Promise((resolve, reject) => {
     const data = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(
-      { ...target, method, path: `/_kalypso/agents${path}`, headers: { authorization: `Bearer ${key}`, ...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}) } },
+      { ...target, method, path: `${base}${path}`, headers: { authorization: `Bearer ${key}`, ...(data ? { "content-type": "application/json", "content-length": Buffer.byteLength(data) } : {}) } },
       (res) => {
         let text = "";
         res.setEncoding("utf8");
@@ -143,6 +145,18 @@ try {
       await call("DELETE", `/${enc(name)}`);
       process.stdout.write(`Deleted ${name}\n`);
       break;
+    case "remember": {
+      const text = pos.join(" ").trim();
+      if (!text) die("say what to remember, in quotes");
+      const r = await call("POST", "", { text }, "/_kalypso/memory");
+      process.stdout.write(`Remembered: ${r.saved}\n`);
+      break;
+    }
+    case "memories": {
+      const all = await call("GET", "", undefined, "/_kalypso/memory");
+      process.stdout.write(all.length ? all.map((m) => `- ${m.text}`).join("\n") + "\n" : "Nothing saved yet.\n");
+      break;
+    }
     default:
       die(`unknown command "${cmd}"\n\n${USAGE}`);
   }

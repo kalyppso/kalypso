@@ -502,6 +502,7 @@ impl Gateway {
             .route("/_kalypso/agents", get(agents::list).post(agents::create))
             .route("/_kalypso/agents/{name}", get(agents::show).delete(agents::remove))
             .route("/_kalypso/agents/{name}/{action}", post(agents::act))
+            .route("/_kalypso/memory", get(agents::memories).post(agents::remember))
             .layer(DefaultBodyLimit::max(64 << 10))
             .with_state(self.clone())
             .merge(self.router())

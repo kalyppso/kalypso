@@ -19,6 +19,9 @@ pub struct AgentCtx<'a> {
     pub agent: &'a AgentRecord,
     pub sandbox_id: &'a str,
     pub provider: Arc<dyn SandboxProvider>,
+    /// Its persona and instructions (and for the master agent its chat settings and memory),
+    /// put together by `prompts::compose` when it starts.
+    pub extra: String,
 }
 
 /// Something an agent produced, already split into readable pieces.
@@ -114,12 +117,9 @@ impl AgentRuntime for CommandRuntime {
 }
 
 /// An agent's role as its runner sees it: the master agent's also says how to manage the others.
-fn role_of(a: &AgentRecord) -> String {
-    if a.master {
-        format!("{}\n\n{}", a.role, super::master::instructions(&a.ns)).trim().to_string()
-    } else {
-        a.role.clone()
-    }
+fn role_of(a: &AgentRecord, extra: &str) -> String {
+    let master = if a.master { super::master::instructions(&a.ns) } else { String::new() };
+    [a.role.as_str(), master.as_str(), extra].iter().filter(|p| !p.trim().is_empty()).cloned().collect::<Vec<_>>().join("\n\n")
 }
 
 /// Where the runner lives in the agent runner image (`runner/agent-sdk`).
@@ -148,7 +148,7 @@ impl AgentRuntime for ClaudeSdkRuntime {
             format!("KALYPSO_AGENT={}", a.name),
             format!("KALYPSO_AGENT_ID={}", a.id),
             format!("KALYPSO_MODEL={}", a.model),
-            format!("KALYPSO_ROLE={}", role_of(a)),
+            format!("KALYPSO_ROLE={}", role_of(a, &ctx.extra)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
         ];
@@ -200,7 +200,7 @@ impl AgentRuntime for OpenAiRuntime {
             format!("KALYPSO_AGENT_ID={}", a.id),
             format!("KALYPSO_PROVIDER={provider}"),
             format!("KALYPSO_MODEL={model}"),
-            format!("KALYPSO_ROLE={}", role_of(a)),
+            format!("KALYPSO_ROLE={}", role_of(a, &ctx.extra)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
         ];

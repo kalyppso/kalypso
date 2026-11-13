@@ -11,6 +11,7 @@ pub mod github;
 pub mod ipc;
 pub mod ns;
 pub mod policy;
+pub mod prompts;
 pub mod repo;
 pub mod sandbox;
 pub mod setup;
@@ -118,6 +119,15 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::master_get,
         ipc::master_ensure,
         ipc::master_new_chat,
+        ipc::prompt_list,
+        ipc::prompt_save,
+        ipc::prompt_delete,
+        ipc::chat_settings_get,
+        ipc::chat_settings_set,
+        ipc::memory_list,
+        ipc::memory_add,
+        ipc::memory_edit,
+        ipc::memory_delete,
         ipc::term_open,
         ipc::term_write,
         ipc::term_resize,

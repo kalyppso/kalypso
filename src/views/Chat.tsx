@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, SlidersHorizontal, Square } from "lucide-react";
+import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, Settings2, SlidersHorizontal, Square } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
 import { initials, Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
+import { ChatSettingsModal } from "../components/ChatSettings";
 import { useNamespaced, useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import "../styles/agents.css";
@@ -169,6 +170,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
   const [beat, setBeat] = useState(0);
   const type = (v: string) => { setDraft(v); setBeat((n) => n + 1); };
   const [pending, setPending] = useState<{ text: string; status: string } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const sync = () => syncNamespace(state.ns, dispatch);
 
   // The message shows at once; KALYPSO creates kalypso and starts it as needed behind it.
@@ -222,6 +224,8 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
           <Square size={12} /> Stop
         </button>
       )}
+      <button className="btn ghost sm icon" onClick={() => setSettingsOpen(true)} title="Chat settings: instructions, memory and preferences" aria-label="Chat settings"><Settings2 size={15} /></button>
+      {settingsOpen && <ChatSettingsModal master={master} onClose={() => setSettingsOpen(false)} />}
     </header>
   );
 

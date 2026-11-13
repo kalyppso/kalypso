@@ -8,6 +8,7 @@ export type ViewId =
   | "overview"
   | "analytics"
   | "agents"
+  | "prompts"
   | "tracker"
   | "git"
   | "sandboxes"
