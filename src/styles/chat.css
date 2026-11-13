@@ -57,12 +57,12 @@
 .cv-note.result svg { margin-top: 0; }
 .cv-note.blocked, .cv-note.error { padding: 9px 11px; border-radius: 10px; background: var(--card); color: var(--text); }
 
-.cv-working { display: flex; gap: 4px; padding: 4px 0; }
-.cv-working span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); animation: cv-pulse 1.2s ease-in-out infinite; }
-.cv-working span:nth-child(2) { animation-delay: 0.15s; }
-.cv-working span:nth-child(3) { animation-delay: 0.3s; }
-@keyframes cv-pulse { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .cv-working span { animation: none; opacity: 0.6; } }
+.cv-working { display: flex; align-items: center; gap: 8px; margin-left: -4px; color: var(--text-3); font-size: 12.5px; animation: cv-in 0.4s var(--ease); }
+.orb { display: block; flex: none; color: var(--text); }
+.cv-working .orb { color: var(--text-2); }
+.chat-orb { margin-bottom: 22px; animation: cv-in 0.6s var(--ease); }
+@keyframes cv-in { from { opacity: 0; transform: scale(0.94); } }
+@media (prefers-reduced-motion: reduce) { .cv-working, .chat-orb { animation: none; } }
 
 .cv-latest {
   position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;

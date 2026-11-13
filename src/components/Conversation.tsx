@@ -5,6 +5,7 @@ import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { useStore, useToast } from "../store";
 import type { Agent } from "../types";
+import { Orb } from "./Orb";
 import "../styles/chat.css";
 
 /**
@@ -223,8 +224,9 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
             <ItemView key={it.id} item={it} open={i === items.length - 1} />
           ))}
           {working && !settled && (
-            <div className="cv-working" aria-label="Working">
-              <span /><span /><span />
+            <div className="cv-working" role="status">
+              <Orb size={30} active />
+              <span>Working</span>
             </div>
           )}
         </div>

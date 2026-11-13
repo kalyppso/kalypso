@@ -3,6 +3,7 @@ import { ArrowLeft, Pause, Play, SlidersHorizontal, Square } from "lucide-react"
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
 import { initials, Skeleton, Status } from "../components/ui";
+import { Orb } from "../components/Orb";
 import { useNamespaced, useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import "../styles/agents.css";
@@ -73,6 +74,9 @@ function MasterThread({ master }: { master: Agent | undefined }) {
   const convo = useAgentConversation(state.ns, master);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
+  // The orb wakes while you type and sends a wave round when a message goes.
+  const [sent, setSent] = useState(0);
+  const [sending, setSending] = useState(false);
   const sync = () => syncNamespace(state.ns, dispatch);
 
   // Sending always works: KALYPSO creates the master agent and starts it as needed.
@@ -103,9 +107,10 @@ function MasterThread({ master }: { master: Agent | undefined }) {
     return (
       <section className="chat-main chat-start" aria-label="Start a conversation">
         <div className="chat-start-inner">
+          <Orb size={132} active={!!draft.trim() || sending} pulse={sent} className="chat-orb" label="kalypso" />
           <h1 className="chat-hello">What should we work on?</h1>
           <p className="chat-hello-sub">Tell kalypso what you need. It plans the work, creates and runs agents for each part, and reports back here.</p>
-          <Composer onSend={(t) => send(t).then(() => setDraft(""))} placeholder="Describe the work, or ask a question" autoFocus value={draft} onValue={setDraft} large />
+          <Composer onSend={(t) => { setSent((n) => n + 1); setSending(true); return send(t).then(() => setDraft("")).finally(() => setSending(false)); }} placeholder="Describe the work, or ask a question" autoFocus value={draft} onValue={setDraft} large />
           <div className="chat-starters">
             {STARTERS.map((s) => <button key={s} className="chat-starter" onClick={() => setDraft(s)}>{s}</button>)}
           </div>
