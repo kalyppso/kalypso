@@ -53,4 +53,4 @@
 
 /* The master agent wears the wireframe mark instead of initials. */
 .agent-avatar.mark { background: var(--card-2); overflow: visible; }
-.agent-avatar.mark img { width: 82%; height: 82%; }
+.agent-avatar.mark img { width: 88%; height: 88%; opacity: 0.72; }

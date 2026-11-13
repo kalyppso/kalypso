@@ -191,7 +191,7 @@ export const initials = (name: string) => name.slice(0, 2).toUpperCase();
 
 /** What sits in an agent's avatar: the wireframe mark for the master agent, initials otherwise. */
 export function AgentFace({ agent, size = 26 }: { agent: { name: string; master?: boolean }; size?: number }) {
-  return agent.master ? <Logo size={size} /> : <>{initials(agent.name)}</>;
+  return agent.master ? <Logo size={size} fine /> : <>{initials(agent.name)}</>;
 }
 
 /**

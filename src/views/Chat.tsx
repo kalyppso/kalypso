@@ -293,7 +293,7 @@ function ModelPicker({ master }: { master: Agent | undefined }) {
   };
   return (
     <label className="chat-model" title="The model kalypso thinks with. Agents it creates use the same one unless it picks another.">
-      <span className="chat-model-mark"><Logo size={22} /></span>
+      <span className="chat-model-mark"><Logo size={22} fine /></span>
       <span className="chat-model-name">kalypso</span>
       <select className="chat-model-select" value={current} onChange={(e) => change(e.target.value)}>
         {!known && <option value={current}>{current}</option>}

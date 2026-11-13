@@ -26,7 +26,7 @@
 .pr-pick-item.on { border-color: var(--text-3); background: var(--card-2); color: var(--text); }
 .pr-pick-item.on .pr-agent { background: var(--text); color: var(--page-bg); }
 .pr-agent.mark, .pr-pick-item.on .pr-agent.mark { background: var(--card-2); }
-.pr-agent.mark img { width: 84%; height: 84%; }
+.pr-agent.mark img { width: 88%; height: 88%; opacity: 0.72; }
 .pr-examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; text-align: left; }
 .pr-example { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .pr-example:hover { background: var(--card); }
