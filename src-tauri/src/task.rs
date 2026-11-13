@@ -531,6 +531,7 @@ mod tests {
             max_restarts: None,
             repo: None,
             repo_account: None,
+            effort: None,
         };
         agent::create(db, "work", new).unwrap()
     }

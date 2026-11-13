@@ -2,7 +2,7 @@
 // kx-agent: the master agent's handle on the namespace's other agents.
 //
 //   kx-agent list
-//   kx-agent create NAME --role "what it does" [--model M] [--repo owner/name] [--task "first task"]
+//   kx-agent create NAME --role "what it does" [--model M] [--effort low|medium|high] [--repo owner/name] [--task "first task"]
 //   kx-agent send NAME "message" [--wait 600]     start it if needed, send, wait for its answer
 //   kx-agent wait NAME [--timeout 600]            wait for its current work to finish
 //   kx-agent log NAME [--limit 30]                what it said and did most recently
@@ -19,7 +19,7 @@ const RELAY = process.env.KALYPSO_GATEWAY_URL;
 
 const USAGE = `usage:
   kx-agent list
-  kx-agent create NAME --role "what it does" [--model M] [--repo owner/name] [--task "first task"]
+  kx-agent create NAME --role "what it does" [--model M] [--effort low|medium|high] [--repo owner/name] [--task "first task"]
   kx-agent send NAME "message" [--wait SECONDS]   (default: wait up to 600s for the answer; --wait 0 returns at once)
   kx-agent wait NAME [--timeout SECONDS]
   kx-agent log NAME [--limit N]
@@ -114,7 +114,7 @@ try {
     case "create": {
       needName();
       if (!flags.role) die('say what the agent is for with --role "..."');
-      const a = await call("POST", "", { name, role: flags.role, model: flags.model, repo: flags.repo, task: flags.task });
+      const a = await call("POST", "", { name, role: flags.role, model: flags.model, effort: flags.effort, repo: flags.repo, task: flags.task });
       process.stdout.write(`Created ${line(a)}\n${flags.task ? "It has started on its task." : `Give it work with: kx-agent send ${a.name} "..."`}\n`);
       break;
     }

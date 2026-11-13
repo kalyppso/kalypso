@@ -259,6 +259,27 @@ async fn budgets_pause_and_downgrade_before_forwarding() {
     e.events.recv().await.unwrap();
     assert_eq!(e.seen.lock().unwrap().body["model"], "claude-haiku-5-5", "the second request is downgraded");
 
+    // A conversation already under way keeps its model: switching would re-write its cache.
+    let ongoing = serde_json::json!({
+        "model": "claude-opus-5-5",
+        "max_tokens": 16,
+        "messages": [
+            { "role": "user", "content": "Fix the flaky test" },
+            { "role": "assistant", "content": "Looking at it now." },
+            { "role": "user", "content": "Any luck?" }
+        ]
+    });
+    let res = reqwest::Client::new()
+        .post(format!("{}/anthropic/v1/messages", e.gw))
+        .header("x-api-key", &minted.token)
+        .json(&ongoing)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    e.events.recv().await.unwrap();
+    assert_eq!(e.seen.lock().unwrap().body["model"], "claude-opus-5-5", "mid-conversation requests keep their model");
+
     // A $10 monthly cap that pauses: the next request never reaches the provider.
     rule.period = "month".into();
     rule.cap = 10_000_000;
@@ -522,6 +543,7 @@ async fn git_env() -> GitEnv {
         max_restarts: None,
         repo: Some("acme/platform".into()),
         repo_account: Some(account.clone()),
+        effort: None,
     };
     crate::agent::create(&db, "work", new).unwrap();
     crate::policy::seed_defaults(&db, "work").unwrap();
@@ -633,6 +655,7 @@ async fn only_the_master_agent_manages_agents() {
         max_restarts: None,
         repo: None,
         repo_account: None,
+        effort: None,
     };
     let master = crate::agent::create(&db, "work", agent("kalypso", "sb-m")).unwrap();
     db.with(|c| Ok(c.execute("UPDATE agents SET master = 1 WHERE id = ?1", [&master.id])?)).unwrap();

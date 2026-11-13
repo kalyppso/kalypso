@@ -78,6 +78,7 @@ async fn vm_engines_reach_the_gateway_through_the_relay() {
         max_restarts: Some(0),
         repo: None,
         repo_account: None,
+        effort: None,
         max_turns: Some(10),
     };
     let a = agent::create(&db, &ns, new).unwrap();

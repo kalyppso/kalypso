@@ -51,6 +51,8 @@ export interface Agent {
   restart?: string;
   maxRestarts?: number;
   maxTurns?: number;
+  /** Reasoning effort (desktop app): low to max, or empty for the model's default. */
+  effort?: string;
   /** A linked GitHub repository, "owner/name" (#100), the account used for it, and the agent's branch. */
   repo?: string | null;
   repoAccount?: string | null;

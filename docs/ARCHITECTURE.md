@@ -163,10 +163,11 @@ Adapters:
    - **The first message** is the agent's task. Later messages arrive on stdin, as JSON lines.
    - **Output** is JSON lines, shown as typed transcript events: text, tool, output, policy, result and error.
    - **`max_turns`** is passed to the SDK as model turns per task.
+   - **`effort`** (`low` to `max`, empty for the model's default) is passed as `KALYPSO_EFFORT` and set as the SDK's `effort`. It is fixed for a run: changing effort mid-conversation invalidates the prompt cache. The OpenAI-compatible runner sends it as `reasoning_effort` to OpenAI and `reasoning.effort` to OpenRouter (capped at `high`), and to no one else until provider profiles (#138).
    - **After a restart**, the agent resumes its conversation from `/work/.kalypso/agents/<id>/`.
    - **A finished task** leaves the agent running, "waiting for a message".
 3. **Claude Code CLI** (#15): headless mode (`claude -p --output-format stream-json`).
-4. **Any OpenAI-compatible model** (done): `openai.mjs` in the same runner image, for OpenAI, OpenRouter, Ollama, vLLM and others. The agent's model is `provider/model`; calls go through the gateway's `/<provider>/chat/completions` with the sandbox's key, and it has its own small tool set (`bash`, `read_file`, `write_file`, `edit_file`, `list_files`), each call checked by the policy engine first. Same events and stdin as the Claude runner.
+4. **Any OpenAI-compatible model** (done): `openai.mjs` in the same runner image, for OpenAI, OpenRouter, Ollama, vLLM and others. The agent's model is `provider/model`, never `anthropic/…`: Anthropic's OpenAI-compatible endpoint has no prompt caching and ignores effort, so Claude models are refused here and run on the Claude runtime; calls go through the gateway's `/<provider>/chat/completions` with the sandbox's key, and it has its own small tool set (`bash`, `read_file`, `write_file`, `edit_file`, `list_files`), each call checked by the policy engine first. Same events and stdin as the Claude runner.
 
 The **supervisor** (`agent/supervisor.rs`) owns every live run:
 - **Runs.** Each start is a row in `agent_runs` (attempt, exit code, outcome: running, exited, crashed or stopped, and a reason). Its output, inputs and status changes go to `agent_events`, and are forwarded live as the `agent://update` event.
@@ -187,7 +188,7 @@ A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes thro
   - **Recovery:** the relay is recreated on demand (engine restart, new port) and rejoins every sandbox network of the namespace. Removing a sandbox removes its network, and removing the namespace removes the relay.
   - **Overrides:** `KALYPSO_GATEWAY_TRANSPORT=relay|socket` forces the choice.
 - **Metering.** Responses stream back unchanged while the gateway reads `usage`: JSON bodies; Anthropic SSE `message_start` and `message_delta` (running totals); OpenAI `usage` chunks (the gateway sets `stream_options.include_usage` on streamed Chat Completions) and Responses `response.completed`. Input, output, cache-write (5-minute and 1-hour) and cache-read tokens are priced from `<app data>/pricing.toml` (created with defaults, re-read when it changes) and written to `usage_events` with the namespace, source (sandbox or key label), model, status and latency. Models without a price are counted and flagged as unpriced.
-- **Budgets.** Before forwarding, the gateway checks the namespace's monthly limit and every budget rule that applies to the request's key (§4.14). A paused request gets HTTP 402 with `budget_exceeded` and a message saying which cap was hit and when requests resume; it is recorded in `usage_events` but never forwarded. A downgrade rewrites the request's `model`. Alerts and hits become desktop notifications, once per period.
+- **Budgets.** Before forwarding, the gateway checks the namespace's monthly limit and every budget rule that applies to the request's key (§4.14). A paused request gets HTTP 402 with `budget_exceeded` and a message saying which cap was hit and when requests resume; it is recorded in `usage_events` but never forwarded. A downgrade rewrites the request's `model` only for a request that opens a conversation (no assistant turn in `messages`); a conversation already under way keeps its model, because switching would re-write its whole history to a new cache and drop its thinking. Alerts and hits become desktop notifications, once per period.
 
 ### 4.6 Connections and tunnels (mesh)
 - **Direct:** NATS subjects `ns.X.agent.<id>.inbox`. Each link is an ACL entry allowing A to publish to B's inbox (and the reverse, if two-way). Protocol envelopes cover A2A and MCP-over-NATS, plus an HTTP bridge.
@@ -285,7 +286,7 @@ An integration connects an outside tool to a namespace. It always reaches agents
 
 - **Applies to:** the whole namespace, one sandbox or one gateway key (one agent once agents exist, #13).
 - **Period:** a UTC day, a calendar month, or a run. A sandbox's run is the time since it last started, because every start mints a new gateway key; a key's run is its whole life.
-- **When hit:** `pause` (HTTP 402 until the period resets), `downgrade` (the request is sent with a cheaper model) or `alert` (a notification only).
+- **When hit:** `pause` (HTTP 402 until the period resets), `downgrade` (new conversations are sent with a cheaper model; ones under way finish on theirs) or `alert` (a notification only).
 
 The gateway (§4.5) checks the applicable caps before forwarding each request; when several are hit, the tightest one names the reason. Checks happen before a request is sent, so one request can take spend past a cap and the next one is stopped. Each hit and the monthly heads-up notify once per period (`budget_alerts`). The Overview and Budget page list everything currently paused and why.
 

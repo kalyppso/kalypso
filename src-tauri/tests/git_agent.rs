@@ -73,6 +73,7 @@ async fn an_agent_works_on_its_repo_and_never_holds_the_token() {
         max_restarts: None,
         repo: Some("acme/platform".into()),
         repo_account: Some(account),
+        effort: None,
     };
     let a = agent::create(&db, &ns, new).unwrap();
     let sh = |script: String| {

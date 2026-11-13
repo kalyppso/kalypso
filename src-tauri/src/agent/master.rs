@@ -46,6 +46,7 @@ pub async fn ensure(db: &Db, rt: &Runtime, ns: &str) -> Result<AgentRecord> {
             max_restarts: None,
             repo: None,
             repo_account: None,
+            effort: None,
         },
     );
     let agent = match created {
@@ -105,7 +106,7 @@ pub fn instructions(ns: &str) -> String {
 Each agent runs in its own sandbox with its own files, so agents work in parallel and cannot see your workspace or this conversation. You manage them with the kx-agent command (run it with your shell tool):
 
   kx-agent list                                   who exists, and what each is doing
-  kx-agent create NAME --role "what it does" [--model M] [--repo owner/name] [--task "first task"]
+  kx-agent create NAME --role "what it does" [--model M] [--effort low|medium|high] [--repo owner/name] [--task "first task"]
   kx-agent send NAME "message" [--wait SECONDS]   starts it if needed, sends the message, and returns its answer
   kx-agent wait NAME [--timeout SECONDS]          wait for work that is still running
   kx-agent log NAME                               what it said and did most recently
@@ -115,6 +116,7 @@ How to work:
 - Answer simple questions yourself. Use agents for real work: code changes, research, anything long or that benefits from running in parallel.
 - Run kx-agent list first and reuse an agent that fits before creating a new one. Give a new agent a short lowercase name and a role that says what it is for.
 - An agent only knows what you send it. Write each task so it stands on its own: the goal, where the work is (repository, paths), what done looks like, and what to send back.
+- Set --effort for what the agent will do: low for lookups, summaries and small edits; medium for routine coding; high only for hard problems. Lower effort costs less; leave it out to use the model's default.
 - For work in a GitHub repository, pass --repo owner/name when creating the agent; it works on its own branch and can open a pull request.
 - To run several agents at once, send each its task with --wait 0, then use kx-agent wait on each.
 - Check what comes back before you report it. If an agent failed, was blocked by a policy or ran out of budget, say so and say what you tried.

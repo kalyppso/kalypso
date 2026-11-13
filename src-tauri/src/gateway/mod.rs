@@ -358,6 +358,16 @@ pub struct Gateway {
     pub(crate) agents: OnceLock<Arc<crate::agent::supervisor::Supervisor>>,
 }
 
+/// Whether a model request opens a conversation: nothing the model said is in it yet. Both the
+/// Anthropic and the OpenAI formats carry the history in `messages`; a request without one is
+/// treated as a new conversation.
+pub(crate) fn starts_conversation(body: &serde_json::Value) -> bool {
+    match body.get("messages").and_then(|m| m.as_array()) {
+        Some(messages) => !messages.iter().any(|m| m.get("role").and_then(|r| r.as_str()) == Some("assistant")),
+        None => true,
+    }
+}
+
 /// A model request the gateway refused because a budget was reached.
 #[derive(Debug, Clone)]
 pub struct BudgetBlocked {
@@ -930,10 +940,17 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         }
         stream = json.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
         let mut changed = false;
+        // A downgrade starts with the next conversation. Switching models inside one would re-write
+        // the whole history to a new cache at the new model's price and drop its thinking, so a
+        // conversation already under way keeps its model until it ends.
         if let (Some(to), true) = (&decision.downgrade, json.get("model").is_some()) {
-            json["model"] = serde_json::Value::String(to.clone());
-            model = to.clone();
-            changed = true;
+            if starts_conversation(&json) {
+                json["model"] = serde_json::Value::String(to.clone());
+                model = to.clone();
+                changed = true;
+            } else {
+                tracing::debug!(ns = %ns, to = %to, "budget downgrade waits for the next conversation");
+            }
         }
         // Chat Completions streams only report usage when asked to.
         if stream && format == Format::OpenAi && rest.ends_with("chat/completions") {

@@ -450,6 +450,7 @@ mod tests {
                 max_restarts: Some(max_restarts),
                 repo: None,
                 repo_account: None,
+                effort: None,
             };
             agent::create(&self.db, &self.ns, new).unwrap()
         }

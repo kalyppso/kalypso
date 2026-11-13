@@ -89,6 +89,7 @@ async fn an_agent_on_any_openai_compatible_model_works_within_policy() {
         max_restarts: Some(0),
         repo: None,
         repo_account: None,
+        effort: None,
         max_turns: Some(10),
     };
     let a = agent::create(&db, &ns, new).unwrap();

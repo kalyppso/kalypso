@@ -4,4 +4,8 @@ export type NewAgent = { name: string, role?: string, runtime: string, model?: s
 /**
  * A GitHub repository, "owner/name", and the account to reach it with (#100).
  */
-repo?: string, repo_account?: string, };
+repo?: string, repo_account?: string, 
+/**
+ * Reasoning effort; empty or absent for the model's default.
+ */
+effort?: string, };

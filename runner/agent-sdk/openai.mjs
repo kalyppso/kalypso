@@ -36,6 +36,18 @@ const fail = (text, code = 2) => {
   process.exit(code);
 };
 
+// Reasoning effort from the agent's settings, in the provider's own parameter. Providers whose
+// parameter isn't known here get nothing, so the model runs at its default (#138 adds profiles).
+const EFFORT = process.env.KALYPSO_EFFORT || "";
+function effortParams() {
+  if (!EFFORT) return {};
+  // These APIs top out at "high".
+  const level = ["xhigh", "max"].includes(EFFORT) ? "high" : EFFORT;
+  if (PROVIDER === "openai") return { reasoning_effort: level };
+  if (PROVIDER === "openrouter") return { reasoning: { effort: level } };
+  return {};
+}
+
 if (!PROVIDER || !MODEL) fail("This agent has no model. Set it as provider/model, for example ollama/llama3.1.");
 let key;
 try {
@@ -200,7 +212,7 @@ async function work(task) {
     turns++;
     let res;
     try {
-      res = await post(`/${PROVIDER}/chat/completions`, { model: MODEL, messages, tools: toolSpecs, tool_choice: "auto" });
+      res = await post(`/${PROVIDER}/chat/completions`, { model: MODEL, messages, tools: toolSpecs, tool_choice: "auto", ...effortParams() });
     } catch (e) {
       emit({ t: "error", text: `Couldn't reach the model through KALYPSO: ${e.message}` });
       return;
