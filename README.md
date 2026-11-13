@@ -23,6 +23,14 @@ Each agent works in its own sandbox. KALYPSO checks every tool call against your
   <img src="docs/images/overview-dark.png" alt="KALYPSO Today: quick actions for agents, tasks, sandboxes, secrets, policies and connections, above a year of commits by agents and people">
 </picture>
 
+## Tour
+
+A 40-second walk through KALYPSO, starting with kalypso handing two jobs to two agents.
+
+<a href="docs/media/tour.mp4"><img src="docs/media/tour.gif" alt="KALYPSO tour: kalypso hands a flaky test and a README fix to two agents, then a walk through the app"></a>
+
+<sub>[Watch the full-quality video](docs/media/tour.mp4)</sub>
+
 ## What it does
 
 Every call an agent makes goes through four layers before it reaches a model or a tool.
