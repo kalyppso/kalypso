@@ -95,6 +95,9 @@ pub struct NewAgent {
 #[derive(Debug, Clone, Default, Deserialize, TS)]
 #[ts(export)]
 pub struct AgentPatch {
+    /// A new name, unique in the namespace. The master agent keeps its own.
+    #[ts(optional)]
+    pub name: Option<String>,
     #[ts(optional)]
     pub role: Option<String>,
     #[ts(optional)]
@@ -366,6 +369,20 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
 
 pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord> {
     let mut a = get(db, ns, id)?;
+    let old_name = a.name.clone();
+    if let Some(v) = p.name {
+        let v = v.trim().to_string();
+        if v != a.name {
+            if a.master {
+                return Err(KalypsoError::Invalid(format!("{} is the master agent; its name stays", a.name)));
+            }
+            validate_name(&v)?;
+            if list(db, ns)?.iter().any(|o| o.id != a.id && o.name.eq_ignore_ascii_case(&v)) {
+                return Err(KalypsoError::Conflict(format!("agent {v} in {ns}")));
+            }
+            a.name = v;
+        }
+    }
     if let Some(v) = p.role {
         a.role = v.trim().to_string();
     }
@@ -418,7 +435,7 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     db.with(|c| {
         c.execute(
             "UPDATE agents SET role = ?2, model = ?3, sandbox_id = ?4, command = ?5, max_turns = ?6, restart = ?7, max_restarts = ?8,
-             repo = ?9, repo_account = ?10, branch = ?11, effort = ?12, runtime = ?13 WHERE id = ?1",
+             repo = ?9, repo_account = ?10, branch = ?11, effort = ?12, runtime = ?13, name = ?14 WHERE id = ?1",
             rusqlite::params![
                 id,
                 a.role,
@@ -432,12 +449,14 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
                 a.repo_account,
                 a.branch,
                 a.effort,
-                a.runtime
+                a.runtime,
+                a.name
             ],
         )?;
         Ok(())
     })?;
-    db.audit(Some(ns), "user", "agent.update", &a.name)?;
+    let what = if old_name == a.name { a.name.clone() } else { format!("{old_name} renamed to {}", a.name) };
+    db.audit(Some(ns), "user", "agent.update", &what)?;
     get(db, ns, id)
 }
 
@@ -676,5 +695,17 @@ mod tests {
         ok.runtime = "openai-compat".into();
         ok.model = Some("ollama/llama3.1".into());
         create(&db, "work", ok).unwrap();
+    }
+
+    #[test]
+    fn agents_can_be_renamed_but_names_stay_unique() {
+        let db = db();
+        let a = create(&db, "work", new("scout")).unwrap();
+        create(&db, "work", new("writer")).unwrap();
+        let renamed = update(&db, "work", &a.id, AgentPatch { name: Some(" explorer ".into()), ..Default::default() }).unwrap();
+        assert_eq!(renamed.name, "explorer");
+        let err = update(&db, "work", &a.id, AgentPatch { name: Some("Writer".into()), ..Default::default() }).unwrap_err();
+        assert_eq!(err.code(), "conflict");
+        assert!(update(&db, "work", &a.id, AgentPatch { name: Some("bad name!".into()), ..Default::default() }).is_err());
     }
 }
