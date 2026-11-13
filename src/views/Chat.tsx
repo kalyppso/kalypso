@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, Settings2, SlidersHorizontal, Square } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
-import { AgentFace, Skeleton, Status } from "../components/ui";
+import { Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
+import { Pecten } from "../components/Pecten";
 import { Logo } from "../components/Logo";
 import { ChatSettingsModal } from "../components/ChatSettings";
 import { CLAUDE_MODELS, ConnectProvider, modelLabel, providerModels, useModelChoices, useProviders } from "../components/Providers";
@@ -152,7 +153,7 @@ export function Chat() {
         <div className="chat-list agents">
           {team.map((a) => (
             <button key={a.id} className={`chat-item ${a.id === member ? "on" : ""}`} onClick={() => setMember(a.id)} title={a.role}>
-              <span className={`agent-avatar ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={24} /></span>
+              <Pecten size={22} active={a.status === "running"} />
               <span className="clip">{a.name}</span>
               {a.status === "running" && <span className="chat-item-live" aria-label="working" />}
             </button>
@@ -373,6 +374,16 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
   const { state, dispatch } = useStore();
   const convo = useAgentConversation(state.ns, a);
   const gate = useAgentGate(a, () => syncNamespace(state.ns, dispatch));
+  // Its replies, counted once the transcript has loaded: each new one fans the shell open.
+  const replies = convo.events.filter((e) => e.kind === "text" || e.kind === "result" || e.kind === "error").length;
+  const [received, setReceived] = useState(0);
+  const seen = useRef<number | null>(null);
+  useEffect(() => {
+    if (convo.loading) return;
+    if (seen.current !== null && replies > seen.current) setReceived((n) => n + 1);
+    seen.current = replies;
+  }, [replies, convo.loading]);
+  useEffect(() => { seen.current = null; }, [a.id]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onBack();
     window.addEventListener("keydown", esc);
@@ -382,7 +393,7 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
     <section className="chat-main" aria-label={`Conversation with ${a.name}`}>
       <header className="chat-top">
         <button className="btn ghost sm icon" onClick={onBack} title="Back to kalypso (Esc)" aria-label="Back to kalypso"><ArrowLeft size={14} /></button>
-        <span className={`agent-avatar ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={24} /></span>
+        <span className="chat-crew-mark"><Pecten size={38} active={gate.working} pulse={received} label={`${a.name}${gate.working ? ", working" : ""}`} /></span>
         <div style={{ minWidth: 0 }}>
           <div className="chat-head-name"><span className="clip">{a.name}</span><Status value={a.status} /></div>
           <div className="chat-head-sub clip"><span className="mono">{a.model || a.runtime}</span>{a.role ? ` · ${a.role}` : ""}</div>
@@ -391,7 +402,7 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
         <button className="btn ghost sm" onClick={() => dispatch({ type: "view", view: "agents", focus: a.id })}><SlidersHorizontal size={12} /> Details</button>
       </header>
       <Conversation events={convo.events} runs={convo.runs} loading={convo.loading} working={gate.working} onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}
-        empty={<>{a.name} hasn't done anything yet.</>} />
+        empty={<div className="chat-crew-empty"><Pecten size={96} active={gate.working} pulse={received} /><span>{gate.working ? `${a.name} is working on it.` : `${a.name} hasn't done anything yet. Send it a message to give it work.`}</span></div>} />
       <Composer onSend={convo.send} placeholder={`Message ${a.name} directly`} blocked={gate.blocked} />
     </section>
   );
