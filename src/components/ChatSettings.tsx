@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace } from "../backend";
 import type { ChatSettings as Settings } from "../bindings/ChatSettings";
 import type { Memory } from "../bindings/Memory";
@@ -164,35 +164,12 @@ function MemoryTab({ settings, setSettings, memories, setMemories }: { settings:
   const { state } = useStore();
   const toast = useToast();
   const live = isLive();
-  const [text, setText] = useState("");
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
   const toggle = async (on: boolean) => {
     const next = { ...settings, memory: on };
     try {
       setSettings(live ? await api.chatSettingsSet(state.ns, next) : next);
-      toast(on ? "kalypso remembers again from its next start" : "Memory off: kalypso won't see or save memories");
-    } catch (e) {
-      toast(errorMessage(e), "err");
-    }
-  };
-  const add = async () => {
-    const t = text.trim();
-    if (!t) return;
-    try {
-      const m = live ? await api.memoryAdd(state.ns, t) : { id: `me-${Date.now()}`, text: t, source: "you", created_at: "" };
-      setMemories([m, ...memories]);
-      setText("");
-    } catch (e) {
-      toast(errorMessage(e), "err");
-    }
-  };
-  const saveEdit = async () => {
-    if (!editing) return;
-    try {
-      if (live) await api.memoryEdit(state.ns, editing.id, editing.text);
-      setMemories(memories.map((m) => (m.id === editing.id ? { ...m, text: editing.text.trim() } : m)));
-      setEditing(null);
+      toast(on ? "Memory on: kalypso remembers again from its next start" : "Memory off: kalypso won't see or save memories");
     } catch (e) {
       toast(errorMessage(e), "err");
     }
@@ -209,29 +186,21 @@ function MemoryTab({ settings, setSettings, memories, setMemories }: { settings:
   return (
     <>
       <div className="cs-row" style={{ borderTop: 0, paddingTop: 0 }}>
-        <div className="cs-row-text"><b>Memory</b><span>Facts kalypso knows in every chat. It saves new ones itself when something will matter next time.</span></div>
+        <div className="cs-row-text">
+          <b>Memory</b>
+          <span>kalypso manages this itself: it saves what will matter in later chats, updates facts that change and drops ones that no longer hold. Remove anything you don't want it to keep.</span>
+        </div>
         <Toggle on={settings.memory} onChange={toggle} label="Memory" />
       </div>
-      <div className="cs-add">
-        <input className="input" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Add something kalypso should remember" disabled={!settings.memory} />
-        <button className="btn" onClick={add} disabled={!text.trim() || !settings.memory}><Plus size={13} /> Add</button>
-      </div>
       <div className="cs-mem">
-        {memories.length === 0 && <p className="faint small" style={{ margin: "8px 10px" }}>Nothing yet.</p>}
-        {memories.map((m) =>
-          editing?.id === m.id ? (
-            <div key={m.id} className="cs-add" style={{ padding: "4px 0" }}>
-              <input className="input" autoFocus value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditing(null); }} />
-              <button className="btn" onClick={saveEdit}>Save</button>
-            </div>
-          ) : (
-            <div key={m.id} className="cs-mem-item">
-              <p onDoubleClick={() => setEditing({ id: m.id, text: m.text })} title="Double-click to edit">{m.text}</p>
-              <span className="cs-mem-src">{m.source === "you" ? "You" : m.source}</span>
-              <button className="btn ghost sm icon danger" onClick={() => remove(m.id)} aria-label="Forget this"><Trash2 size={12} /></button>
-            </div>
-          ),
-        )}
+        {memories.length === 0 && <p className="faint small" style={{ margin: "8px 10px" }}>{settings.memory ? "Nothing yet. kalypso adds to this as you work together." : "Memory is off."}</p>}
+        {memories.map((m) => (
+          <div key={m.id} className="cs-mem-item">
+            <p>{m.text}</p>
+            <span className="cs-mem-src">{m.created_at ? m.created_at.slice(0, 10) : ""}</span>
+            <button className="btn ghost sm icon danger" onClick={() => remove(m.id)} aria-label="Forget this" title="Forget this"><Trash2 size={12} /></button>
+          </div>
+        ))}
       </div>
     </>
   );

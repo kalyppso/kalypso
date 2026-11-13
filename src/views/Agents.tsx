@@ -3,7 +3,7 @@ import { ArrowLeft, Bot, ChevronRight, Pause, Play, Plus, Square, Trash2 } from 
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import { uid, useNamespaced, useStore, useToast, useCompose, useFocus } from "../store";
 import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
-import { CodeReveal, EmptyState, Field, initials, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
+import { CodeReveal, EmptyState, Field, AgentFace, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
 import type { PullRequest } from "../bindings/PullRequest";
@@ -42,7 +42,7 @@ export function Agents() {
           const sb = sandboxes.find((s) => s.id === a.sandboxId);
           return (
             <button key={a.id} className="agent-row" onClick={() => setOpenId(a.id)}>
-              <span className={`agent-avatar ${a.status}`}>{initials(a.name)}</span>
+              <span className={`agent-avatar ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={24} /></span>
               <span className="agent-main">
                 <span className="agent-name">{a.name}</span>
                 <span className="faint small clip">{a.role}</span>
@@ -77,7 +77,7 @@ function AgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void })
     <>
       <button className="btn ghost sm agent-back" onClick={onBack}><ArrowLeft size={13} /> Agents</button>
       <div className="agent-head">
-        <span className={`agent-avatar lg ${a.status}`}>{initials(a.name)}</span>
+        <span className={`agent-avatar lg ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={38} /></span>
         <div style={{ minWidth: 0 }}>
           <div className="row"><h1>{a.name}</h1><Status value={a.status} /></div>
           <p className="dim" style={{ margin: "4px 0 0" }}>{a.role}</p>
@@ -233,7 +233,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
     <>
       <button className="btn ghost sm agent-back" onClick={onBack}><ArrowLeft size={13} /> Agents</button>
       <div className="agent-head">
-        <span className={`agent-avatar lg ${a.status}`}>{initials(a.name)}</span>
+        <span className={`agent-avatar lg ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={38} /></span>
         <div style={{ minWidth: 0 }}>
           <div className="row"><h1>{a.name}</h1><Status value={a.status} /></div>
           <p className="dim" style={{ margin: "4px 0 0" }}>{a.role || "No role yet"}</p>

@@ -3,8 +3,9 @@ import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, Settings2, Slide
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
-import { initials, Skeleton, Status } from "../components/ui";
+import { AgentFace, Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
+import { Logo } from "../components/Logo";
 import { ChatSettingsModal } from "../components/ChatSettings";
 import { useNamespaced, useStore, useToast } from "../store";
 import type { Agent } from "../types";
@@ -134,7 +135,7 @@ export function Chat() {
         <div className="chat-list agents">
           {team.map((a) => (
             <button key={a.id} className={`chat-item ${a.id === member ? "on" : ""}`} onClick={() => setMember(a.id)} title={a.role}>
-              <span className={`agent-avatar ${a.status}`}>{initials(a.name)}</span>
+              <span className={`agent-avatar ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={24} /></span>
               <span className="clip">{a.name}</span>
               {a.status === "running" && <span className="chat-item-live" aria-label="working" />}
             </button>
@@ -292,6 +293,7 @@ function ModelPicker({ master }: { master: Agent | undefined }) {
   };
   return (
     <label className="chat-model" title="The model kalypso thinks with. Agents it creates use the same one unless it picks another.">
+      <span className="chat-model-mark"><Logo size={22} /></span>
       <span className="chat-model-name">kalypso</span>
       <select className="chat-model-select" value={current} onChange={(e) => change(e.target.value)}>
         {!known && <option value={current}>{current}</option>}
@@ -349,7 +351,7 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
     <section className="chat-main" aria-label={`Conversation with ${a.name}`}>
       <header className="chat-top">
         <button className="btn ghost sm icon" onClick={onBack} title="Back to kalypso (Esc)" aria-label="Back to kalypso"><ArrowLeft size={14} /></button>
-        <span className={`agent-avatar ${a.status}`}>{initials(a.name)}</span>
+        <span className={`agent-avatar ${a.status} ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={24} /></span>
         <div style={{ minWidth: 0 }}>
           <div className="chat-head-name"><span className="clip">{a.name}</span><Status value={a.status} /></div>
           <div className="chat-head-sub clip"><span className="mono">{a.model || a.runtime}</span>{a.role ? ` · ${a.role}` : ""}</div>

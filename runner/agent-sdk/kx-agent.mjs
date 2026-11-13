@@ -25,7 +25,9 @@ const USAGE = `usage:
   kx-agent log NAME [--limit N]
   kx-agent start NAME | stop NAME | delete NAME
   kx-agent remember "a lasting fact"            save to your memory (if the user allows it)
-  kx-agent memories                             what you remember`;
+  kx-agent update-memory ID "corrected fact"    change one
+  kx-agent forget ID                            remove one
+  kx-agent memories                             what you remember, with IDs`;
 
 function die(msg, code = 2) {
   process.stderr.write(`kx-agent: ${msg}\n`);
@@ -154,7 +156,20 @@ try {
     }
     case "memories": {
       const all = await call("GET", "", undefined, "/_kalypso/memory");
-      process.stdout.write(all.length ? all.map((m) => `- ${m.text}`).join("\n") + "\n" : "Nothing saved yet.\n");
+      process.stdout.write(all.length ? all.map((m) => `- [${m.id}] ${m.text}`).join("\n") + "\n" : "Nothing saved yet.\n");
+      break;
+    }
+    case "update-memory": {
+      const text = pos.slice(1).join(" ").trim();
+      if (!name || !text) die('usage: kx-agent update-memory ID "corrected fact"');
+      await call("POST", `/${enc(name)}`, { text }, "/_kalypso/memory");
+      process.stdout.write(`Updated ${name}\n`);
+      break;
+    }
+    case "forget": {
+      needName();
+      await call("DELETE", `/${enc(name)}`, undefined, "/_kalypso/memory");
+      process.stdout.write(`Forgot ${name}\n`);
       break;
     }
     default:

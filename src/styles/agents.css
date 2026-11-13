@@ -50,3 +50,7 @@
 .agent-fact { min-width: 0; padding: 14px 16px; border-radius: 12px; background: var(--card); }
 .agent-section { padding: 16px 0; border-top: 1px solid var(--border); }
 .agent-section h3 { margin: 0 0 10px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+
+/* The master agent wears the wireframe mark instead of initials. */
+.agent-avatar.mark { background: var(--card-2); overflow: visible; }
+.agent-avatar.mark img { width: 82%; height: 82%; }

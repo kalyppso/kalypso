@@ -181,3 +181,5 @@
 .cv-pending { opacity: 0.7; }
 .cv-retry { margin-left: auto; flex: none; }
 .cv-note.error { align-items: center; }
+
+.chat-model-mark { display: grid; place-items: center; margin-right: 6px; }

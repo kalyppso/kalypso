@@ -572,7 +572,7 @@ pub fn memory_edit(s: State<'_, AppState>, ns: String, id: String, text: String)
 #[tauri::command]
 pub fn memory_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
     ensure_ns(&s, &ns)?;
-    crate::prompts::forget(&s.db, &ns, &id)
+    crate::prompts::forget(&s.db, &ns, &id, "user")
 }
 
 #[tauri::command]

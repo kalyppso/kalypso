@@ -43,7 +43,6 @@ export const NAV: { title: string; items: NavDef[] }[] = [
       { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "analytics", label: "Analytics", icon: BarChart3 },
       { id: "agents", label: "Agents", icon: Bot },
-      { id: "prompts", label: "Prompts", icon: ScrollText },
       { id: "tracker", label: "Tracker", icon: KanbanSquare },
       { id: "git", label: "Git tracker", icon: GitCommitHorizontal },
       { id: "sandboxes", label: "Sandboxes", icon: Boxes },
@@ -55,6 +54,7 @@ export const NAV: { title: string; items: NavDef[] }[] = [
     title: "Control",
     items: [
       { id: "policies", label: "Policies", icon: ShieldCheck },
+      { id: "prompts", label: "Prompts", icon: ScrollText },
       { id: "budget", label: "Budget", icon: Wallet },
       { id: "secrets", label: "Secrets", icon: KeyRound },
     ],

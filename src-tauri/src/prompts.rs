@@ -231,6 +231,9 @@ pub fn remember(db: &Db, ns: &str, text: &str, source: &str) -> Result<Memory> {
 }
 
 pub fn edit_memory(db: &Db, ns: &str, id: &str, text: &str) -> Result<()> {
+    if text.len() > MAX_MEMORY {
+        return Err(KalypsoError::Invalid(format!("a memory is at most {MAX_MEMORY} characters")));
+    }
     let text = text.trim();
     if text.is_empty() || text.len() > MAX_MEMORY {
         return Err(KalypsoError::Invalid(format!("a memory is 1 to {MAX_MEMORY} characters")));
@@ -242,12 +245,12 @@ pub fn edit_memory(db: &Db, ns: &str, id: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn forget(db: &Db, ns: &str, id: &str) -> Result<()> {
+pub fn forget(db: &Db, ns: &str, id: &str, who: &str) -> Result<()> {
     let n = db.with(|c| Ok(c.execute("DELETE FROM memories WHERE id = ?1 AND ns = ?2", (id, ns))?))?;
     if n == 0 {
         return Err(KalypsoError::NotFound(format!("memory {id}")));
     }
-    db.audit(Some(ns), "user", "memory.delete", id)
+    db.audit(Some(ns), who, "memory.delete", id)
 }
 
 // ---------- Putting it together ----------
@@ -283,9 +286,9 @@ pub fn compose(db: &Db, agent: &crate::agent::AgentRecord) -> Result<String> {
         });
         if s.memory {
             let mem = memories(db, &agent.ns)?;
-            let notes: Vec<String> = mem.iter().take(MEMORY_IN_PROMPT).map(|m| format!("- {}", m.text)).collect();
+            let notes: Vec<String> = mem.iter().take(MEMORY_IN_PROMPT).map(|m| format!("- [{}] {}", m.id, m.text)).collect();
             let mut block = String::from(
-                "Memory: you can save a lasting fact about the user, their projects or how they like to work with: kx-agent remember \"...\" (one short fact; only what will still matter next time).",
+                "Memory: you manage your own memory; the user doesn't add to it. As you learn something that will still matter in a later chat (the user's preferences, their projects and repositories, decisions made, how they like to work), save it right away as one short fact: kx-agent remember \"...\". When a fact changes, update it: kx-agent update-memory ID \"...\". When one turns out wrong or no longer matters, remove it: kx-agent forget ID. Don't save what only matters to this chat, secrets, or anything you can look up again. Keep the list short and current.",
             );
             if !notes.is_empty() {
                 block.push_str("\nWhat you remember:\n");
@@ -386,7 +389,8 @@ mod tests {
         assert!(text.contains("Answer in French."));
         assert!(text.contains("Keep replies short"));
         assert!(text.contains("Leave agents running"));
-        assert!(text.contains("- The main repo is acme/platform") && text.contains("- Prefers Podman"));
+        assert!(text.contains("] The main repo is acme/platform") && text.contains("] Prefers Podman"));
+        assert!(text.contains("kx-agent forget ID"));
         // Workers never see the master's settings or memory.
         assert_eq!(compose(&db, &worker).unwrap(), "");
         // Memory off: none of it is given.
@@ -394,7 +398,7 @@ mod tests {
         assert!(!compose(&db, &master).unwrap().contains("acme/platform"));
         assert!(set_chat_settings(&db, "work", ChatSettings { style: "loud".into(), ..Default::default() }).is_err());
         let id = memories(&db, "work").unwrap()[0].id.clone();
-        forget(&db, "work", &id).unwrap();
+        forget(&db, "work", &id, "user").unwrap();
         assert_eq!(memories(&db, "work").unwrap().len(), 1);
     }
 }

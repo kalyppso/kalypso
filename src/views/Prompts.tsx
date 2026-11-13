@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, ScrollText, Trash2, UserRound } from "lucide-react";
 import { api, errorMessage, isLive } from "../backend";
 import type { Prompt } from "../bindings/Prompt";
-import { EmptyState, Field, Modal, PageHead, PrimaryButton, Skeleton, initials, useErrors } from "../components/ui";
+import { AgentFace, EmptyState, Field, Modal, PageHead, PrimaryButton, Skeleton, useErrors } from "../components/ui";
 import { useNamespaced, useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import "../styles/prompts.css";
@@ -114,7 +114,7 @@ function Group({ title, hint, items, agents, onOpen, onNew }: { title: string; h
               </span>
               <span className="pr-desc">{p.description || p.content}</span>
               <span className="pr-who">
-                {who.length ? who.map((a) => <span key={a.id} className="pr-agent" title={a.name}>{a.master ? "K" : initials(a.name)}</span>) : <span className="faint small">Not given to any agent</span>}
+                {who.length ? who.map((a) => <span key={a.id} className={`pr-agent ${a.master ? "mark" : ""}`} title={a.name}><AgentFace agent={a} size={18} /></span>) : <span className="faint small">Not given to any agent</span>}
               </span>
             </button>
           );
@@ -185,7 +185,7 @@ function Editor({ initial, agents, onClose, onSaved, onDeleted }: { initial: Par
         <div className="pr-pick">
           {agents.map((a) => (
             <button key={a.id} className={`pr-pick-item ${chosen.includes(a.id) ? "on" : ""}`} onClick={() => toggle(a.id)} aria-pressed={chosen.includes(a.id)}>
-              <span className="pr-agent">{a.master ? "K" : initials(a.name)}</span>
+              <span className={`pr-agent ${a.master ? "mark" : ""}`}><AgentFace agent={a} size={18} /></span>
               {a.name}{a.master ? " (master)" : ""}
             </button>
           ))}

@@ -426,3 +426,38 @@ pub async fn remember(State(gw): State<Arc<Gateway>>, headers: HeaderMap, Json(r
         Err(e) => error(e),
     }
 }
+
+/// `POST /_kalypso/memory/{id}`: the master agent corrects a fact it saved.
+pub async fn update_memory(
+    State(gw): State<Arc<Gateway>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<Remember>,
+) -> Response {
+    let (me, _) = match caller(&gw, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if !crate::prompts::memory_on(&gw.db, &me.ns).unwrap_or(false) {
+        return fail(StatusCode::FORBIDDEN, "the user has turned memory off");
+    }
+    match crate::prompts::edit_memory(&gw.db, &me.ns, &id, &req.text) {
+        Ok(()) => {
+            let _ = gw.db.audit(Some(&me.ns), &me.name, "memory.update", &id);
+            Json(json!({ "updated": id })).into_response()
+        }
+        Err(e) => error(e),
+    }
+}
+
+/// `DELETE /_kalypso/memory/{id}`: the master agent drops a fact that no longer holds.
+pub async fn forget_memory(State(gw): State<Arc<Gateway>>, headers: HeaderMap, Path(id): Path<String>) -> Response {
+    let (me, _) = match caller(&gw, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match crate::prompts::forget(&gw.db, &me.ns, &id, &me.name) {
+        Ok(()) => Json(json!({ "forgot": id })).into_response(),
+        Err(e) => error(e),
+    }
+}
