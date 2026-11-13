@@ -29,6 +29,8 @@ import type { PolicyEvent as PolicyEventRecord } from "./bindings/PolicyEvent";
 import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { Prompt } from "./bindings/Prompt";
+import type { ModelProvider } from "./bindings/ModelProvider";
+import type { ProviderInput } from "./bindings/ProviderInput";
 import type { Task as TaskRecord } from "./bindings/Task";
 import type { NewTask } from "./bindings/NewTask";
 import type { TaskPatch } from "./bindings/TaskPatch";
@@ -112,7 +114,11 @@ export const api = {
   agentUpdate: (ns: string, id: string, patch: AgentPatch) => invoke<AgentRecord>("agent_update", { ns, id, patch }),
   agentDelete: (ns: string, id: string) => invoke<void>("agent_delete", { ns, id }),
   masterGet: (ns: string) => invoke<AgentRecord | null>("master_get", { ns }),
-  masterEnsure: (ns: string) => invoke<AgentRecord>("master_ensure", { ns }),
+  masterEnsure: (ns: string, model?: string) => invoke<AgentRecord>("master_ensure", { ns, model }),
+  providerList: (ns: string) => invoke<ModelProvider[]>("provider_list", { ns }),
+  providerSave: (ns: string, provider: ProviderInput) => invoke<ModelProvider>("provider_save", { ns, provider }),
+  providerRemove: (ns: string, id: string) => invoke<void>("provider_remove", { ns, id }),
+  providerModels: (ns: string, id: string) => invoke<string[]>("provider_models", { ns, id }),
   masterNewChat: (ns: string) => invoke<AgentRecord | null>("master_new_chat", { ns }),
   taskList: (ns: string) => invoke<TaskRecord[]>("task_list", { ns }),
   taskCreate: (ns: string, task: NewTask) => invoke<TaskRecord>("task_create", { ns, task }),

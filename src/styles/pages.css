@@ -44,3 +44,13 @@
 .policy-scope { flex: none; max-width: 220px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .policy-detail { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 14px 60px; animation: enter 0.2s var(--ease); }
 @media (max-width: 1000px) { .policy-scope { display: none; } }
+
+/* Settings → Models: connected providers and the form to add one. */
+.provider-list { display: grid; gap: 8px; margin: 0 0 16px; }
+.provider-row { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.provider-row .row { gap: 10px; }
+.provider-row .clip { min-width: 0; }
+.provider-models { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 180px; overflow: auto; }
+.provider-add { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; }
+.provider-connect { display: grid; gap: 10px; }
+.provider-connect.compact .field { margin: 0; }

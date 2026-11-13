@@ -4,7 +4,8 @@ import { openSetup } from "./Setup";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, isLive } from "../backend";
 import type { AuditEntry } from "../bindings/AuditEntry";
-import { Check, Palette, RefreshCw, ScrollText, SlidersHorizontal, User } from "lucide-react";
+import { Check, Cpu, Palette, RefreshCw, ScrollText, SlidersHorizontal, User } from "lucide-react";
+import { ProvidersSection } from "../components/Providers";
 import "../styles/pages.css";
 import { DEFAULT_APPEARANCE, useStore, useToast, type Action } from "../store";
 import { themePatch, themes } from "../themes";
@@ -18,6 +19,7 @@ import type { Appearance, AuthProvider } from "../types";
 
 const SECTIONS = [
   { id: "account", label: "Account", icon: User },
+  { id: "models", label: "Models", icon: Cpu },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "audit", label: "Audit log", icon: ScrollText },
   { id: "preferences", label: "Preferences", icon: SlidersHorizontal },
@@ -69,6 +71,7 @@ export function SettingsView() {
         <section className="settings-body" key={section}>
           <h2 className="settings-title">{current.label}</h2>
           {section === "account" && <Account />}
+          {section === "models" && <ProvidersSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "audit" && <AuditLog />}
           {section === "preferences" && <Preferences />}

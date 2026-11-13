@@ -246,6 +246,19 @@ fn check_model(runtime: &str, model: &str) -> Result<()> {
     }
 }
 
+/// Runtimes that run a model through KALYPSO's runner, as opposed to a command.
+pub const RUNNER_RUNTIMES: &[&str] = &["claude-sdk", "openai-compat"];
+
+/// The runtime a model runs on: Claude models (bare ids) on the Claude runtime, any other
+/// provider's `provider/model` on the OpenAI-compatible one.
+pub fn runtime_for_model(model: &str) -> &'static str {
+    if model.contains('/') {
+        "openai-compat"
+    } else {
+        "claude-sdk"
+    }
+}
+
 /// Reasoning effort levels; which ones a model accepts is up to the provider (#138).
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
@@ -358,6 +371,11 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     }
     if let Some(v) = p.model {
         a.model = v.trim().to_string();
+        // The two model runtimes follow the model: Claude models on the Claude runtime,
+        // `provider/model` on the OpenAI-compatible one.
+        if RUNNER_RUNTIMES.contains(&a.runtime.as_str()) && !a.model.is_empty() {
+            a.runtime = runtime_for_model(&a.model).into();
+        }
     }
     if let Some(v) = p.sandbox_id {
         a.sandbox_id = Some(v).filter(|s| !s.is_empty());
@@ -400,7 +418,7 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     db.with(|c| {
         c.execute(
             "UPDATE agents SET role = ?2, model = ?3, sandbox_id = ?4, command = ?5, max_turns = ?6, restart = ?7, max_restarts = ?8,
-             repo = ?9, repo_account = ?10, branch = ?11, effort = ?12 WHERE id = ?1",
+             repo = ?9, repo_account = ?10, branch = ?11, effort = ?12, runtime = ?13 WHERE id = ?1",
             rusqlite::params![
                 id,
                 a.role,
@@ -413,7 +431,8 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
                 a.repo,
                 a.repo_account,
                 a.branch,
-                a.effort
+                a.effort,
+                a.runtime
             ],
         )?;
         Ok(())
