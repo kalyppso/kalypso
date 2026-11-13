@@ -28,6 +28,10 @@ import type { Policy as PolicyRecord } from "./bindings/Policy";
 import type { PolicyEvent as PolicyEventRecord } from "./bindings/PolicyEvent";
 import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
+import type { Prompt } from "./bindings/Prompt";
+import type { PromptInput } from "./bindings/PromptInput";
+import type { ChatSettings } from "./bindings/ChatSettings";
+import type { Memory } from "./bindings/Memory";
 import type { GatewayKey } from "./bindings/GatewayKey";
 import type { MintedKey } from "./bindings/MintedKey";
 import type { UsageEvent } from "./bindings/UsageEvent";
@@ -106,6 +110,16 @@ export const api = {
   agentDelete: (ns: string, id: string) => invoke<void>("agent_delete", { ns, id }),
   masterGet: (ns: string) => invoke<AgentRecord | null>("master_get", { ns }),
   masterEnsure: (ns: string) => invoke<AgentRecord>("master_ensure", { ns }),
+  masterNewChat: (ns: string) => invoke<AgentRecord | null>("master_new_chat", { ns }),
+  promptList: (ns: string) => invoke<Prompt[]>("prompt_list", { ns }),
+  promptSave: (ns: string, prompt: PromptInput) => invoke<Prompt>("prompt_save", { ns, prompt }),
+  promptDelete: (ns: string, id: string) => invoke<void>("prompt_delete", { ns, id }),
+  chatSettingsGet: (ns: string) => invoke<ChatSettings>("chat_settings_get", { ns }),
+  chatSettingsSet: (ns: string, settings: ChatSettings) => invoke<ChatSettings>("chat_settings_set", { ns, settings }),
+  memoryList: (ns: string) => invoke<Memory[]>("memory_list", { ns }),
+  memoryAdd: (ns: string, text: string) => invoke<Memory>("memory_add", { ns, text }),
+  memoryEdit: (ns: string, id: string, text: string) => invoke<void>("memory_edit", { ns, id, text }),
+  memoryDelete: (ns: string, id: string) => invoke<void>("memory_delete", { ns, id }),
   agentStart: (ns: string, id: string) => invoke<AgentRecord>("agent_start", { ns, id }),
   agentStop: (ns: string, id: string) => invoke<AgentRecord>("agent_stop", { ns, id }),
   agentPause: (ns: string, id: string) => invoke<AgentRecord>("agent_pause", { ns, id }),

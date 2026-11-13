@@ -249,7 +249,7 @@ function KeyStep({ ns, hasKey, check, recheck, refresh, onNext }: {
             <input className="input mono" type="password" autoFocus autoComplete="off" spellCheck={false} placeholder="sk-ant-…" value={value}
               onChange={(e) => { setValue(e.target.value); setError(null); }} onKeyDown={(e) => e.key === "Enter" && save()} />
           </label>
-          <p className="faint small">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>. Using an OpenAI-compatible API or Ollama instead? Add it in Secrets and skip this step.</p>
+          <p className="faint small">Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>. Using an OpenAI-compatible API or Ollama instead? Add it in the Vault and skip this step.</p>
           {error && <Problem what="The key couldn't be saved." detail={error} />}
         </>
       )}

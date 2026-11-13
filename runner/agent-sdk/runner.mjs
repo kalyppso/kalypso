@@ -226,7 +226,17 @@ const options = {
 
 try {
   for await (const m of query({ prompt: messages(), options })) {
-    if (m.type === "system" && m.subtype === "init") {
+    if (m.type === "system" && m.subtype === "api_retry") {
+      // Say so at once instead of retrying in silence for minutes. A refused key won't fix itself.
+      const status = m.error_status;
+      if (status === 401 || status === 403) {
+        fail(`The model provider refused KALYPSO's request (${status}). Check the provider key in the Vault page (gateway scope), for example ANTHROPIC_API_KEY.`, 3);
+      }
+      if (m.attempt === 1 || m.attempt === m.max_retries) {
+        const why = status ? `the model answered ${status}` : "couldn't reach the model";
+        emit({ t: "status", text: `Retrying: ${why} (attempt ${m.attempt} of ${m.max_retries})` });
+      }
+    } else if (m.type === "system" && m.subtype === "init") {
       fs.writeFileSync(sessionFile, m.session_id);
       emit({ t: "ready", text: `${m.model} · ${m.tools.length} tools${resume ? " · resumed" : ""}` });
     } else if (m.type === "assistant") {

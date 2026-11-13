@@ -119,7 +119,7 @@ export function Connections() {
 
   return (
     <>
-      <PageHead title="Connections & tunnels" subtitle="Let agents talk to each other, to your tools, or to machines elsewhere. Links stay inside this namespace.">
+      <PageHead title="Links" subtitle="Connections and tunnels. Let agents talk to each other, to your tools, or to machines elsewhere. Links stay inside this namespace.">
         <PrimaryButton onClick={() => setDraft({})} icon={<Plus size={14} />}>New connection</PrimaryButton>
       </PageHead>
       <PreviewNote issue={23}>Links you draw here are a plan for now: agents can't use them until the connections API ships in</PreviewNote>

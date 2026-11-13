@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, CircleAlert, Copy, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronRight, CircleAlert, Copy, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, errorMessage, isLive, onAgentUpdate, openUrl } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { useStore, useToast } from "../store";
 import type { Agent } from "../types";
+import { Orb } from "./Orb";
+import { useChatPrefs } from "./ChatSettings";
 import "../styles/chat.css";
 
 /**
@@ -183,9 +185,13 @@ interface ConversationProps {
   loading?: boolean;
   empty?: ReactNode;
   onShowEarlier?: () => void;
+  /** A message on its way: shown at once, with what's happening, until the agent records it. */
+  pending?: { text: string; status: string } | null;
+  /** Offered on an error at the end of the conversation: send the last message again. */
+  onRetry?: () => void;
 }
 
-export function Conversation({ events, runs, working, loading, empty, onShowEarlier }: ConversationProps) {
+export function Conversation({ events, runs, working, loading, empty, onShowEarlier, pending, onRetry }: ConversationProps) {
   const items = useMemo(() => toItems(events, runs), [events, runs]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true); // follow new messages until the reader scrolls up
@@ -198,7 +204,7 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
   useLayoutEffect(() => {
     if (pinned.current) toEnd();
     else setBehind(true);
-  }, [events.length, working]);
+  }, [events.length, working, pending]);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -218,13 +224,20 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
         <div className="cv-col">
           {onShowEarlier && <button className="btn ghost sm cv-earlier" onClick={onShowEarlier}>Show earlier runs</button>}
           {loading && items.length === 0 && <div className="cv-empty faint">Loading the conversation…</div>}
-          {!loading && items.length === 0 && <div className="cv-empty">{empty}</div>}
+          {!loading && items.length === 0 && !pending && <div className="cv-empty">{empty}</div>}
           {items.map((it, i) => (
-            <ItemView key={it.id} item={it} open={i === items.length - 1} />
+            <ItemView key={it.id} item={it} open={i === items.length - 1} onRetry={i === items.length - 1 && !pending ? onRetry : undefined} />
           ))}
-          {working && !settled && (
-            <div className="cv-working" aria-label="Working">
-              <span /><span /><span />
+          {pending && (
+            <>
+              <div className="cv-user cv-pending">{pending.text}</div>
+              <div className="cv-working" role="status"><Orb size={30} active /><span>{pending.status}</span></div>
+            </>
+          )}
+          {working && !settled && !pending && (
+            <div className="cv-working" role="status">
+              <Orb size={30} active />
+              <span>Working</span>
             </div>
           )}
         </div>
@@ -238,12 +251,17 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
   );
 }
 
-function ItemView({ item, open }: { item: Item; open: boolean }) {
+function ItemView({ item, open, onRetry }: { item: Item; open: boolean; onRetry?: () => void }) {
   switch (item.kind) {
     case "user":
       return <div className="cv-user" title={clock(item.ts)}>{item.text}</div>;
     case "text":
-      return <div className="cv-text"><Markdown text={item.text} /></div>;
+      return (
+        <div className="cv-text">
+          <Markdown text={item.text} />
+          <CopyText text={item.text} />
+        </div>
+      );
     case "steps":
       return <Steps steps={item.steps} live={open} />;
     case "raw":
@@ -260,14 +278,28 @@ function ItemView({ item, open }: { item: Item; open: boolean }) {
         <div className={`cv-note ${item.tone}`} role={item.tone === "policy" ? undefined : "alert"}>
           {item.tone === "error" ? <CircleAlert size={14} /> : <ShieldAlert size={14} />}
           <span>{item.text}</span>
+          {onRetry && item.tone === "error" && <button className="btn sm cv-retry" onClick={onRetry}><RotateCcw size={12} /> Try again</button>}
         </div>
       );
   }
 }
 
+/** A reply's copy button, shown on hover like in chat apps. */
+function CopyText({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="cv-actions">
+      <button className="btn ghost sm" onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })} aria-label="Copy reply">
+        {done ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+      </button>
+    </div>
+  );
+}
+
 /** The work between messages. Long finished stretches fold into one line; the newest stays open. */
 function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
-  const foldable = steps.length > 4 && !live;
+  const [prefs] = useChatPrefs();
+  const foldable = steps.length > 4 && !live && !prefs.expandSteps;
   const [folded, setFolded] = useState(foldable);
   useEffect(() => { if (foldable) setFolded(true); }, [foldable]);
   if (foldable && folded) {
@@ -289,7 +321,8 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
 }
 
 function StepRow({ step: s }: { step: Step }) {
-  const [open, setOpen] = useState(false);
+  const [prefs] = useChatPrefs();
+  const [open, setOpen] = useState(prefs.expandSteps);
   const has = s.output.length > 0 || s.detail.includes("\n");
   const firstLine = s.detail.split("\n")[0];
   return (
@@ -460,8 +493,11 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
       .catch((e) => toast(errorMessage(e), "err"))
       .finally(() => { setSending(false); box.current?.focus(); });
   };
+  const [prefs] = useChatPrefs();
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (prefs.send === "enter" ? !e.shiftKey && !mod : mod) {
       e.preventDefault();
       send();
     }
@@ -472,7 +508,7 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
       <textarea ref={box} rows={1} value={text} disabled={!!blocked} autoFocus={autoFocus} placeholder={blocked ? "" : placeholder} aria-label={placeholder}
         onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
       <div className="cv-composer-foot">
-        <span className="cv-composer-hint">{blocked ?? "Enter to send, Shift+Enter for a new line"}</span>
+        <span className="cv-composer-hint">{blocked ?? (prefs.send === "enter" ? "Enter to send, Shift+Enter for a new line" : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send, Enter for a new line`)}</span>
         <button className="btn primary icon cv-send" onClick={send} disabled={!ready} aria-label="Send" title={blocked ? undefined : text.trim() ? "Send" : "Type a message first"}>
           <ArrowUp size={15} />
         </button>

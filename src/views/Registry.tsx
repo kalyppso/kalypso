@@ -27,7 +27,7 @@ export function Registry() {
 
   return (
     <>
-      <PageHead title="Skills & MCP servers" subtitle="Shared catalog across namespaces. Each agent only gets what you attach to it.">
+      <PageHead title="Toolkit" subtitle="Skills and MCP servers, shared across namespaces. Each agent only gets what you attach to it.">
         {tab === "skills" && <PrimaryButton onClick={() => setAdding(true)} icon={<BrandIcon icon={siGithub} size={14} />}>Add from GitHub</PrimaryButton>}
       </PageHead>
 

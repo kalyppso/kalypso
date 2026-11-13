@@ -39,7 +39,7 @@ export function Secrets() {
 
   return (
     <>
-      <PageHead title="Secrets" subtitle={`Encrypted with the ${state.ns} vault key. Injected into sandboxes at start; never written to agent logs.`}>
+      <PageHead title="Vault" subtitle={`Secrets and keys, encrypted with the ${state.ns} vault key. Injected into sandboxes at start; never written to agent logs.`}>
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>Add secret</PrimaryButton>
       </PageHead>
 

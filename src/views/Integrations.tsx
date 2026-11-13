@@ -113,7 +113,7 @@ export function Integrations() {
 
   return (
     <>
-      <PageHead title="Integrations" subtitle="Connect the tools you already use. Mark a notes app or wiki as a brain and agents can use it as shared long-term memory." />
+      <PageHead title="Plug-ins" subtitle="Connect the tools you already use. Mark a notes app or wiki as a brain and agents can use it as shared long-term memory." />
       <PreviewNote issue={28}>Integrations are coming soon: this is the catalog that's planned. Connecting one, with its token kept in the vault, arrives with</PreviewNote>
 
       {open ? (
@@ -328,7 +328,7 @@ function AddIntegration({ kind, onClose, onAdded }: { kind: IntegrationKind; onC
           <div className="row">
             <div>
               <div style={{ color: "var(--text)" }}>Sync status back to {d.label}</div>
-              <div className="faint small">Moving a task in the Tracker moves its ticket, and comments name the agent.</div>
+              <div className="faint small">Moving a task on the Board moves its ticket, and comments name the agent.</div>
             </div>
             <span className="spacer" />
             <Toggle on={twoWay} onChange={setTwoWay} label="Two-way sync" />

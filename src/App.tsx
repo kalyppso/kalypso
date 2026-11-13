@@ -22,6 +22,7 @@ import { Git } from "./views/Git";
 import { TOOLS, ToolsLayer, currentToolTab, tabHasTool } from "./views/Terminal";
 import { Agents } from "./views/Agents";
 import { Chat } from "./views/Chat";
+import { Prompts } from "./views/Prompts";
 import { Sandboxes } from "./views/Sandboxes";
 import { Secrets } from "./views/Secrets";
 import { Connections } from "./views/Connections";
@@ -38,6 +39,7 @@ const views: Record<ViewId, () => JSX.Element> = {
   overview: Overview,
   analytics: Analytics,
   agents: Agents,
+  prompts: Prompts,
   tracker: Tracker,
   git: Git,
   sandboxes: Sandboxes,

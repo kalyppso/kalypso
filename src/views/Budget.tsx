@@ -137,7 +137,7 @@ export function Budget() {
 
   return (
     <>
-      <PageHead title="Budget" subtitle="Every model call goes through the KALYPSO gateway, so these limits are enforced, not just reported.">
+      <PageHead title="Spend" subtitle="Budgets and usage. Every model call goes through the KALYPSO gateway, so these limits are enforced, not just reported.">
         <PrimaryButton onClick={() => setAdding({})} icon={<Plus size={14} />}>Add budget</PrimaryButton>
       </PageHead>
 

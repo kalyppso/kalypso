@@ -28,7 +28,7 @@ export function Overview() {
 
   return (
     <>
-      <PageHead title="Overview" subtitle={namespace?.description} />
+      <PageHead title="Today" subtitle={namespace?.description} />
       <BudgetBlocks overview={budget} />
 
       <div className="actions">
@@ -86,7 +86,7 @@ function GettingStarted() {
       done: policies.length > 0,
       title: "Review your policies",
       hint: "Guardrails every tool call is checked against.",
-      go: () => dispatch({ type: "view", view: "policies" }), cta: "Policies",
+      go: () => dispatch({ type: "view", view: "policies" }), cta: "Rules",
     },
   ];
   const left = steps.filter((s) => !s.done).length;

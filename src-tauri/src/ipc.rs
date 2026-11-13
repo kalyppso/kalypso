@@ -508,6 +508,73 @@ pub async fn master_ensure(s: State<'_, AppState>, ns: String) -> Result<AgentRe
     Ok(m)
 }
 
+/// A fresh conversation with the master agent; earlier ones stay readable.
+#[tauri::command]
+pub async fn master_new_chat(s: State<'_, AppState>, ns: String) -> Result<Option<AgentRecord>> {
+    ensure_ns(&s, &ns)?;
+    agent::master::new_chat(&s.db, &s.rt, &s.agents, &ns).await
+}
+
+// ---------- Prompts, chat settings and memory ----------
+
+#[tauri::command]
+pub fn prompt_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::prompts::Prompt>> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn prompt_save(s: State<'_, AppState>, ns: String, prompt: crate::prompts::PromptInput) -> Result<crate::prompts::Prompt> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::save(&s.db, &ns, prompt)
+}
+
+#[tauri::command]
+pub fn prompt_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::delete(&s.db, &ns, &id)
+}
+
+#[tauri::command]
+pub fn chat_settings_get(s: State<'_, AppState>, ns: String) -> Result<crate::prompts::ChatSettings> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::chat_settings(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn chat_settings_set(
+    s: State<'_, AppState>,
+    ns: String,
+    settings: crate::prompts::ChatSettings,
+) -> Result<crate::prompts::ChatSettings> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::set_chat_settings(&s.db, &ns, settings)
+}
+
+#[tauri::command]
+pub fn memory_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::prompts::Memory>> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::memories(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn memory_add(s: State<'_, AppState>, ns: String, text: String) -> Result<crate::prompts::Memory> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::remember(&s.db, &ns, &text, "you")
+}
+
+#[tauri::command]
+pub fn memory_edit(s: State<'_, AppState>, ns: String, id: String, text: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::edit_memory(&s.db, &ns, &id, &text)
+}
+
+#[tauri::command]
+pub fn memory_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::forget(&s.db, &ns, &id, "user")
+}
+
 #[tauri::command]
 pub fn agent_runs(s: State<'_, AppState>, ns: String, id: String, limit: Option<u32>) -> Result<Vec<AgentRun>> {
     ensure_ns(&s, &ns)?;

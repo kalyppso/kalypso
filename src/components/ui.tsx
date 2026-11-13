@@ -1,3 +1,4 @@
+import { Logo } from "./Logo";
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, CircleAlert, Code2, EyeOff, Info, TriangleAlert, X, XCircle, type LucideIcon } from "lucide-react";
@@ -187,6 +188,11 @@ export function usePopover() {
 
 export const usd = (n: number) => `$${n.toFixed(2)}`;
 export const initials = (name: string) => name.slice(0, 2).toUpperCase();
+
+/** What sits in an agent's avatar: the wireframe mark for the master agent, initials otherwise. */
+export function AgentFace({ agent, size = 26 }: { agent: { name: string; master?: boolean }; size?: number }) {
+  return agent.master ? <Logo size={size} fine /> : <>{initials(agent.name)}</>;
+}
 
 /**
  * For pages the core doesn't back yet: what you add is kept on this machine, but agents
