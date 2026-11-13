@@ -11,17 +11,26 @@ interface OrbProps {
   active?: boolean;
   /** Change it (a counter) to send a wave around the ring, for example when a message is sent. */
   pulse?: number;
+  /** Change it on every keystroke: the bars jump like a level meter, and fall back when typing stops. */
+  beat?: number;
   className?: string;
   label?: string;
 }
 
-export function Orb({ size, active = false, pulse = 0, className, label }: OrbProps) {
+export function Orb({ size, active = false, pulse = 0, beat = 0, className, label }: OrbProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   // Read by the animation loop without restarting it.
   const want = useRef({ active, pulse });
   want.current.active = active;
 
   const kick = useRef(0);
+  // Keystrokes waiting to be felt by the loop.
+  const beats = useRef(0);
+  const lastBeat = useRef(beat);
+  if (beat !== lastBeat.current) {
+    lastBeat.current = beat;
+    beats.current += 1;
+  }
   const lastPulse = useRef(pulse);
   if (pulse !== lastPulse.current) {
     lastPulse.current = pulse;
@@ -54,6 +63,9 @@ export function Orb({ size, active = false, pulse = 0, className, label }: OrbPr
     let rgb = "221, 222, 223";
     const rgba = (alpha: number) => `rgba(${rgb}, ${alpha.toFixed(3)})`;
     const heights = new Float32Array(bars);
+    // The meter: overall level from typing, and each bar's own random kick per keystroke.
+    let level = 0;
+    const jolt = new Float32Array(bars);
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
     let visible = true;
@@ -76,6 +88,16 @@ export function Orb({ size, active = false, pulse = 0, className, label }: OrbPr
       const t = (now - t0) / 1000;
 
       // Ease toward the wanted state: about half a second to wake, a second to settle.
+      // Each keystroke lifts the level and kicks a random handful of bars; both fall off fast,
+      // like a meter's needle, so the ring settles within a second of the last key.
+      if (beats.current > 0) {
+        const n = beats.current;
+        beats.current = 0;
+        level = Math.min(1, level + 0.28 * n);
+        for (let i = 0; i < bars; i++) jolt[i] = Math.max(jolt[i], Math.random() ** 2 * (0.6 + 0.4 * level));
+      }
+      level *= Math.exp(-dt * 2.6);
+      for (let i = 0; i < bars; i++) jolt[i] *= Math.exp(-dt * 5);
       const target = want.current.active ? 1 : 0;
       energy += (target - energy) * (1 - Math.exp(-dt * (target > energy ? 4 : 2)));
       spin += dt * (0.08 + energy * 0.35);
@@ -113,9 +135,11 @@ export function Orb({ size, active = false, pulse = 0, className, label }: OrbPr
         // The wave: a bump travelling round from the top.
         const d = Math.abs(((a - waveAt * Math.PI + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
         const bump = wave * Math.exp(-d * d * 3);
-        const h = Math.max(0.04, breathe * (1 - energy) + shape * energy * 0.95 + bump * 0.9);
+        // Neighbouring bars share a little of each other's kick, so the spikes read as a wave, not noise.
+        const j = jolt[i] * 0.6 + (jolt[(i + 1) % bars] + jolt[(i + bars - 1) % bars]) * 0.2;
+        const h = Math.max(0.04, breathe * (1 - energy) * (1 - level * 0.5) + shape * energy * 0.95 + level * (0.25 + 0.35 * shape) + j * 0.9 + bump * 0.9);
         // Each bar follows its target a little behind, so the motion stays soft.
-        heights[i] += (h - heights[i]) * (1 - Math.exp(-dt * 14));
+        heights[i] += (h - heights[i]) * (1 - Math.exp(-dt * (h > heights[i] ? 26 : 9)));
 
         // The pattern turns; the egg stays upright.
         const ang = a + spin - Math.PI / 2;

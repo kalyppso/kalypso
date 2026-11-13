@@ -105,8 +105,8 @@
 .chat-blank { flex: 1; display: grid; place-items: center; padding: 24px; }
 
 /* ---------- Chat with the master agent: a chat app layout ---------- */
-.chat { grid-template-columns: 240px minmax(0, 1fr); }
-.chat-side { display: flex; flex-direction: column; min-height: 0; padding: 12px 8px; border-right: 1px solid var(--border); }
+.chat { grid-template-columns: minmax(0, 1fr) 240px; }
+.chat-side { display: flex; flex-direction: column; min-height: 0; padding: 12px 8px; border-left: 1px solid var(--border); }
 .chat-new {
   display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px;
   background: none; color: var(--text); font: inherit; font-weight: 500; cursor: pointer; transition: background 0.15s;

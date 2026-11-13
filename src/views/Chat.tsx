@@ -10,7 +10,7 @@ import type { Agent } from "../types";
 import "../styles/agents.css";
 
 /**
- * Chat with the master agent, laid out like a chat app: your chats and your agents on the left,
+ * Chat with the master agent, laid out like a chat app: your chats and your agents on the right,
  * the model on top, the conversation in the middle. kalypso plans the work, creates and runs
  * the namespace's other agents through KALYPSO, and reports back here.
  */
@@ -99,6 +99,21 @@ export function Chat() {
 
   return (
     <div className="chat">
+
+      {viewing ? (
+        <MemberThread agent={viewing} onBack={() => setMember(null)} />
+      ) : (
+        <MasterThread
+          master={master}
+          events={inChat(convo.events, chats, open)}
+          runs={convo.runs}
+          loading={convo.loading}
+          past={open !== chats.length - 1}
+          toLatest={() => setOpen(chats.length - 1)}
+          send={convo.send}
+          hasKey={!live || secrets.some((s) => s.key === "ANTHROPIC_API_KEY" && s.scope === "gateway") || !!master?.model.includes("/")}
+        />
+      )}
       <aside className="chat-side" aria-label="Chats and agents">
         <button className="chat-new" onClick={newChat}>
           <Plus size={15} /> New chat
@@ -127,21 +142,6 @@ export function Chat() {
         </div>
         <button className="btn ghost sm chat-manage" onClick={() => dispatch({ type: "view", view: "agents" })}><SlidersHorizontal size={12} /> Manage agents</button>
       </aside>
-
-      {viewing ? (
-        <MemberThread agent={viewing} onBack={() => setMember(null)} />
-      ) : (
-        <MasterThread
-          master={master}
-          events={inChat(convo.events, chats, open)}
-          runs={convo.runs}
-          loading={convo.loading}
-          past={open !== chats.length - 1}
-          toLatest={() => setOpen(chats.length - 1)}
-          send={convo.send}
-          hasKey={!live || secrets.some((s) => s.key === "ANTHROPIC_API_KEY" && s.scope === "gateway") || !!master?.model.includes("/")}
-        />
-      )}
     </div>
   );
 }
@@ -165,6 +165,9 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState(0);
+  // Every change to the draft is a beat for the orb.
+  const [beat, setBeat] = useState(0);
+  const type = (v: string) => { setDraft(v); setBeat((n) => n + 1); };
   const [pending, setPending] = useState<{ text: string; status: string } | null>(null);
   const sync = () => syncNamespace(state.ns, dispatch);
 
@@ -233,14 +236,14 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
         {head}
         <div className="chat-start">
           <div className="chat-start-inner">
-            <Orb size={124} active={!!draft.trim() || !!pending} pulse={sent} className="chat-orb" label="kalypso" />
+            <Orb size={124} active={!!pending} pulse={sent} beat={beat} className="chat-orb" label="kalypso" />
             <h1 className="chat-hello">What should we work on?</h1>
             <p className="chat-hello-sub">kalypso plans the work, creates agents for each part, and reports back here.</p>
             {keyCard}
-            <Composer onSend={send} placeholder="Ask anything, or describe the work" autoFocus value={draft} onValue={setDraft} large blocked={blocked} />
+            <Composer onSend={send} placeholder="Ask anything, or describe the work" autoFocus value={draft} onValue={type} large blocked={blocked} />
             {hasKey && (
               <div className="chat-starters">
-                {STARTERS.map((s) => <button key={s} className="chat-starter" onClick={() => setDraft(s)}>{s}</button>)}
+                {STARTERS.map((s) => <button key={s} className="chat-starter" onClick={() => type(s)}>{s}</button>)}
               </div>
             )}
           </div>
