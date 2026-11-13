@@ -508,6 +508,13 @@ pub async fn master_ensure(s: State<'_, AppState>, ns: String) -> Result<AgentRe
     Ok(m)
 }
 
+/// A fresh conversation with the master agent; earlier ones stay readable.
+#[tauri::command]
+pub async fn master_new_chat(s: State<'_, AppState>, ns: String) -> Result<Option<AgentRecord>> {
+    ensure_ns(&s, &ns)?;
+    agent::master::new_chat(&s.db, &s.rt, &s.agents, &ns).await
+}
+
 #[tauri::command]
 pub fn agent_runs(s: State<'_, AppState>, ns: String, id: String, limit: Option<u32>) -> Result<Vec<AgentRun>> {
     ensure_ns(&s, &ns)?;

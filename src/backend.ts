@@ -106,6 +106,7 @@ export const api = {
   agentDelete: (ns: string, id: string) => invoke<void>("agent_delete", { ns, id }),
   masterGet: (ns: string) => invoke<AgentRecord | null>("master_get", { ns }),
   masterEnsure: (ns: string) => invoke<AgentRecord>("master_ensure", { ns }),
+  masterNewChat: (ns: string) => invoke<AgentRecord | null>("master_new_chat", { ns }),
   agentStart: (ns: string, id: string) => invoke<AgentRecord>("agent_start", { ns, id }),
   agentStop: (ns: string, id: string) => invoke<AgentRecord>("agent_stop", { ns, id }),
   agentPause: (ns: string, id: string) => invoke<AgentRecord>("agent_pause", { ns, id }),

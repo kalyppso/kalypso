@@ -80,6 +80,23 @@ pub async fn sandbox_named(db: &Db, rt: &Runtime, ns: &str, name: &str) -> Resul
     Ok(sandbox::create(db, rt, ns, spec).await?.id)
 }
 
+/// Start a new conversation with the master agent: stop it and forget its saved session, so
+/// its next message starts fresh. Its earlier transcript stays in KALYPSO.
+pub async fn new_chat(db: &Db, rt: &Runtime, sup: &super::supervisor::Supervisor, ns: &str) -> Result<Option<AgentRecord>> {
+    let Some(m) = get(db, ns)? else { return Ok(None) };
+    sup.stop(ns, &m.id, "new chat").await?;
+    if let Some(sb) = &m.sandbox_id {
+        if sandbox::get(db, ns, sb)?.status == "running" {
+            let dir = format!("/work/.kalypso/agents/{}", m.id);
+            let files = [format!("{dir}/session"), format!("{dir}/openai-messages.json")];
+            let mut cmd = vec!["rm", "-f"];
+            cmd.extend(files.iter().map(String::as_str));
+            sandbox::exec(rt, ns, sb, &cmd, false).await?;
+        }
+    }
+    Ok(Some(super::get(db, ns, &m.id)?))
+}
+
 /// What the master is told about its job, added to its role when it starts.
 pub fn instructions(ns: &str) -> String {
     format!(

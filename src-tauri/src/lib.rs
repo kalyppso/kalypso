@@ -117,6 +117,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::agent_events,
         ipc::master_get,
         ipc::master_ensure,
+        ipc::master_new_chat,
         ipc::term_open,
         ipc::term_write,
         ipc::term_resize,

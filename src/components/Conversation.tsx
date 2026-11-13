@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, CircleAlert, Copy, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronRight, CircleAlert, Copy, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, errorMessage, isLive, onAgentUpdate, openUrl } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
@@ -184,9 +184,13 @@ interface ConversationProps {
   loading?: boolean;
   empty?: ReactNode;
   onShowEarlier?: () => void;
+  /** A message on its way: shown at once, with what's happening, until the agent records it. */
+  pending?: { text: string; status: string } | null;
+  /** Offered on an error at the end of the conversation: send the last message again. */
+  onRetry?: () => void;
 }
 
-export function Conversation({ events, runs, working, loading, empty, onShowEarlier }: ConversationProps) {
+export function Conversation({ events, runs, working, loading, empty, onShowEarlier, pending, onRetry }: ConversationProps) {
   const items = useMemo(() => toItems(events, runs), [events, runs]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true); // follow new messages until the reader scrolls up
@@ -199,7 +203,7 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
   useLayoutEffect(() => {
     if (pinned.current) toEnd();
     else setBehind(true);
-  }, [events.length, working]);
+  }, [events.length, working, pending]);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -219,11 +223,17 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
         <div className="cv-col">
           {onShowEarlier && <button className="btn ghost sm cv-earlier" onClick={onShowEarlier}>Show earlier runs</button>}
           {loading && items.length === 0 && <div className="cv-empty faint">Loading the conversation…</div>}
-          {!loading && items.length === 0 && <div className="cv-empty">{empty}</div>}
+          {!loading && items.length === 0 && !pending && <div className="cv-empty">{empty}</div>}
           {items.map((it, i) => (
-            <ItemView key={it.id} item={it} open={i === items.length - 1} />
+            <ItemView key={it.id} item={it} open={i === items.length - 1} onRetry={i === items.length - 1 && !pending ? onRetry : undefined} />
           ))}
-          {working && !settled && (
+          {pending && (
+            <>
+              <div className="cv-user cv-pending">{pending.text}</div>
+              <div className="cv-working" role="status"><Orb size={30} active /><span>{pending.status}</span></div>
+            </>
+          )}
+          {working && !settled && !pending && (
             <div className="cv-working" role="status">
               <Orb size={30} active />
               <span>Working</span>
@@ -240,12 +250,17 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
   );
 }
 
-function ItemView({ item, open }: { item: Item; open: boolean }) {
+function ItemView({ item, open, onRetry }: { item: Item; open: boolean; onRetry?: () => void }) {
   switch (item.kind) {
     case "user":
       return <div className="cv-user" title={clock(item.ts)}>{item.text}</div>;
     case "text":
-      return <div className="cv-text"><Markdown text={item.text} /></div>;
+      return (
+        <div className="cv-text">
+          <Markdown text={item.text} />
+          <CopyText text={item.text} />
+        </div>
+      );
     case "steps":
       return <Steps steps={item.steps} live={open} />;
     case "raw":
@@ -262,9 +277,22 @@ function ItemView({ item, open }: { item: Item; open: boolean }) {
         <div className={`cv-note ${item.tone}`} role={item.tone === "policy" ? undefined : "alert"}>
           {item.tone === "error" ? <CircleAlert size={14} /> : <ShieldAlert size={14} />}
           <span>{item.text}</span>
+          {onRetry && item.tone === "error" && <button className="btn sm cv-retry" onClick={onRetry}><RotateCcw size={12} /> Try again</button>}
         </div>
       );
   }
+}
+
+/** A reply's copy button, shown on hover like in chat apps. */
+function CopyText({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="cv-actions">
+      <button className="btn ghost sm" onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })} aria-label="Copy reply">
+        {done ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+      </button>
+    </div>
+  );
 }
 
 /** The work between messages. Long finished stretches fold into one line; the newest stays open. */
