@@ -1,6 +1,6 @@
 [package]
 name = "kalypso"
-version = "0.2.1-beta"
+version = "0.2.2-beta.rc.1"
 edition = "2021"
 
 [lib]
