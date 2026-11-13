@@ -328,7 +328,7 @@ pub fn summary(db: &Db, ns: Option<&str>, days: u32) -> Result<UsageSummary> {
 // ---------- Server ----------
 
 pub struct Gateway {
-    db: Arc<Db>,
+    pub(crate) db: Arc<Db>,
     vault: Arc<Vault>,
     pub pricing: Pricing,
     http: reqwest::Client,

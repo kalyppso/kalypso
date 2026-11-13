@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod budget;
+pub mod egress;
 pub mod error;
 pub mod events;
 pub mod forward;
@@ -210,6 +211,18 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             if let Err(e) = gw.listen_unix(dir.join("run")).await {
                 tracing::warn!(error = %e, "model gateway socket unavailable; sandboxes cannot reach the gateway");
+            }
+        });
+        // The egress proxy (#33): internet sandboxes reach hosts only through it.
+        egress::init_secret(&db)?;
+        let egress = egress::Egress::new(gw.clone());
+        tauri::async_runtime::block_on(async {
+            #[cfg(unix)]
+            if let Err(e) = egress.listen_unix(dir.join("run").join("egress")).await {
+                tracing::warn!(error = %e, "egress proxy socket unavailable");
+            }
+            if let Err(e) = egress.listen_tcp().await {
+                tracing::warn!(error = %e, "egress proxy port unavailable");
             }
         });
         // Approved secret commands (#87) run in sandboxes through the engine.
