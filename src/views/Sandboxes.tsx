@@ -36,7 +36,7 @@ export function Sandboxes() {
 
   return (
     <>
-      <PageHead title="Rooms" subtitle={`Sandboxes: containers and micro-VMs on the ns-${state.ns} network. Nothing here can reach other namespaces.`}>
+      <PageHead title="Sandboxes" subtitle={`Containers and micro-VMs on the ns-${state.ns} network. Nothing here can reach other namespaces.`}>
         <PrimaryButton onClick={() => setCreating(true)} icon={<Plus size={14} />}>New sandbox</PrimaryButton>
       </PageHead>
       <NoEngine />

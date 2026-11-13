@@ -94,10 +94,10 @@ function liveShell(id: string, term: Terminal, fit: FitAddon, el: HTMLDivElement
     disconnect();
     waiting = false;
     const sb = ctx.sandbox;
-    if (!sb) return void term.write(`\r\n${dim("No sandbox here yet. Create one in Rooms, then pick it above.")}`);
+    if (!sb) return void term.write(`\r\n${dim("No sandbox here yet. Create one in Sandboxes, then pick it above.")}`);
     if (sb.status !== "running") {
       waiting = true;
-      return void term.write(`\r\n${dim(`${sb.name} is ${sb.status}. Start it in Rooms; this pane connects when it runs.`)}`);
+      return void term.write(`\r\n${dim(`${sb.name} is ${sb.status}. Start it in Sandboxes; this pane connects when it runs.`)}`);
     }
     const mine = ++attempt;
     term.write(`\r\n${dim(`Connecting to ${sb.name}…`)}\r\n`);

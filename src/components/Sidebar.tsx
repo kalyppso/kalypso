@@ -45,7 +45,7 @@ export const NAV: { title: string; items: NavDef[] }[] = [
       { id: "agents", label: "Crew", icon: Bot },
       { id: "tracker", label: "Board", icon: KanbanSquare },
       { id: "git", label: "Changes", icon: GitCommitHorizontal },
-      { id: "sandboxes", label: "Rooms", icon: Boxes },
+      { id: "sandboxes", label: "Sandboxes", icon: Boxes },
       { id: "connections", label: "Links", icon: Cable },
     ],
   },
