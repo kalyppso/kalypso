@@ -35,6 +35,7 @@ use crate::store::Db;
 use crate::vault::Vault;
 use pricing::Pricing;
 
+pub mod agents;
 pub mod git;
 pub mod secrets;
 pub use secrets::{Grants, SecretGrant};
@@ -353,6 +354,8 @@ pub struct Gateway {
     rt: OnceLock<crate::sandbox::Runtime>,
     /// GitHub, for git credentials and the API proxy (#100). Tests point it at a fake.
     github: OnceLock<crate::github::GitHub>,
+    /// The agent supervisor, for the master agent's requests (`agents`).
+    pub(crate) agents: OnceLock<Arc<crate::agent::supervisor::Supervisor>>,
 }
 
 /// A model request the gateway refused because a budget was reached.
@@ -398,6 +401,7 @@ impl Gateway {
             grants: Grants::default(),
             rt: OnceLock::new(),
             github: OnceLock::new(),
+            agents: OnceLock::new(),
         })
     }
 
@@ -430,6 +434,10 @@ impl Gateway {
 
     pub(crate) fn github(&self) -> crate::github::GitHub {
         self.github.get().cloned().unwrap_or_default()
+    }
+
+    pub fn set_agents(&self, agents: Arc<crate::agent::supervisor::Supervisor>) {
+        let _ = self.agents.set(agents);
     }
 
     pub fn set_runtime(&self, rt: crate::sandbox::Runtime) {
@@ -491,6 +499,9 @@ impl Gateway {
             .route("/_kalypso/secrets/run", post(secrets::run))
             .route("/_kalypso/git/credential", post(git::credential))
             .route("/_kalypso/github/{*path}", axum::routing::any(git::api))
+            .route("/_kalypso/agents", get(agents::list).post(agents::create))
+            .route("/_kalypso/agents/{name}", get(agents::show).delete(agents::remove))
+            .route("/_kalypso/agents/{name}/{action}", post(agents::act))
             .layer(DefaultBodyLimit::max(64 << 10))
             .with_state(self.clone())
             .merge(self.router())

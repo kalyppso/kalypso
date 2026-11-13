@@ -605,3 +605,85 @@ async fn the_github_api_is_proxied_for_the_linked_repository_only() {
     let log = e.db.audit_list(Some("work"), Some("github."), 10).unwrap();
     assert!(log.iter().any(|l| l.action == "github.api" && l.target.contains("POST /repos/acme/platform/pulls → 201")));
 }
+
+/// The master agent's endpoints answer only the sandbox holding the namespace's master agent,
+/// list the other agents (never itself), and refuse to act on itself.
+#[tokio::test]
+async fn only_the_master_agent_manages_agents() {
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    db.with(|c| Ok(c.execute_batch("INSERT INTO namespaces (id, name) VALUES ('work','work');")?)).unwrap();
+    let vault = Arc::new(Vault::ephemeral());
+    vault.create_ns_key(&db, "work").unwrap();
+    db.with(|c| {
+        Ok(c.execute_batch(
+            "INSERT INTO sandboxes (id, ns, name, runtime, image, cpu, mem_mb, network) VALUES
+               ('sb-m','work','kalypso','docker','img',1,512,'isolated'), ('sb-w','work','scout','docker','img',1,512,'isolated');",
+        )?)
+    })
+    .unwrap();
+    let agent = |name: &str, sb: &str| crate::agent::NewAgent {
+        name: name.into(),
+        role: Some(format!("{name} role")),
+        runtime: "command".into(),
+        model: None,
+        sandbox_id: Some(sb.into()),
+        command: Some("true".into()),
+        max_turns: None,
+        restart: None,
+        max_restarts: None,
+        repo: None,
+        repo_account: None,
+    };
+    let master = crate::agent::create(&db, "work", agent("kalypso", "sb-m")).unwrap();
+    db.with(|c| Ok(c.execute("UPDATE agents SET master = 1 WHERE id = ?1", [&master.id])?)).unwrap();
+    crate::agent::create(&db, "work", agent("scout", "sb-w")).unwrap();
+    let master_key = mint_for_sandbox(&db, "work", "sb-m", "kalypso").unwrap();
+    let worker_key = mint_for_sandbox(&db, "work", "sb-w", "scout").unwrap();
+
+    let gw = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
+    let rt = crate::sandbox::Runtime::with(vec![]);
+    gw.set_agents(crate::agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt));
+    let app = gw.sandbox_router();
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/_kalypso/agents", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    let tcp = format!("http://{}/_kalypso/agents", gw.listen_tcp(0).await.unwrap());
+    let http = reqwest::Client::new();
+
+    // A worker's sandbox can't manage agents, and neither can a request without a key.
+    let r = http.get(&url).bearer_auth(&worker_key).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    assert_eq!(http.get(&url).send().await.unwrap().status(), 401);
+    // The host TCP port doesn't serve these routes at all.
+    assert_ne!(http.get(&tcp).bearer_auth(&master_key).send().await.unwrap().status(), 200);
+
+    // The master sees the others, not itself.
+    let list: Vec<serde_json::Value> = http.get(&url).bearer_auth(&master_key).send().await.unwrap().json().await.unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["name"], "scout");
+    assert_eq!(list[0]["status"], "stopped");
+
+    // It can read another agent, but not act on itself or on agents that don't exist.
+    let r = http.get(format!("{url}/scout?limit=5")).bearer_auth(&master_key).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http.post(format!("{url}/kalypso/stop")).bearer_auth(&master_key).json(&serde_json::json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let r = http.delete(format!("{url}/ghost")).bearer_auth(&master_key).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    // An empty message is refused before anything starts.
+    let r =
+        http.post(format!("{url}/scout/message")).bearer_auth(&master_key).json(&serde_json::json!({ "text": "  " })).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    assert!(
+        crate::agent::get(&db, "work", &crate::agent::list(&db, "work").unwrap().iter().find(|a| a.name == "scout").unwrap().id)
+            .unwrap()
+            .status
+            == "stopped"
+    );
+
+    // Every action is audited under the master's name.
+    let r = http.post(format!("{url}/scout/stop")).bearer_auth(&master_key).json(&serde_json::json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let audit = db.audit_list(Some("work"), Some("master.agent"), 10).unwrap();
+    assert!(audit.iter().any(|a| a.actor == "kalypso" && a.action == "master.agent.stop" && a.target == "scout"));
+}

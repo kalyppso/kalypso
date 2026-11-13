@@ -78,6 +78,11 @@ impl Supervisor {
         self.live.lock().unwrap().contains_key(agent_id)
     }
 
+    /// Tell the UI the namespace's agents changed (one was created or deleted outside it).
+    pub fn announce(&self, ns: &str, agent_id: &str) {
+        let _ = self.updates.send(AgentUpdate { ns: ns.into(), agent_id: agent_id.into(), status: None, reason: None, event: None });
+    }
+
     fn status(&self, a: &AgentRecord, status: &str, reason: &str) {
         if let Err(e) = super::set_status(&self.db, &a.id, status, reason) {
             tracing::error!(error = %e, agent = %a.name, "could not record agent status");

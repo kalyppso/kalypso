@@ -129,8 +129,27 @@ export function useAgentConversation(ns: string, agent: Agent | undefined) {
   return { runs: shownRuns, events, loading, send, hasEarlier: runs.length > shown, showEarlier: () => setShown((n) => n + RUNS_PER_PAGE) };
 }
 
+const SAMPLE_MASTER: [string, string][] = [
+  ["status", "claude-sonnet-5-5 · 14 tools"],
+  ["input", "The login test is flaky on CI and the README is out of date. Can you sort both out?"],
+  ["text", "Two separate jobs, so I'll run them in parallel: **coder** takes the flaky test, and a new **writer** agent updates the README."],
+  ["tool", "Bash  kx-agent list"],
+  ["output", "coder\tstopped\tclaude-opus-5-5\tImplements tickets in repos\trepo acme/platform\nreviewer\tstopped\tclaude-opus-5-5\tReviews PRs from coder"],
+  ["tool", "Bash  kx-agent create writer --role \"Keeps the docs accurate\" --repo acme/platform"],
+  ["output", "Created writer\tstopped\tclaude-sonnet-5-5\tKeeps the docs accurate\trepo acme/platform"],
+  ["tool", "Bash  kx-agent send coder \"tests/auth/login.test.ts fails about 1 in 7 runs on CI…\" --wait 0"],
+  ["tool", "Bash  kx-agent send writer \"Update README.md: the install steps still mention Docker only…\" --wait 0"],
+  ["tool", "Bash  kx-agent wait coder"],
+  ["output", "The test checked the URL before the redirect finished. It now waits for the navigation; 20 of 20 runs pass.\n[coder: Done · 6 turns · $0.08]"],
+  ["tool", "Bash  kx-agent wait writer"],
+  ["output", "README install section rewritten for Docker and Podman, with the Podman Desktop note.\n[writer: Done · 3 turns · $0.02]"],
+  ["text", "Both are done.\n\n- **coder** fixed the flaky login test: it checked the URL before the redirect finished. It now waits for the navigation, and 20 of 20 runs pass. Its branch is `agent/coder/flaky-login`.\n- **writer** rewrote the README's install section to cover Podman as well as Docker.\n\nI stopped both agents. Open either one under Team to see exactly what it did."],
+  ["result", "Done · 9 turns · $0.05"],
+];
+
 /** What the conversation looks like, for the browser preview where no core is running. */
 function sampleEvents(a: Agent): AgentEvent[] {
+  if (a.master) return SAMPLE_MASTER.map(([kind, text], i) => ({ id: i + 1, run_id: "sample", ts: "", kind, text }));
   const lines: [string, string][] =
     a.status === "stopped"
       ? []
@@ -400,14 +419,21 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 interface ComposerProps {
   onSend: (text: string) => Promise<void>;
   placeholder: string;
+  /** Controlled text, when the page fills the box itself (starter prompts). */
+  value?: string;
+  onValue?: (text: string) => void;
+  /** The start screen's bigger box. */
+  large?: boolean;
   /** Why nothing can be sent right now; shown in place of the hint, with the box disabled. */
   blocked?: ReactNode;
   autoFocus?: boolean;
 }
 
-export function Composer({ onSend, placeholder, blocked, autoFocus }: ComposerProps) {
+export function Composer({ onSend, placeholder, blocked, autoFocus, value, onValue, large }: ComposerProps) {
   const toast = useToast();
-  const [text, setText] = useState("");
+  const [own, setOwn] = useState("");
+  const text = value ?? own;
+  const setText = (t: string) => (onValue ? onValue(t) : setOwn(t));
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -418,6 +444,12 @@ export function Composer({ onSend, placeholder, blocked, autoFocus }: ComposerPr
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, Math.round(window.innerHeight / 3))}px`;
   }, [text]);
+  // A starter prompt filled the box: put the cursor at its end.
+  useEffect(() => {
+    if (value === undefined || !value) return;
+    const el = box.current;
+    if (el && document.activeElement !== el) { el.focus(); el.setSelectionRange(value.length, value.length); }
+  }, [value]);
 
   const ready = !!text.trim() && !blocked && !sending;
   const send = () => {
@@ -436,7 +468,7 @@ export function Composer({ onSend, placeholder, blocked, autoFocus }: ComposerPr
   };
 
   return (
-    <div className={`cv-composer ${blocked ? "blocked" : ""}`}>
+    <div className={`cv-composer ${blocked ? "blocked" : ""} ${large ? "large" : ""}`}>
       <textarea ref={box} rows={1} value={text} disabled={!!blocked} autoFocus={autoFocus} placeholder={blocked ? "" : placeholder} aria-label={placeholder}
         onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
       <div className="cv-composer-foot">

@@ -157,9 +157,11 @@ export function App() {
     if (!isLive() || !state.session) return;
     const off = onAgentUpdate((u) => {
       if (u.status) dispatch({ type: "agentLive", id: u.agent_id, status: u.status as Agent["status"], reason: u.reason ?? "" });
+      // An agent was created or deleted outside this window (by the master agent): reload the list.
+      else if (!u.event && u.ns === state.ns) syncNamespace(u.ns, dispatch).catch(() => {});
     });
     return () => void off.then((unlisten) => unlisten());
-  }, [state.session, dispatch]);
+  }, [state.session, state.ns, dispatch]);
 
   // Budget alerts are desktop notifications too; inside the app they show as a notice.
   useEffect(() => {
