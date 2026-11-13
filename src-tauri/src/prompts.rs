@@ -324,6 +324,7 @@ mod tests {
             max_restarts: None,
             repo: None,
             repo_account: None,
+            effort: None,
         };
         let worker = crate::agent::create(&db, "work", new("scout")).unwrap();
         let master = crate::agent::create(&db, "work", new("kalypso")).unwrap();

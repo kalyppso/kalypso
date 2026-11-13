@@ -151,6 +151,8 @@ impl AgentRuntime for ClaudeSdkRuntime {
             format!("KALYPSO_ROLE={}", role_of(a, &ctx.extra)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
+            // Empty: the model's own default.
+            format!("KALYPSO_EFFORT={}", a.effort),
         ];
         let setup = if a.master { super::master::install(&mut env) } else { String::new() };
         let wrapper = format!("echo $$ > {pid_file}; [ -f {RUNNER} ] || {{ echo '{missing}'; exit 64; }}; {setup}exec node {RUNNER}");
@@ -203,6 +205,8 @@ impl AgentRuntime for OpenAiRuntime {
             format!("KALYPSO_ROLE={}", role_of(a, &ctx.extra)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
+            // Empty: the model's own default.
+            format!("KALYPSO_EFFORT={}", a.effort),
         ];
         let setup = if a.master { super::master::install(&mut env) } else { String::new() };
         let wrapper =

@@ -8,4 +8,8 @@ sandbox_id?: string, command?: string, max_turns?: number, restart?: string, max
 /**
  * Some("") unlinks the repository.
  */
-repo?: string, repo_account?: string, };
+repo?: string, repo_account?: string, 
+/**
+ * Some("") goes back to the model's default.
+ */
+effort?: string, };

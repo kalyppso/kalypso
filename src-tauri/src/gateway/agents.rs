@@ -112,6 +112,9 @@ pub struct Create {
     repo: Option<String>,
     #[serde(default)]
     task: Option<String>,
+    /// Reasoning effort: low for lookups and summaries, medium for routine work, high for hard problems.
+    #[serde(default)]
+    effort: Option<String>,
 }
 
 pub async fn create(State(gw): State<Arc<Gateway>>, headers: HeaderMap, Json(req): Json<Create>) -> Response {
@@ -158,6 +161,7 @@ pub async fn create(State(gw): State<Arc<Gateway>>, headers: HeaderMap, Json(req
         max_restarts: None,
         repo,
         repo_account,
+        effort: req.effort.map(|e| e.trim().to_string()).filter(|e| !e.is_empty()),
     };
     let created = match agent::create(&gw.db, &ns, new) {
         Ok(a) => a,

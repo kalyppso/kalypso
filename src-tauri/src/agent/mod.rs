@@ -48,6 +48,9 @@ pub struct AgentRecord {
     pub branch: Option<String>,
     /// The namespace's master agent: the one you talk to, which manages the others (see `master`).
     pub master: bool,
+    /// How hard the model thinks: "low", "medium", "high", "xhigh" or "max"; empty for the
+    /// model's own default. Fixed for a run, because changing it mid-conversation breaks the cache.
+    pub effort: String,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -83,6 +86,10 @@ pub struct NewAgent {
     #[serde(default)]
     #[ts(optional)]
     pub repo_account: Option<String>,
+    /// Reasoning effort; empty or absent for the model's default.
+    #[serde(default)]
+    #[ts(optional)]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, TS)]
@@ -108,6 +115,9 @@ pub struct AgentPatch {
     pub repo: Option<String>,
     #[ts(optional)]
     pub repo_account: Option<String>,
+    /// Some("") goes back to the model's default.
+    #[ts(optional)]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -142,7 +152,7 @@ pub struct AgentEvent {
 const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code", "openai-compat"];
 const RESTARTS: &[&str] = &["never", "on-failure", "always"];
 const COLS: &str =
-    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch, master";
+    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch, master, effort";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
     Ok(AgentRecord {
@@ -164,6 +174,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
         repo_account: r.get(15)?,
         branch: r.get(16)?,
         master: r.get(17)?,
+        effort: r.get(18)?,
     })
 }
 
@@ -219,6 +230,13 @@ fn check_model(runtime: &str, model: &str) -> Result<()> {
             && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             && !m.trim().is_empty()
     });
+    // Anthropic's OpenAI-compatible endpoint has no prompt caching and ignores effort, so a
+    // Claude model there costs several times more per task than on the Claude runtime.
+    if model.starts_with("anthropic/") {
+        return Err(KalypsoError::Invalid(
+            "Claude models run on the Claude runtime (claude-sdk): Anthropic's OpenAI-compatible endpoint has no prompt caching".into(),
+        ));
+    }
     if ok {
         Ok(())
     } else {
@@ -226,6 +244,22 @@ fn check_model(runtime: &str, model: &str) -> Result<()> {
             "{model:?} isn't a model for that runtime: use provider/model, for example ollama/llama3.1 or openrouter/qwen/qwen3-coder"
         )))
     }
+}
+
+/// Reasoning effort levels; which ones a model accepts is up to the provider (#138).
+pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+fn check_effort(runtime: &str, effort: &str) -> Result<()> {
+    if effort.is_empty() {
+        return Ok(());
+    }
+    if !EFFORTS.contains(&effort) {
+        return Err(KalypsoError::Invalid(format!("effort must be one of {}, or empty for the model's default", EFFORTS.join(", "))));
+    }
+    if runtime == "command" {
+        return Err(KalypsoError::Invalid("a command agent has no model to set the effort of".into()));
+    }
+    Ok(())
 }
 
 fn check_limits(restart: &str, command: &str, max_restarts: u32, max_turns: u32) -> Result<()> {
@@ -275,6 +309,8 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
     let (max_turns, max_restarts) = (new.max_turns.unwrap_or(0), new.max_restarts.unwrap_or(3));
     check(&new.runtime, &restart, &command, max_restarts, max_turns)?;
     check_model(&new.runtime, new.model.as_deref().unwrap_or_default().trim())?;
+    let effort = new.effort.unwrap_or_default().trim().to_string();
+    check_effort(&new.runtime, &effort)?;
     let sandbox_id = new.sandbox_id.filter(|s| !s.is_empty());
     check_sandbox(db, ns, sandbox_id.as_deref())?;
     let repo = new.repo.map(|r| r.trim().trim_end_matches(".git").to_string()).filter(|r| !r.is_empty());
@@ -283,8 +319,8 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
     let id = crate::vault::new_id("ag");
     let inserted = db.with(|c| {
         Ok(c.execute(
-            "INSERT INTO agents (id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, repo, repo_account)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO agents (id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, repo, repo_account, effort)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             rusqlite::params![
                 id,
                 ns,
@@ -298,7 +334,8 @@ pub fn create(db: &Db, ns: &str, new: NewAgent) -> Result<AgentRecord> {
                 restart,
                 max_restarts,
                 repo,
-                repo_account
+                repo_account,
+                effort
             ],
         )?)
     });
@@ -352,6 +389,10 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     if let Some(v) = p.repo_account {
         a.repo_account = Some(v).filter(|s| !s.is_empty());
     }
+    if let Some(v) = p.effort {
+        a.effort = v.trim().to_string();
+    }
+    check_effort(&a.runtime, &a.effort)?;
     check(&a.runtime, &a.restart, &a.command, a.max_restarts, a.max_turns)?;
     check_model(&a.runtime, &a.model)?;
     check_sandbox(db, ns, a.sandbox_id.as_deref())?;
@@ -359,7 +400,7 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     db.with(|c| {
         c.execute(
             "UPDATE agents SET role = ?2, model = ?3, sandbox_id = ?4, command = ?5, max_turns = ?6, restart = ?7, max_restarts = ?8,
-             repo = ?9, repo_account = ?10, branch = ?11 WHERE id = ?1",
+             repo = ?9, repo_account = ?10, branch = ?11, effort = ?12 WHERE id = ?1",
             rusqlite::params![
                 id,
                 a.role,
@@ -371,7 +412,8 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
                 a.max_restarts,
                 a.repo,
                 a.repo_account,
-                a.branch
+                a.branch,
+                a.effort
             ],
         )?;
         Ok(())
@@ -533,6 +575,7 @@ mod tests {
             max_restarts: None,
             repo: None,
             repo_account: None,
+            effort: None,
         }
     }
 
@@ -579,5 +622,40 @@ mod tests {
         let a = get(&db, "work", &a.id).unwrap();
         assert_eq!((a.status.as_str(), a.status_reason.as_str()), ("stopped", "KALYPSO restarted"));
         assert_eq!(runs(&db, "work", &a.id, 10).unwrap()[0].outcome, "stopped");
+    }
+
+    #[test]
+    fn effort_is_checked_and_kept() {
+        let db = db();
+        let mut n = new("thinker");
+        n.runtime = "claude-sdk".into();
+        n.effort = Some("low".into());
+        let a = create(&db, "work", n).unwrap();
+        assert_eq!(a.effort, "low");
+        let a = update(&db, "work", &a.id, AgentPatch { effort: Some("xhigh".into()), ..Default::default() }).unwrap();
+        assert_eq!(a.effort, "xhigh");
+        let a = update(&db, "work", &a.id, AgentPatch { effort: Some(String::new()), ..Default::default() }).unwrap();
+        assert_eq!(a.effort, "", "empty goes back to the model's default");
+        let err = update(&db, "work", &a.id, AgentPatch { effort: Some("extreme".into()), ..Default::default() }).unwrap_err();
+        assert!(err.to_string().contains("effort must be one of"), "{err}");
+
+        // A command agent has no model.
+        let mut c = new("script");
+        c.effort = Some("high".into());
+        assert!(create(&db, "work", c).unwrap_err().to_string().contains("no model"));
+    }
+
+    #[test]
+    fn claude_models_are_kept_off_the_openai_compatible_runtime() {
+        let db = db();
+        let mut n = new("mixed");
+        n.runtime = "openai-compat".into();
+        n.model = Some("anthropic/claude-sonnet-5-5".into());
+        let err = create(&db, "work", n).unwrap_err();
+        assert!(err.to_string().contains("claude-sdk"), "{err}");
+        let mut ok = new("local");
+        ok.runtime = "openai-compat".into();
+        ok.model = Some("ollama/llama3.1".into());
+        create(&db, "work", ok).unwrap();
     }
 }

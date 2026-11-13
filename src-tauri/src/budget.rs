@@ -5,7 +5,8 @@
 //! day, a month or a run. A sandbox's run is the time since it last started (each
 //! start gets a fresh gateway key); a key's run is its whole life. When a cap is
 //! reached the request is refused (pause), sent with a cheaper model (downgrade)
-//! or let through with a notification (alert). Every hit notifies once per period.
+//! or let through with a notification (alert). A downgrade applies from the next
+//! conversation: one already under way keeps its model, so its cache survives. Every hit notifies once per period.
 //!
 //! Checks happen before forwarding, so one request can take spend past a cap; the
 //! next one is stopped.

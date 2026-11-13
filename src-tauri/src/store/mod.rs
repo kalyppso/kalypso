@@ -22,6 +22,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0011_master_agent.sql"),
     include_str!("migrations/0012_prompts_memory.sql"),
     include_str!("migrations/0013_tasks.sql"),
+    include_str!("migrations/0014_agent_effort.sql"),
 ];
 
 #[derive(Debug, Clone, Serialize, TS)]

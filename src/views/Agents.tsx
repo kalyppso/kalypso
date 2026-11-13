@@ -255,6 +255,22 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
         <Fact k="Sandbox" v={sb ? sb.name : <span className="faint">None assigned</span>} />
         <Fact k="If it stops" v={a.restart === "never" ? "Leave it stopped" : a.restart === "always" ? `Restart, up to ${a.maxRestarts}x` : `Restart after crashes, up to ${a.maxRestarts}x`} />
         <Fact k={a.runtime === "claude-sdk" || a.runtime === "openai-compat" ? "Turns per task" : "Turns per run"} v={a.maxTurns ? a.maxTurns : "No limit"} />
+        {(a.runtime === "claude-sdk" || a.runtime === "openai-compat") && (
+          <Fact
+            k="Effort"
+            v={
+              <select
+                className="select sm"
+                value={a.effort ?? ""}
+                title={`${EFFORT_HINT} A change applies from its next start.`}
+                aria-label="Effort"
+                onChange={(e) => act(e.target.value ? `${a.name} uses ${e.target.value} effort from its next start` : `${a.name} uses the model's default effort from its next start`, () => api.agentUpdate(state.ns, a.id, { effort: e.target.value }))}
+              >
+                {EFFORTS.map((x) => <option key={x.id} value={x.id}>{x.id ? x.id : "Model default"}</option>)}
+              </select>
+            }
+          />
+        )}
       </div>
 
       <Section title="Conversation">
@@ -286,6 +302,17 @@ const RUNTIMES = [
   { id: "command", label: "Command", hint: "Any program run in the sandbox. Messages go to its input; what it prints is the transcript.", ready: true },
   { id: "claude-code", label: "Claude Code", hint: "Coming with #15.", ready: false },
 ];
+/** Reasoning effort: how hard the model thinks. Reasoning is billed as output, the most expensive kind. */
+const EFFORTS = [
+  { id: "", label: "Model default" },
+  { id: "low", label: "Low: lookups, summaries, small edits" },
+  { id: "medium", label: "Medium: routine coding" },
+  { id: "high", label: "High: hard problems" },
+  { id: "xhigh", label: "Extra high" },
+  { id: "max", label: "Max: costs the most" },
+];
+const EFFORT_HINT = "Reasoning is billed as output, the priciest tokens. Lower effort costs less; it is fixed for a run so the prompt cache holds.";
+
 /** The image with KALYPSO's agent runner, which Claude Agent SDK agents need. */
 export const RUNNER_IMAGE = "ghcr.io/kalyppso/agent-runner:latest";
 const hasRunner = (image: string) => /agent-runner/.test(image);
@@ -305,6 +332,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
   const [restart, setRestart] = useState("on-failure");
   const [maxRestarts, setMaxRestarts] = useState("3");
   const [maxTurns, setMaxTurns] = useState("0");
+  const [effort, setEffort] = useState("");
   const [repo, setRepo] = useState<RepoChoice>(null);
   const sdk = runtime === "claude-sdk";
   // Any OpenAI-compatible model: a gateway provider route and the model name there.
@@ -333,7 +361,7 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
     api.agentCreate(state.ns, {
       name: n, role: role.trim() || undefined, runtime, model: sdk ? model : anyModel ? `${providerId}/${otherModel.trim()}` : undefined, command: command.trim(), sandbox_id: sandboxId,
       restart, max_restarts: Math.max(0, +maxRestarts || 0), max_turns: Math.max(0, +maxTurns || 0),
-      repo: repo?.repo, repo_account: repo?.account,
+      repo: repo?.repo, repo_account: repo?.account, effort: runner && effort ? effort : undefined,
     })
       .then((rec) => { dispatch({ type: "hydrateAgents", ns: state.ns, agents: [...agents.filter((x) => x.ns === state.ns), toAgent(rec)] }); toast(`Agent ${n} created`); onClose(); })
       .catch((e) => toast(errorMessage(e), "err"));
@@ -367,10 +395,32 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
           </label>
         )}
       </div>
+      {runner && (
+        <Field label="Effort" hint={EFFORT_HINT}>
+          <select className="select" value={effort} onChange={(e) => setEffort(e.target.value)}>
+            {EFFORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </Field>
+      )}
       {anyModel && (
         <div className="field-row">
           <Field label="Provider" hint="A gateway route: openai, openrouter, ollama, or your own name.">
-            <input className="input mono" list="providers" value={provider} onChange={(e) => { setProvider(e.target.value); clear("model"); }} placeholder="ollama" />
+            <input
+              className="input mono"
+              list="providers"
+              value={provider}
+              onChange={(e) => {
+                setProvider(e.target.value);
+                clear("model");
+                // Anthropic's OpenAI-compatible endpoint has no prompt caching: Claude runs on the SDK runtime.
+                if (e.target.value.trim().toLowerCase() === "anthropic") {
+                  setRuntime("claude-sdk");
+                  setProvider("ollama");
+                  toast("Claude models use the Claude Agent SDK runtime, which caches prompts. Switched it for you.", "info");
+                }
+              }}
+              placeholder="ollama"
+            />
             <datalist id="providers">
               {["ollama", "openai", "openrouter", "vllm", "lmstudio", "together", "groq"].map((p) => <option key={p} value={p} />)}
             </datalist>

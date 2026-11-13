@@ -40,4 +40,9 @@ branch: string | null,
 /**
  * The namespace's master agent: the one you talk to, which manages the others (see `master`).
  */
-master: boolean, };
+master: boolean, 
+/**
+ * How hard the model thinks: "low", "medium", "high", "xhigh" or "max"; empty for the
+ * model's own default. Fixed for a run, because changing it mid-conversation breaks the cache.
+ */
+effort: string, };

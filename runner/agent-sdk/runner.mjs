@@ -200,6 +200,9 @@ const append = [
 
 const options = {
   model: process.env.KALYPSO_MODEL || undefined,
+  // Reasoning effort from the agent's settings; unset keeps the model's default. Fixed for the
+  // run: changing it mid-conversation would invalidate the prompt cache.
+  effort: process.env.KALYPSO_EFFORT || undefined,
   cwd: workDir,
   maxTurns,
   resume,
