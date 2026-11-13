@@ -30,6 +30,8 @@
     }
   },
   "bundle": {
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
     "active": true,
     "targets": "all",
     "icon": [

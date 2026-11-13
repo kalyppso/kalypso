@@ -1,6 +1,7 @@
 {
   "name": "kalypso-agent-runner",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "description": "Runs a Claude Agent SDK agent inside a KALYPSO sandbox.",
   "type": "module",
