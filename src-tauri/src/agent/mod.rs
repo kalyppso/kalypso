@@ -483,6 +483,27 @@ pub fn events(db: &Db, ns: &str, run_id: &str, after: i64, limit: u32) -> Result
     })
 }
 
+/// The newest run's transcript, oldest line first (up to 2,000 lines).
+pub fn latest_events(db: &Db, a: &AgentRecord) -> Vec<AgentEvent> {
+    let Ok(runs) = runs(db, &a.ns, &a.id, 1) else { return vec![] };
+    let Some(run) = runs.first() else { return vec![] };
+    events(db, &a.ns, &run.id, 0, 2000).unwrap_or_default()
+}
+
+/// Whether the agent is in the middle of something: its last message hasn't been answered with a result yet.
+pub fn busy(db: &Db, a: &AgentRecord) -> bool {
+    let events = latest_events(db, a);
+    let last_input = events.iter().rposition(|e| e.kind == "input");
+    let last_end = events.iter().rposition(|e| e.kind == "result" || e.kind == "error");
+    match (last_input, last_end) {
+        (Some(i), Some(e)) => i > e,
+        (Some(_), None) => true,
+        // No message yet: busy only if it was started with a task and hasn't reported.
+        (None, None) => !a.command.is_empty() && !events.is_empty(),
+        (None, Some(_)) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

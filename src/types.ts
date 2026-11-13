@@ -238,6 +238,13 @@ export interface Task {
   cost: number;
   pr: string | null;
   ticket?: TicketRef;
+  /** Desktop app: why it is where it is (the agent's closing line, an error, a reviewer's notes). */
+  note?: string;
+  /** Desktop app: what the agent said when it finished. */
+  result?: string;
+  /** Desktop app: changes asked for in the last review, sent with the next attempt. */
+  reviewNote?: string;
+  attempts?: number;
 }
 
 export interface Repo {

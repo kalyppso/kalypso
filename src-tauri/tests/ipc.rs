@@ -24,6 +24,7 @@ fn app() -> WebviewWindow<tauri::test::MockRuntime> {
     let vault = Arc::new(Vault::ephemeral());
     let gateway = Gateway::new(db.clone(), vault.clone(), Pricing::builtin());
     let agents = kalypso_lib::agent::supervisor::Supervisor::new(db.clone(), vault.clone(), Runtime::none());
+    let board = kalypso_lib::task::Board::new(db.clone(), agents.clone());
     app.manage(AppState {
         db,
         vault,
@@ -32,6 +33,7 @@ fn app() -> WebviewWindow<tauri::test::MockRuntime> {
         gateway,
         terminals: Default::default(),
         agents,
+        board,
         github: Default::default(),
     });
     WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap()
@@ -91,4 +93,24 @@ fn sandbox_create_reports_missing_runtime() {
     assert_eq!(err["code"], "runtime");
     let info = call(&w, "core_info", json!({})).unwrap();
     assert_eq!(info["runtime"], "none");
+}
+
+#[test]
+fn queuing_a_task_starts_its_agent() {
+    let w = app();
+    call(&w, "ns_create", json!({ "id": "work", "description": "" })).unwrap();
+    let agent = json!({ "name": "coder", "runtime": "command", "command": "sh agent.sh" });
+    let a = call(&w, "agent_create", json!({ "ns": "work", "agent": agent })).unwrap();
+    let task = json!({ "agent_id": a["id"], "title": "Fix the flaky login test", "priority": "high" });
+    let t = call(&w, "task_create", json!({ "ns": "work", "task": task })).unwrap();
+    // Queuing woke the agent; with no sandbox it can't start, and the task says why instead of waiting forever.
+    assert_eq!(t["status"], "failed", "{t}");
+    assert!(t["status_note"].as_str().unwrap().contains("coder couldn't start"), "{t}");
+
+    // Back to queued is allowed; straight to running is the Board's job.
+    let err = call(&w, "task_move", json!({ "ns": "work", "id": t["id"], "status": "running" })).unwrap_err();
+    assert!(err["message"].as_str().unwrap().contains("picks them up"), "{err}");
+    assert_eq!(call(&w, "task_list", json!({ "ns": "work" })).unwrap().as_array().unwrap().len(), 1);
+    call(&w, "task_delete", json!({ "ns": "work", "id": t["id"] })).unwrap();
+    assert!(call(&w, "task_list", json!({ "ns": "work" })).unwrap().as_array().unwrap().is_empty());
 }

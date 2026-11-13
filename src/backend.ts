@@ -29,6 +29,9 @@ import type { PolicyEvent as PolicyEventRecord } from "./bindings/PolicyEvent";
 import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { Prompt } from "./bindings/Prompt";
+import type { Task as TaskRecord } from "./bindings/Task";
+import type { NewTask } from "./bindings/NewTask";
+import type { TaskPatch } from "./bindings/TaskPatch";
 import type { PromptInput } from "./bindings/PromptInput";
 import type { ChatSettings } from "./bindings/ChatSettings";
 import type { Memory } from "./bindings/Memory";
@@ -111,6 +114,12 @@ export const api = {
   masterGet: (ns: string) => invoke<AgentRecord | null>("master_get", { ns }),
   masterEnsure: (ns: string) => invoke<AgentRecord>("master_ensure", { ns }),
   masterNewChat: (ns: string) => invoke<AgentRecord | null>("master_new_chat", { ns }),
+  taskList: (ns: string) => invoke<TaskRecord[]>("task_list", { ns }),
+  taskCreate: (ns: string, task: NewTask) => invoke<TaskRecord>("task_create", { ns, task }),
+  taskUpdate: (ns: string, id: string, patch: TaskPatch) => invoke<TaskRecord>("task_update", { ns, id, patch }),
+  taskMove: (ns: string, id: string, status: string) => invoke<TaskRecord>("task_move", { ns, id, status }),
+  taskReview: (ns: string, id: string, approve: boolean, note: string) => invoke<TaskRecord>("task_review", { ns, id, approve, note }),
+  taskDelete: (ns: string, id: string) => invoke<void>("task_delete", { ns, id }),
   promptList: (ns: string) => invoke<Prompt[]>("prompt_list", { ns }),
   promptSave: (ns: string, prompt: PromptInput) => invoke<Prompt>("prompt_save", { ns, prompt }),
   promptDelete: (ns: string, id: string) => invoke<void>("prompt_delete", { ns, id }),
@@ -220,6 +229,9 @@ export const onTermData = (pane: string, fn: (bytes: Uint8Array) => void) =>
   listen<string>(`term://data/${pane}`, (e) => fn(Uint8Array.from(atob(e.payload), (c) => c.charCodeAt(0))));
 /** The pane's shell ended (exit, crash, or the sandbox stopped). */
 export const onTermExit = (pane: string, fn: () => void) => listen(`term://exit/${pane}`, () => fn());
+
+/** A namespace's Board changed (src-tauri/src/task.rs); the payload is the namespace. */
+export const onTaskChanged = (fn: (ns: string) => void) => listen<string>("task://changed", (e) => fn(e.payload));
 
 /** Agent status changes and transcript lines (src-tauri/src/agent/supervisor.rs). */
 export const onAgentUpdate = (fn: (e: AgentUpdate) => void) => listen<AgentUpdate>("agent://update", (e) => fn(e.payload));

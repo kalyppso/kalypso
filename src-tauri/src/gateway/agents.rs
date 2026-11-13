@@ -343,23 +343,11 @@ struct Reply {
 }
 
 fn latest_events(gw: &Gateway, a: &AgentRecord) -> Vec<agent::AgentEvent> {
-    let Ok(runs) = agent::runs(&gw.db, &a.ns, &a.id, 1) else { return vec![] };
-    let Some(run) = runs.first() else { return vec![] };
-    agent::events(&gw.db, &a.ns, &run.id, 0, 2000).unwrap_or_default()
+    agent::latest_events(&gw.db, a)
 }
 
-/// Whether the agent is in the middle of something: its last message hasn't been answered with a result yet.
 fn busy(gw: &Gateway, a: &AgentRecord) -> bool {
-    let events = latest_events(gw, a);
-    let last_input = events.iter().rposition(|e| e.kind == "input");
-    let last_end = events.iter().rposition(|e| e.kind == "result" || e.kind == "error");
-    match (last_input, last_end) {
-        (Some(i), Some(e)) => i > e,
-        (Some(_), None) => true,
-        // No message yet: busy only if it was started with a task and hasn't reported.
-        (None, None) => !a.command.is_empty() && !events.is_empty(),
-        (None, Some(_)) => false,
-    }
+    agent::busy(&gw.db, a)
 }
 
 /// What the agent said since its last message (or since it started), and how that ended.

@@ -16,6 +16,7 @@ pub mod repo;
 pub mod sandbox;
 pub mod setup;
 pub mod store;
+pub mod task;
 pub mod terminal;
 pub mod vault;
 
@@ -119,6 +120,12 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::master_get,
         ipc::master_ensure,
         ipc::master_new_chat,
+        ipc::task_list,
+        ipc::task_create,
+        ipc::task_update,
+        ipc::task_move,
+        ipc::task_review,
+        ipc::task_delete,
         ipc::prompt_list,
         ipc::prompt_save,
         ipc::prompt_delete,
@@ -211,7 +218,15 @@ pub fn run() {
         if reset > 0 {
             tracing::info!(agents = reset, "marked agents from the last session as stopped");
         }
+        let stale = task::reset_after_restart(&db)?;
+        if stale > 0 {
+            tracing::info!(tasks = stale, "marked tasks from the last session as failed");
+        }
         let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
+        // The Board (#20) hands queued tasks to agents and moves them along as they answer.
+        let board = task::Board::new(db.clone(), agents.clone());
+        board.spawn();
+        events::spawn_task_events(app.handle().clone(), board.subscribe());
         // The master agent manages the others through the gateway.
         gw.set_agents(agents.clone());
         events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
@@ -227,7 +242,17 @@ pub fn run() {
                 }
             });
         }
-        app.manage(AppState { db, vault, rt, forwards: Default::default(), gateway: gw, terminals: Default::default(), agents, github });
+        app.manage(AppState {
+            db,
+            vault,
+            rt,
+            forwards: Default::default(),
+            gateway: gw,
+            terminals: Default::default(),
+            agents,
+            board,
+            github,
+        });
         events::spawn_sandbox_watcher(app.handle().clone());
         // No engine yet (Podman or Docker not running, or started after KALYPSO): keep looking,
         // and connect as soon as one answers, without a restart.

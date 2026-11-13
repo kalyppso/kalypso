@@ -96,7 +96,7 @@ impl Supervisor {
         });
     }
 
-    fn event(&self, a: &AgentRecord, run_id: &str, kind: &str, text: &str) {
+    fn event(&self, a: &AgentRecord, run_id: &str, kind: &str, text: &str) -> Option<i64> {
         match super::add_event(&self.db, run_id, kind, text) {
             Ok(id) => {
                 let event = AgentEvent { id, run_id: run_id.into(), ts: String::new(), kind: kind.into(), text: text.into() };
@@ -107,8 +107,12 @@ impl Supervisor {
                     reason: None,
                     event: Some(event),
                 });
+                Some(id)
             }
-            Err(e) => tracing::error!(error = %e, agent = %a.name, "could not record agent output"),
+            Err(e) => {
+                tracing::error!(error = %e, agent = %a.name, "could not record agent output");
+                None
+            }
         }
     }
 
@@ -338,6 +342,12 @@ impl Supervisor {
 
     /// Give the agent a message. Past `max_turns` the run ends instead.
     pub async fn send(&self, ns: &str, id: &str, message: &str) -> Result<()> {
+        self.send_tracked(ns, id, message).await.map(|_| ())
+    }
+
+    /// [`Self::send`], returning the run and the transcript line the message became, so the
+    /// caller can find the answer to it (the Board's tasks).
+    pub async fn send_tracked(&self, ns: &str, id: &str, message: &str) -> Result<(String, i64)> {
         let agent = super::get(&self.db, ns, id)?;
         let live = self.get_live(id).ok_or_else(|| KalypsoError::Invalid(format!("{} isn't running", agent.name)))?;
         if agent.status == "paused" {
@@ -357,8 +367,8 @@ impl Supervisor {
         }
         live.turns.fetch_add(1, Ordering::SeqCst);
         let run_id = live.run_id.lock().unwrap().clone();
-        self.event(&agent, &run_id, "input", message);
-        Ok(())
+        let event = self.event(&agent, &run_id, "input", message).unwrap_or(0);
+        Ok((run_id, event))
     }
 
     /// The gateway refused a request for budget: pause every running agent in that key's sandbox.
