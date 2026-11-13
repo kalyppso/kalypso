@@ -499,10 +499,11 @@ pub fn master_get(s: State<'_, AppState>, ns: String) -> Result<Option<AgentReco
 
 /// The namespace's master agent, created with its sandbox the first time.
 #[tauri::command]
-pub async fn master_ensure(s: State<'_, AppState>, ns: String) -> Result<AgentRecord> {
+pub async fn master_ensure(s: State<'_, AppState>, ns: String, model: Option<String>) -> Result<AgentRecord> {
     ensure_ns(&s, &ns)?;
     let created = agent::master::get(&s.db, &ns)?.is_none();
-    let m = agent::master::ensure(&s.db, &s.rt, &ns).await?;
+    let model = model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let m = agent::master::ensure(&s.db, &s.rt, &ns, model.as_deref()).await?;
     if created {
         s.agents.announce(&ns, &m.id);
     }
@@ -717,4 +718,39 @@ pub fn task_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()>
     crate::task::delete(&s.db, &ns, &id)?;
     s.board.changed(&ns);
     Ok(())
+}
+
+// Model providers: connect any AI provider and list its models.
+
+#[tauri::command]
+pub fn provider_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::providers::ModelProvider>> {
+    ensure_ns(&s, &ns)?;
+    crate::providers::list(&s.db, &s.vault, &ns)
+}
+
+#[tauri::command]
+pub fn provider_save(
+    s: State<'_, AppState>,
+    ns: String,
+    provider: crate::providers::ProviderInput,
+) -> Result<crate::providers::ModelProvider> {
+    ensure_ns(&s, &ns)?;
+    crate::providers::save(&s.db, &s.vault, &ns, provider)
+}
+
+#[tauri::command]
+pub fn provider_remove(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::providers::remove(&s.db, &s.vault, &ns, &id)
+}
+
+/// The provider's models, which also tests its key and address.
+#[tauri::command]
+pub async fn provider_models(s: State<'_, AppState>, ns: String, id: String) -> Result<Vec<String>> {
+    ensure_ns(&s, &ns)?;
+    let http = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| KalypsoError::Invalid(e.to_string()))?;
+    crate::providers::models(&s.db, &s.vault, &http, &ns, &id).await
 }

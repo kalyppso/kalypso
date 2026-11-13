@@ -12,6 +12,7 @@ pub mod ipc;
 pub mod ns;
 pub mod policy;
 pub mod prompts;
+pub mod providers;
 pub mod repo;
 pub mod sandbox;
 pub mod setup;
@@ -120,6 +121,10 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::master_get,
         ipc::master_ensure,
         ipc::master_new_chat,
+        ipc::provider_list,
+        ipc::provider_save,
+        ipc::provider_remove,
+        ipc::provider_models,
         ipc::task_list,
         ipc::task_create,
         ipc::task_update,

@@ -70,19 +70,12 @@ pub fn socket_dir() -> Option<&'static PathBuf> {
     SOCKET_DIR.get()
 }
 
-/// Built-in upstreams; anything else needs `<PROVIDER>_BASE_URL`.
+/// A known provider's usual address (see `providers`); others need `<PROVIDER>_BASE_URL`.
 fn default_base(provider: &str) -> Option<&'static str> {
-    match provider {
-        "anthropic" => Some("https://api.anthropic.com"),
-        "openai" => Some("https://api.openai.com/v1"),
-        _ => None,
-    }
+    crate::providers::preset(provider).map(|p| p.base_url)
 }
 
-/// `open-router` → `OPEN_ROUTER`, the prefix of its secrets.
-fn secret_prefix(provider: &str) -> String {
-    provider.to_ascii_uppercase().replace('-', "_")
-}
+use crate::providers::secret_prefix;
 
 // ---------- Virtual keys ----------
 
@@ -914,7 +907,7 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
         Ok(k) => k,
         Err(e) => return fail(format, StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
-    if api_key.is_none() && default_base(provider).is_some() {
+    if api_key.is_none() && crate::providers::preset(provider).is_some_and(|p| p.needs_key) {
         let msg = format!("no {prefix}_API_KEY secret in namespace {ns}; add it with the gateway scope");
         return fail(format, StatusCode::UNAUTHORIZED, &msg);
     }

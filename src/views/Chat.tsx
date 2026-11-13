@@ -7,6 +7,8 @@ import { AgentFace, Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
 import { Logo } from "../components/Logo";
 import { ChatSettingsModal } from "../components/ChatSettings";
+import { CLAUDE_MODELS, ConnectProvider, modelLabel, providerModels, useModelChoices, useProviders } from "../components/Providers";
+import type { ModelProvider } from "../bindings/ModelProvider";
 import { useNamespaced, useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import "../styles/agents.css";
@@ -17,12 +19,26 @@ import "../styles/agents.css";
  * the namespace's other agents through KALYPSO, and reports back here.
  */
 
-const MODELS = [
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", note: "Fast, good for most work" },
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5", note: "Stronger planning" },
-  { id: "claude-fable-5-2", label: "Claude Fable 5.2", note: "Most capable, costs more" },
-  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", note: "Cheapest" },
-];
+/** Which provider a model id belongs to: `provider/model`, or a bare Claude id. */
+const providerOf = (model: string) => (model.includes("/") ? model.split("/")[0] : "anthropic");
+
+/** The model picked for kalypso before it exists; it is created with it on the first message. */
+const pickedKey = (ns: string) => `kalypso.model.${ns}`;
+const picked = (ns: string) => { try { return localStorage.getItem(pickedKey(ns)) || undefined; } catch { return undefined; } };
+const pick = (ns: string, model: string) => { try { localStorage.setItem(pickedKey(ns), model); } catch { /* used for this session only */ } };
+
+/** A model to create kalypso with: the one picked, Claude Sonnet if Anthropic is connected, else the first model of a connected provider. */
+async function startModel(ns: string): Promise<string | undefined> {
+  const p = picked(ns);
+  if (p) return p;
+  const connected = (await api.providerList(ns)).filter((x) => x.connected);
+  if (connected.some((x) => x.id === "anthropic")) return undefined;
+  for (const x of connected) {
+    const models = await providerModels(ns, x.id).catch(() => []);
+    if (models.length) return `${x.id}/${models[0]}`;
+  }
+  return undefined;
+}
 
 const STARTERS = [
   "Find out why the tests fail on main and fix them",
@@ -65,8 +81,9 @@ const titleOf = (events: AgentEvent[]) => {
 export function Chat() {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const { loading, agents, secrets } = useNamespaced();
+  const { loading, agents } = useNamespaced();
   const live = isLive();
+  const { connected } = useProviders();
   const master = useMemo(() => (live ? agents.find((a) => a.master) : SAMPLE_MASTER), [agents, live]);
   const team = agents.filter((a) => !a.master);
   const convo = useAgentConversation(state.ns, master);
@@ -113,7 +130,7 @@ export function Chat() {
           past={open !== chats.length - 1}
           toLatest={() => setOpen(chats.length - 1)}
           send={convo.send}
-          hasKey={!live || secrets.some((s) => s.key === "ANTHROPIC_API_KEY" && s.scope === "gateway") || !!master?.model.includes("/")}
+          hasKey={!live || (master ? connected.some((p) => p.id === providerOf(master.model)) : connected.length > 0)}
         />
       )}
       <aside className="chat-side" aria-label="Chats and agents">
@@ -186,7 +203,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
     try {
       let m = master;
       if (!m) {
-        m = toAgent(await api.masterEnsure(state.ns));
+        m = toAgent(await api.masterEnsure(state.ns, await startModel(state.ns)));
         await sync();
       }
       if (m.status === "paused") throw new Error("kalypso is paused. Resume it first.");
@@ -230,8 +247,8 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
     </header>
   );
 
-  const keyCard = !hasKey && <ConnectModel />;
-  const blocked = !hasKey ? <>Add a model key above to start.</>
+  const keyCard = !hasKey && <ConnectModel master={master} />;
+  const blocked = !hasKey ? <>Connect a model above to start.</>
     : master?.status === "paused" ? <>kalypso is paused. <button className="link" disabled={busy} onClick={() => act("kalypso resumed", () => api.agentResume(state.ns, master.id))}>Resume it</button> to continue.</>
     : undefined;
 
@@ -273,66 +290,80 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
   );
 }
 
-/** The model kalypso thinks with, switchable like in any chat app. */
+/** The model kalypso thinks with, from any connected provider, switchable like in any chat app. */
 function ModelPicker({ master }: { master: Agent | undefined }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const current = master?.model ?? MODELS[0].id;
-  const known = MODELS.some((m) => m.id === current);
+  const { connected } = useProviders();
+  const choices = useModelChoices(connected);
+  const [chosen, setChosen] = useState(() => picked(state.ns));
+  const fallback = connected.some((p) => p.id === "anthropic") ? CLAUDE_MODELS[0].id : choices.find((c) => c.models.length)?.models[0]?.id ?? CLAUDE_MODELS[0].id;
+  const current = master?.model ?? chosen ?? fallback;
+  const known = choices.some((c) => c.models.some((m) => m.id === current));
   const change = async (model: string) => {
-    if (!master || !isLive()) return toast("kalypso is created with your first message; pick its model after that.", "warn");
+    if (!master || !isLive()) {
+      pick(state.ns, model);
+      setChosen(model);
+      return toast(`kalypso starts on ${modelLabel(model)}`);
+    }
     try {
       const running = ["running", "starting", "restarting", "paused"].includes(master.status);
       if (running) await api.agentStop(state.ns, master.id);
+      // Moving between Claude and another provider changes its runtime too; the core does that.
       await api.agentUpdate(state.ns, master.id, { model });
       await syncNamespace(state.ns, dispatch);
-      toast(`kalypso now uses ${MODELS.find((m) => m.id === model)?.label ?? model}`);
+      toast(`kalypso now uses ${modelLabel(model)}`);
     } catch (e) {
       toast(errorMessage(e), "err");
     }
   };
   return (
-    <label className="chat-model" title="The model kalypso thinks with. Agents it creates use the same one unless it picks another.">
+    <label className="chat-model" title="The model kalypso thinks with. Agents it creates use the same one unless it picks another. Connect more providers in Settings, Models.">
       <span className="chat-model-mark"><Logo size={22} fine /></span>
       <span className="chat-model-name">kalypso</span>
       <select className="chat-model-select" value={current} onChange={(e) => change(e.target.value)}>
-        {!known && <option value={current}>{current}</option>}
-        {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        {!known && <option value={current}>{modelLabel(current)}</option>}
+        {choices.map((c) => (
+          <optgroup key={c.provider.id} label={c.provider.name}>
+            {c.loading && <option disabled>Loading models…</option>}
+            {!c.loading && c.models.length === 0 && <option disabled>No models listed</option>}
+            {c.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </optgroup>
+        ))}
       </select>
     </label>
   );
 }
 
-/** No model key yet: add one right here instead of hunting through Settings. */
-function ConnectModel() {
+/** No provider for kalypso's model yet: connect one right here instead of hunting through Settings. */
+function ConnectModel({ master }: { master: Agent | undefined }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const [key, setKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    const v = key.trim();
-    if (!v) return;
-    setSaving(true);
+  const { providers, reload } = useProviders();
+  const connected = async (p: ModelProvider, models: string[]) => {
+    reload();
+    // kalypso follows the provider just connected when its own isn't there.
+    const model = p.id === "anthropic" ? CLAUDE_MODELS[0].id : models[0] ? `${p.id}/${models[0]}` : undefined;
+    if (!model) return;
+    if (!master) return pick(state.ns, model);
+    if (providerOf(master.model) === p.id) return;
     try {
-      await api.secretSet(state.ns, "ANTHROPIC_API_KEY", v, "gateway");
-      const check = await api.setupKeyCheck(state.ns).catch(() => null);
+      if (["running", "starting", "restarting", "paused"].includes(master.status)) await api.agentStop(state.ns, master.id);
+      await api.agentUpdate(state.ns, master.id, { model });
       await syncNamespace(state.ns, dispatch);
-      setKey("");
-      toast(check && !check.ok ? check.message : "Key saved. You can start chatting.", check && !check.ok ? "warn" : "ok");
+      toast(`kalypso now uses ${modelLabel(model)}`);
     } catch (e) {
       toast(errorMessage(e), "err");
-    } finally {
-      setSaving(false);
     }
   };
   return (
     <div className="chat-key">
       <div className="chat-key-title"><KeyRound size={14} /> Connect a model</div>
-      <p>kalypso needs an Anthropic API key for <b>{state.ns}</b>. It's stored in the vault, added to model calls by KALYPSO, and never shown to agents.</p>
-      <div className="chat-key-row">
-        <input className="input mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} placeholder="sk-ant-…" aria-label="Anthropic API key" autoComplete="off" />
-        <button className="btn primary" onClick={save} disabled={!key.trim() || saving}>{saving ? "Saving…" : "Save key"}</button>
-      </div>
+      <p>
+        kalypso needs a model provider for <b>{state.ns}</b>: Anthropic, OpenAI, Gemini, Mistral, DeepSeek, Groq, OpenRouter, Ollama on this machine, or anything OpenAI-compatible.
+        Keys are stored in the vault, added to model calls by KALYPSO, and never shown to agents.
+      </p>
+      {providers ? <ConnectProvider providers={providers} onConnected={connected} compact /> : null}
     </div>
   );
 }

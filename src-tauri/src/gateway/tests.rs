@@ -187,7 +187,13 @@ async fn rejects_bad_keys_and_missing_provider_config() {
     let res = post("/anthropic/v1/messages", &lab.token).await.unwrap();
     assert_eq!(res.status(), 401, "lab has no ANTHROPIC_API_KEY");
     assert!(res.text().await.unwrap().contains("ANTHROPIC_API_KEY"));
-    assert_eq!(post("/groq/chat/completions", &lab.token).await.unwrap().status(), 400);
+    // A known provider only needs its key; an unknown one needs its address first.
+    let res = post("/groq/chat/completions", &lab.token).await.unwrap();
+    assert_eq!(res.status(), 401);
+    assert!(res.text().await.unwrap().contains("GROQ_API_KEY"));
+    let res = post("/my-llm/chat/completions", &lab.token).await.unwrap();
+    assert_eq!(res.status(), 400);
+    assert!(res.text().await.unwrap().contains("MY_LLM_BASE_URL"));
 
     revoke_key(&e.db, "lab", &lab.key.id).unwrap();
     assert_eq!(post("/openai/models", &lab.token).await.unwrap().status(), 401);

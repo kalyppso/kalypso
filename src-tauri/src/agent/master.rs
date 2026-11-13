@@ -26,7 +26,9 @@ pub fn get(db: &Db, ns: &str) -> Result<Option<AgentRecord>> {
 }
 
 /// The namespace's master agent, created with its sandbox if it doesn't exist yet.
-pub async fn ensure(db: &Db, rt: &Runtime, ns: &str) -> Result<AgentRecord> {
+/// `model` picks what it thinks with when it is created (Claude Sonnet unless given): a Claude
+/// model id, or `provider/model` for any other provider.
+pub async fn ensure(db: &Db, rt: &Runtime, ns: &str, model: Option<&str>) -> Result<AgentRecord> {
     if let Some(m) = get(db, ns)? {
         return Ok(m);
     }
@@ -37,8 +39,8 @@ pub async fn ensure(db: &Db, rt: &Runtime, ns: &str) -> Result<AgentRecord> {
         NewAgent {
             name: NAME.into(),
             role: Some("Plans the work, hands it to your agents and reports back".into()),
-            runtime: "claude-sdk".into(),
-            model: Some(MODEL.into()),
+            runtime: super::runtime_for_model(model.unwrap_or(MODEL)).into(),
+            model: Some(model.unwrap_or(MODEL).into()),
             sandbox_id: Some(sandbox_id),
             command: None,
             max_turns: None,

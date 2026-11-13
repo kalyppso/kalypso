@@ -6,6 +6,8 @@ import { Composer, Conversation, useAgentConversation, useAgentGate } from "../c
 import { CodeReveal, EmptyState, Field, AgentFace, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
+import { providerModels, useProviders } from "../components/Providers";
+import { openSettings } from "./Settings";
 import type { PullRequest } from "../bindings/PullRequest";
 import "../styles/agents.css";
 
@@ -338,8 +340,20 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
   // Any OpenAI-compatible model: a gateway provider route and the model name there.
   const anyModel = runtime === "openai-compat";
   const runner = sdk || anyModel;
-  const [provider, setProvider] = useState("ollama");
+  // Other providers come from Settings → Models; Claude is the Claude runtime's.
+  const { connected } = useProviders();
+  const otherProviders = connected.filter((p) => p.id !== "anthropic");
+  const [provider, setProvider] = useState("");
+  useEffect(() => { if (!provider && otherProviders[0]) setProvider(otherProviders[0].id); }, [otherProviders.length]);
   const [otherModel, setOtherModel] = useState("");
+  const [modelList, setModelList] = useState<string[] | null>([]);
+  useEffect(() => {
+    if (!anyModel || !provider) return;
+    let live = true;
+    setModelList(null);
+    providerModels(state.ns, provider).then((m) => live && setModelList(m)).catch(() => live && setModelList([]));
+    return () => { live = false; };
+  }, [anyModel, provider, state.ns]);
   const providerId = provider.trim().toLowerCase();
   const picked = sandboxes.find((s) => s.id === sandboxId);
 
@@ -351,10 +365,8 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
         : agents.some((a) => a.name.toLowerCase() === n.toLowerCase()) ? `An agent called ${n} already exists here.`
         : undefined,
       command: runner || command.trim() ? undefined : "Say what to run, for example: python agent.py",
-      model: !anyModel ? undefined
-        : !/^[a-z0-9][a-z0-9-]*$/.test(providerId) ? "Name the provider with lowercase letters, digits and dashes, as in its secrets (OPENROUTER_… is openrouter)."
-        : !otherModel.trim() ? "Name the model, for example llama3.1 or qwen/qwen3-coder."
-        : undefined,
+      provider: !anyModel ? undefined : providerId ? undefined : "Connect a provider first, in Settings, Models.",
+      model: !anyModel || !providerId ? undefined : !otherModel.trim() ? "Pick or type the model." : undefined,
       sandbox: sandboxId ? undefined : sandboxes.length ? "Pick a sandbox." : "Create a sandbox first.",
     });
     if (!ok) return;
@@ -404,38 +416,19 @@ function NewLiveAgent({ onClose }: { onClose: () => void }) {
       )}
       {anyModel && (
         <div className="field-row">
-          <Field label="Provider" hint="A gateway route: openai, openrouter, ollama, or your own name.">
-            <input
-              className="input mono"
-              list="providers"
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
-                clear("model");
-                // Anthropic's OpenAI-compatible endpoint has no prompt caching: Claude runs on the SDK runtime.
-                if (e.target.value.trim().toLowerCase() === "anthropic") {
-                  setRuntime("claude-sdk");
-                  setProvider("ollama");
-                  toast("Claude models use the Claude Agent SDK runtime, which caches prompts. Switched it for you.", "info");
-                }
-              }}
-              placeholder="ollama"
-            />
-            <datalist id="providers">
-              {["ollama", "openai", "openrouter", "vllm", "lmstudio", "together", "groq"].map((p) => <option key={p} value={p} />)}
+          <Field label="Provider" error={errors.provider} hint={otherProviders.length ? undefined : <>No other provider is connected. <button className="link" onClick={() => { onClose(); openSettings(dispatch, "models"); }}>Connect one</button>.</>}>
+            <select className="select" value={provider} onChange={(e) => { setProvider(e.target.value); setOtherModel(""); clear("model"); clear("provider"); }}>
+              {!otherProviders.some((p) => p.id === provider) && <option value={provider}>{provider || "Pick a provider"}</option>}
+              {otherProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Model" error={errors.model} hint={modelList === null ? "Loading its models…" : modelList.length ? `${modelList.length} available` : "Type the model name."}>
+            <input className="input mono" list="provider-models" value={otherModel} onChange={(e) => { setOtherModel(e.target.value); clear("model"); }} placeholder={modelList?.[0] ?? "model name"} />
+            <datalist id="provider-models">
+              {(modelList ?? []).map((m) => <option key={m} value={m} />)}
             </datalist>
           </Field>
-          <Field label="Model" error={errors.model}>
-            <input className="input mono" value={otherModel} onChange={(e) => { setOtherModel(e.target.value); clear("model"); }} placeholder={providerId === "openrouter" ? "qwen/qwen3-coder" : providerId === "openai" ? "gpt-5-mini" : "llama3.1"} />
-          </Field>
         </div>
-      )}
-      {anyModel && /^[a-z0-9][a-z0-9-]*$/.test(providerId) && (
-        <p className="faint small" style={{ margin: 0 }}>
-          Needs {providerId === "openai" ? "" : <><span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL</span>{["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : " and "}</>}
-          {["ollama", "lmstudio", "vllm"].includes(providerId) ? "" : <span className="mono">{providerId.toUpperCase().replace(/-/g, "_")}_API_KEY</span>}
-          {" "}in the Vault with the gateway scope. The agent never sees them.{providerId === "ollama" ? " For Ollama on this machine, the base URL is usually http://localhost:11434/v1 (the gateway calls it from your machine, not from the sandbox)." : ""}
-        </p>
       )}
       {runner && picked && !hasRunner(picked.image) && (
         <p className="agent-reason bad" style={{ margin: 0 }}>
