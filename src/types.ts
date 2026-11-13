@@ -4,6 +4,7 @@
 export type ThemeId = "black" | "white" | "blossom" | "custom";
 
 export type ViewId =
+  | "chat"
   | "overview"
   | "analytics"
   | "agents"
@@ -43,6 +44,8 @@ export interface Agent {
   /** From the core: why it is in its status ("crashed (exit 137)"). */
   statusReason?: string;
   runtime?: string;
+  /** The namespace's master agent: the one Chat talks to, which manages the others. */
+  master?: boolean;
   command?: string;
   restart?: string;
   maxRestarts?: number;

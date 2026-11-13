@@ -115,6 +115,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::agent_send,
         ipc::agent_runs,
         ipc::agent_events,
+        ipc::master_get,
+        ipc::master_ensure,
         ipc::term_open,
         ipc::term_write,
         ipc::term_resize,
@@ -199,6 +201,8 @@ pub fn run() {
             tracing::info!(agents = reset, "marked agents from the last session as stopped");
         }
         let agents = agent::supervisor::Supervisor::new(db.clone(), vault.clone(), rt.clone());
+        // The master agent manages the others through the gateway.
+        gw.set_agents(agents.clone());
         events::spawn_agent_events(app.handle().clone(), agents.clone(), gw.subscribe_blocks());
         // GitHub accounts (#100): checked as KALYPSO starts, then hourly, so a revoked token
         // shows "Reconnect" and expiring ones are refreshed before they lapse.

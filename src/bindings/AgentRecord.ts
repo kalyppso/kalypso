@@ -36,4 +36,8 @@ repo_account: string | null,
 /**
  * Its own branch in that repository, `agent/<name>/<task>`, set when first prepared.
  */
-branch: string | null, };
+branch: string | null, 
+/**
+ * The namespace's master agent: the one you talk to, which manages the others (see `master`).
+ */
+master: boolean, };

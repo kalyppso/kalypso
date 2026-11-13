@@ -6,6 +6,7 @@
 //! pauses them when the gateway refuses their sandbox for budget. Every start is a
 //! run with its own transcript.
 
+pub mod master;
 pub mod runtime;
 pub mod supervisor;
 
@@ -45,6 +46,8 @@ pub struct AgentRecord {
     pub repo_account: Option<String>,
     /// Its own branch in that repository, `agent/<name>/<task>`, set when first prepared.
     pub branch: Option<String>,
+    /// The namespace's master agent: the one you talk to, which manages the others (see `master`).
+    pub master: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -139,7 +142,7 @@ pub struct AgentEvent {
 const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code", "openai-compat"];
 const RESTARTS: &[&str] = &["never", "on-failure", "always"];
 const COLS: &str =
-    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch";
+    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch, master";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
     Ok(AgentRecord {
@@ -160,6 +163,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
         repo: r.get(14)?,
         repo_account: r.get(15)?,
         branch: r.get(16)?,
+        master: r.get(17)?,
     })
 }
 

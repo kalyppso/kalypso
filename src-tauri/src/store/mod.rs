@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0008_github_accounts.sql"),
     include_str!("migrations/0009_agent_repos.sql"),
     include_str!("migrations/0010_any_model_agents.sql"),
+    include_str!("migrations/0011_master_agent.sql"),
 ];
 
 #[derive(Debug, Clone, Serialize, TS)]

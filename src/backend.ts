@@ -104,6 +104,8 @@ export const api = {
   agentCreate: (ns: string, agent: NewAgent) => invoke<AgentRecord>("agent_create", { ns, agent }),
   agentUpdate: (ns: string, id: string, patch: AgentPatch) => invoke<AgentRecord>("agent_update", { ns, id, patch }),
   agentDelete: (ns: string, id: string) => invoke<void>("agent_delete", { ns, id }),
+  masterGet: (ns: string) => invoke<AgentRecord | null>("master_get", { ns }),
+  masterEnsure: (ns: string) => invoke<AgentRecord>("master_ensure", { ns }),
   agentStart: (ns: string, id: string) => invoke<AgentRecord>("agent_start", { ns, id }),
   agentStop: (ns: string, id: string) => invoke<AgentRecord>("agent_stop", { ns, id }),
   agentPause: (ns: string, id: string) => invoke<AgentRecord>("agent_pause", { ns, id }),
@@ -158,7 +160,7 @@ export const toAgent = (a: AgentRecord): Agent => ({
   id: a.id, ns: a.ns, name: a.name, role: a.role, model: a.model, status: a.status as Agent["status"], sandboxId: a.sandbox_id,
   skills: [], mcps: [], secrets: [], statusReason: a.status_reason, runtime: a.runtime, command: a.command,
   restart: a.restart, maxRestarts: a.max_restarts, maxTurns: a.max_turns,
-  repo: a.repo, repoAccount: a.repo_account, branch: a.branch,
+  repo: a.repo, repoAccount: a.repo_account, branch: a.branch, master: a.master,
   config: [`# ${a.name} (${a.runtime})`, `command: ${a.command}`, `restart: ${a.restart}`, `max_restarts: ${a.max_restarts}`, `max_turns: ${a.max_turns || "no limit"}`].join("\n"),
 });
 

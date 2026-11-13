@@ -21,6 +21,7 @@ import { Tracker } from "./views/Tracker";
 import { Git } from "./views/Git";
 import { TOOLS, ToolsLayer, currentToolTab, tabHasTool } from "./views/Terminal";
 import { Agents } from "./views/Agents";
+import { Chat } from "./views/Chat";
 import { Sandboxes } from "./views/Sandboxes";
 import { Secrets } from "./views/Secrets";
 import { Connections } from "./views/Connections";
@@ -33,6 +34,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { Setup } from "./views/Setup";
 
 const views: Record<ViewId, () => JSX.Element> = {
+  chat: Chat,
   overview: Overview,
   analytics: Analytics,
   agents: Agents,
@@ -155,9 +157,11 @@ export function App() {
     if (!isLive() || !state.session) return;
     const off = onAgentUpdate((u) => {
       if (u.status) dispatch({ type: "agentLive", id: u.agent_id, status: u.status as Agent["status"], reason: u.reason ?? "" });
+      // An agent was created or deleted outside this window (by the master agent): reload the list.
+      else if (!u.event && u.ns === state.ns) syncNamespace(u.ns, dispatch).catch(() => {});
     });
     return () => void off.then((unlisten) => unlisten());
-  }, [state.session, dispatch]);
+  }, [state.session, state.ns, dispatch]);
 
   // Budget alerts are desktop notifications too; inside the app they show as a notice.
   useEffect(() => {

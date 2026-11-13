@@ -489,6 +489,25 @@ pub async fn agent_send(s: State<'_, AppState>, ns: String, id: String, message:
 }
 
 /// Newest first.
+/// The namespace's master agent (the one Chat talks to), if it has been created.
+#[tauri::command]
+pub fn master_get(s: State<'_, AppState>, ns: String) -> Result<Option<AgentRecord>> {
+    ensure_ns(&s, &ns)?;
+    agent::master::get(&s.db, &ns)
+}
+
+/// The namespace's master agent, created with its sandbox the first time.
+#[tauri::command]
+pub async fn master_ensure(s: State<'_, AppState>, ns: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    let created = agent::master::get(&s.db, &ns)?.is_none();
+    let m = agent::master::ensure(&s.db, &s.rt, &ns).await?;
+    if created {
+        s.agents.announce(&ns, &m.id);
+    }
+    Ok(m)
+}
+
 #[tauri::command]
 pub fn agent_runs(s: State<'_, AppState>, ns: String, id: String, limit: Option<u32>) -> Result<Vec<AgentRun>> {
     ensure_ns(&s, &ns)?;

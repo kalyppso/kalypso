@@ -10,8 +10,8 @@ RUN apt-get update \
 WORKDIR /opt/kalypso/runner
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-COPY runner.mjs openai.mjs kx-secret.mjs ./
-RUN ln -s /opt/kalypso/runner/kx-secret.mjs /usr/local/bin/kx-secret && chmod 755 kx-secret.mjs
+COPY runner.mjs openai.mjs kx-secret.mjs kx-agent.mjs ./
+RUN ln -s /opt/kalypso/runner/kx-secret.mjs /usr/local/bin/kx-secret && ln -s /opt/kalypso/runner/kx-agent.mjs /usr/local/bin/kx-agent && chmod 755 kx-secret.mjs kx-agent.mjs
 
 LABEL org.opencontainers.image.title="KALYPSO agent runner" \
       org.opencontainers.image.description="Runs KALYPSO agents (Claude Agent SDK, or any OpenAI-compatible model) inside sandboxes" \

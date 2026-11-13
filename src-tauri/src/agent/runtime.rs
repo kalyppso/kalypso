@@ -113,6 +113,15 @@ impl AgentRuntime for CommandRuntime {
     }
 }
 
+/// An agent's role as its runner sees it: the master agent's also says how to manage the others.
+fn role_of(a: &AgentRecord) -> String {
+    if a.master {
+        format!("{}\n\n{}", a.role, super::master::instructions(&a.ns)).trim().to_string()
+    } else {
+        a.role.clone()
+    }
+}
+
 /// Where the runner lives in the agent runner image (`runner/agent-sdk`).
 pub const RUNNER: &str = "/opt/kalypso/runner/runner.mjs";
 /// The image with the runner; images built FROM it work too.
@@ -135,16 +144,17 @@ impl AgentRuntime for ClaudeSdkRuntime {
         let missing = format!(
             r#"{{"t":"error","text":"The sandbox image has no KALYPSO agent runner. Use {RUNNER_IMAGE}, or an image built FROM it."}}"#
         );
-        let wrapper = format!("echo $$ > {pid_file}; [ -f {RUNNER} ] || {{ echo '{missing}'; exit 64; }}; exec node {RUNNER}");
-        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
-        let env = vec![
+        let mut env = vec![
             format!("KALYPSO_AGENT={}", a.name),
             format!("KALYPSO_AGENT_ID={}", a.id),
             format!("KALYPSO_MODEL={}", a.model),
-            format!("KALYPSO_ROLE={}", a.role),
+            format!("KALYPSO_ROLE={}", role_of(a)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
         ];
+        let setup = if a.master { super::master::install(&mut env) } else { String::new() };
+        let wrapper = format!("echo $$ > {pid_file}; [ -f {RUNNER} ] || {{ echo '{missing}'; exit 64; }}; {setup}exec node {RUNNER}");
+        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
         let (env, cwd) = with_repo(env, a);
         let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, &cwd, &env).await?;
         Ok(Run { events: lines(stream.output).map(sdk_event).boxed(), input: stream.input, handle, pid_file })
@@ -185,18 +195,19 @@ impl AgentRuntime for OpenAiRuntime {
         let missing = format!(
             r#"{{"t":"error","text":"The sandbox image has no KALYPSO agent runner for other models. Use {RUNNER_IMAGE} (or an image built FROM it), and pull it again if it is older."}}"#
         );
-        let wrapper =
-            format!("echo $$ > {pid_file}; [ -f {OPENAI_RUNNER} ] || {{ echo '{missing}'; exit 64; }}; exec node {OPENAI_RUNNER}");
-        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
-        let env = vec![
+        let mut env = vec![
             format!("KALYPSO_AGENT={}", a.name),
             format!("KALYPSO_AGENT_ID={}", a.id),
             format!("KALYPSO_PROVIDER={provider}"),
             format!("KALYPSO_MODEL={model}"),
-            format!("KALYPSO_ROLE={}", a.role),
+            format!("KALYPSO_ROLE={}", role_of(a)),
             format!("KALYPSO_TASK={}", a.command),
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
         ];
+        let setup = if a.master { super::master::install(&mut env) } else { String::new() };
+        let wrapper =
+            format!("echo $$ > {pid_file}; [ -f {OPENAI_RUNNER} ] || {{ echo '{missing}'; exit 64; }}; {setup}exec node {OPENAI_RUNNER}");
+        let cmd = ["/bin/sh", "-c", wrapper.as_str()];
         let (env, cwd) = with_repo(env, a);
         let (stream, handle) = ctx.provider.open_process(&a.ns, ctx.sandbox_id, &cmd, &cwd, &env).await?;
         Ok(Run { events: lines(stream.output).map(sdk_event).boxed(), input: stream.input, handle, pid_file })
