@@ -28,6 +28,7 @@ pub struct AppState {
     pub gateway: Arc<Gateway>,
     pub terminals: Terminals,
     pub agents: Arc<Supervisor>,
+    pub board: Arc<crate::task::Board>,
     pub github: crate::github::GitHub,
 }
 
@@ -662,4 +663,58 @@ pub fn port_forward_list(s: State<'_, AppState>, ns: String) -> Result<Vec<PortF
 pub fn port_forward_close(s: State<'_, AppState>, ns: String, id: String, port: u16) -> Result<bool> {
     sandbox::get(&s.db, &ns, &id)?;
     Ok(s.forwards.close(&id, port))
+}
+
+// The Board (#20). Every change wakes the agent the task belongs to, so queued work starts.
+
+#[tauri::command]
+pub fn task_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::task::Task>> {
+    ensure_ns(&s, &ns)?;
+    crate::task::list(&s.db, &ns)
+}
+
+async fn after_task_change(s: &AppState, t: &crate::task::Task) {
+    s.board.changed(&t.ns);
+    s.board.pump(&t.ns, &t.agent_id).await;
+}
+
+#[tauri::command]
+pub async fn task_create(s: State<'_, AppState>, ns: String, task: crate::task::NewTask) -> Result<crate::task::Task> {
+    ensure_ns(&s, &ns)?;
+    let t = crate::task::create(&s.db, &ns, task)?;
+    after_task_change(&s, &t).await;
+    crate::task::get(&s.db, &ns, &t.id)
+}
+
+#[tauri::command]
+pub async fn task_update(s: State<'_, AppState>, ns: String, id: String, patch: crate::task::TaskPatch) -> Result<crate::task::Task> {
+    ensure_ns(&s, &ns)?;
+    let t = crate::task::update(&s.db, &ns, &id, patch)?;
+    after_task_change(&s, &t).await;
+    crate::task::get(&s.db, &ns, &id)
+}
+
+#[tauri::command]
+pub async fn task_move(s: State<'_, AppState>, ns: String, id: String, status: String) -> Result<crate::task::Task> {
+    ensure_ns(&s, &ns)?;
+    let t = crate::task::move_to(&s.db, &ns, &id, &status)?;
+    after_task_change(&s, &t).await;
+    crate::task::get(&s.db, &ns, &id)
+}
+
+/// Approve a task in review, or send it back with notes.
+#[tauri::command]
+pub async fn task_review(s: State<'_, AppState>, ns: String, id: String, approve: bool, note: String) -> Result<crate::task::Task> {
+    ensure_ns(&s, &ns)?;
+    let t = crate::task::review(&s.db, &ns, &id, approve, &note)?;
+    after_task_change(&s, &t).await;
+    crate::task::get(&s.db, &ns, &id)
+}
+
+#[tauri::command]
+pub fn task_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::task::delete(&s.db, &ns, &id)?;
+    s.board.changed(&ns);
+    Ok(())
 }

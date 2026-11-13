@@ -311,10 +311,13 @@ The gateway (§4.5) checks the applicable caps before forwarding each request; w
 - **Storage:** a local time-series store, either SQLite tables bucketed per minute or DuckDB, kept for 30 days. Live updates reach the UI through the `metrics://tick` event every 2 seconds.
 - **Optional export:** OpenTelemetry (OTLP) so teams can send the same metrics to Grafana or Datadog.
 
-### 4.18 Agent tracker
-- **Tasks** are the unit of work given to an agent. A task moves through `queued → running → review → done` or `failed`.
-- **Updates:** the supervisor moves tasks as the agent works. A human moves a task from `review` to `done` (or back) by approving.
-- **Links:** each task records its runs, cost, minutes and any PR it produced. Dragging a card on the board calls `task_move`.
+### 4.18 Board (agent tracker)
+- **Tasks** are the unit of work given to one agent (`src-tauri/src/task.rs`, table `tasks`). A task moves `queued → running → review → done`, or ends `failed`. The master agent isn't given tasks; it works from Ask.
+- **Hand-over:** the `Board` follows the supervisor's updates. When an agent has a queued task it starts the agent if it is stopped, waits until it is free (its last message has been answered), and sends the brief (title, description, any review notes) as a message. One task per agent at a time; the rest wait by priority, then age.
+- **Answers:** the agent's `result` after that message moves the task to `review`, with what it said kept for the reviewer; an `error`, or the agent stopping mid-task, moves it to `failed` with the reason. A command agent that exits cleanly counts as done.
+- **Review:** approving moves it to `done`. Requesting changes needs notes; the task goes back to `queued` and the notes are sent with the next attempt.
+- **By hand:** a card can be dragged to any column except Running, which only the Board sets. Tasks that were running when KALYPSO quit are marked failed on the next start.
+- **Time and cost** add up over attempts. Cost is what the gateway metered for the agent's sandbox while the task ran, so agents sharing a sandbox share it. The UI reloads on `task://changed`.
 
 ### 4.19 Git tracker
 - Pulls commits, PRs and CI status from the GitHub and GitLab APIs using the integration token (§4.13). It refreshes on webhooks where available, or polls every 60 seconds.

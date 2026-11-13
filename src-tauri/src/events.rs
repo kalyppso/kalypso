@@ -15,6 +15,8 @@ pub const BUDGET_ALERT: &str = "budget://alert";
 pub const POLICY_APPROVAL: &str = "policy://approval";
 pub const POLICY_LOG: &str = "policy://log";
 pub const AGENT_UPDATE: &str = "agent://update";
+/// A namespace's Board changed (src/task.rs); the payload is the namespace.
+pub const TASK_CHANGED: &str = "task://changed";
 
 /// Follow the container engine's event stream for the life of the app,
 /// reconnecting with backoff if the engine restarts.
@@ -188,6 +190,21 @@ pub fn spawn_agent_events(
         loop {
             match blocks.recv().await {
                 Ok(b) => agents.on_budget_block(&b.ns, &b.key_id, &b.reason).await,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            }
+        }
+    });
+}
+
+/// Tell the UI which namespace's Board changed.
+pub fn spawn_task_events(app: AppHandle, mut changes: tokio::sync::broadcast::Receiver<String>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match changes.recv().await {
+                Ok(ns) => {
+                    let _ = app.emit(TASK_CHANGED, &ns);
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return,
             }

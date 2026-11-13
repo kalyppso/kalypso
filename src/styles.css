@@ -581,6 +581,10 @@ kbd { font-family: var(--mono); font-size: 10.5px; line-height: 1; padding: 3px 
 }
 .side-panel-title { font-size: 18px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
 .side-panel-desc { min-height: 96px; line-height: 1.6; color: var(--text-2); }
+/* What the agent said about a task, for its reviewer. */
+.task-result { max-height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.6; }
+.task-result > :first-child { margin-top: 0; }
+.task-result > :last-child { margin-bottom: 0; }
 .side-panel-title:hover, .side-panel-desc:hover { background: var(--card); }
 .side-panel-title:focus, .side-panel-desc:focus { outline: none; background: var(--card); }
 .props { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 10px 12px; margin: 4px 0 0; padding-top: 16px; border-top: 1px solid var(--border); font-size: 13px; }
