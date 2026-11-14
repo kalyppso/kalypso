@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Bot, ChevronRight, Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import { uid, useNamespaced, useStore, useToast, useCompose, useFocus } from "../store";
-import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate } from "../components/Conversation";
+import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate, useOrbState } from "../components/Conversation";
+import { Orb } from "../components/Orb";
 import { CodeReveal, EmptyState, Field, AgentFace, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
@@ -135,8 +136,8 @@ export function AgentMark({ agent: a, size, active, pulse }: { agent: Agent; siz
  * An agent's page: who it is and what you can do on top; its conversation filling the rest,
  * with the message box pinned at the bottom like any chat; its settings in a column beside it.
  */
-function AgentPage({ agent: a, onBack, actions, reason, conversation, side, working, pulse }: {
-  agent: Agent; onBack: () => void; actions: ReactNode; reason?: ReactNode; conversation: ReactNode; side: ReactNode; working?: boolean; pulse?: number;
+function AgentPage({ agent: a, onBack, actions, reason, conversation, side, working, pulse, thinking }: {
+  agent: Agent; onBack: () => void; actions: ReactNode; reason?: ReactNode; conversation: ReactNode; side: ReactNode; working?: boolean; pulse?: number; thinking?: boolean;
 }) {
   return (
     <div className="agent-page">
@@ -152,7 +153,10 @@ function AgentPage({ agent: a, onBack, actions, reason, conversation, side, work
         <div className="row" style={{ gap: 8 }}>{actions}</div>
       </header>
       <div className="agent-split">
-        <section className="agent-convo" aria-label={`Conversation with ${a.name}`}>{conversation}</section>
+        <section className="agent-convo" aria-label={`Conversation with ${a.name}`}>
+          <div className="agent-orb" aria-hidden="true"><Orb size={72} active={!!thinking} pulse={pulse} /></div>
+          {conversation}
+        </section>
         <aside className="agent-side" aria-label={`${a.name}'s settings`}>{side}</aside>
       </div>
     </div>
@@ -284,15 +288,8 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
   const convo = useAgentConversation(state.ns, a);
   const gate = useAgentGate(a, () => syncNamespace(state.ns, dispatch));
 
-  // Each reply that arrives fans its shell open.
-  const replies = convo.events.filter((e) => e.kind === "text" || e.kind === "result" || e.kind === "error").length;
-  const [received, setReceived] = useState(0);
-  const seen = useRef<number | null>(null);
-  useEffect(() => {
-    if (convo.loading) return;
-    if (seen.current !== null && replies > seen.current) setReceived((n) => n + 1);
-    seen.current = replies;
-  }, [replies, convo.loading]);
+  // Each reply that arrives fans its shell open and sends a wave around the orb.
+  const { thinking, received } = useOrbState(convo.events, gate.working, convo.loading);
 
   const act = (what: string, fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -312,6 +309,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       agent={a}
       onBack={onBack}
       working={gate.working}
+      thinking={thinking}
       pulse={received}
       reason={a.statusReason && !bad ? <p className="agent-reason clip">{a.statusReason}</p> : undefined}
       actions={
