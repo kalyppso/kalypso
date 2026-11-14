@@ -2,14 +2,28 @@
    sit on a card to the right, the agent's answer is plain text, its work is a thin rail of steps. */
 .cv { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .cv-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.cv-col { max-width: 760px; margin: 0 auto; padding: 20px 24px 28px; display: flex; flex-direction: column; gap: 14px; }
+.cv-col { max-width: 768px; margin: 0 auto; padding: 24px 24px 32px; display: flex; flex-direction: column; gap: 22px; }
 .cv-empty { padding: 48px 0; text-align: center; color: var(--text-2); }
 .cv-earlier { align-self: center; }
 
 .cv-user {
-  align-self: flex-end; max-width: min(78%, 560px); padding: 9px 13px; border-radius: 14px 14px 4px 14px;
-  background: var(--card-2); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin-top: 6px;
+  align-self: flex-end; max-width: min(80%, 580px); padding: 10px 16px; border-radius: 20px;
+  background: var(--card-2); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; font-size: 14px;
 }
+
+/* A reply: who answered, then what it said and did, aligned under its name, then one quiet row. */
+.cv-turn { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cv-who { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.cv-who-mark { display: grid; place-items: center; width: 26px; height: 26px; flex: none; overflow: hidden; }
+.cv-who-mark img, .cv-who-mark svg { max-width: 100%; max-height: 100%; }
+.cv-body { display: flex; flex-direction: column; gap: 10px; padding-left: 36px; min-width: 0; }
+.cv-foot { display: flex; align-items: center; gap: 8px; padding-left: 36px; min-height: 26px; color: var(--text-3); font-size: 12px; }
+.cv-foot .cv-actions { opacity: 0; transition: opacity 0.2s var(--ease); }
+.cv-turn:hover .cv-foot .cv-actions, .cv-turn.last .cv-foot .cv-actions, .cv-foot .cv-actions:focus-within { opacity: 1; }
+.cv-result { display: inline-flex; align-items: center; gap: 5px; }
+/* New messages and replies rise in. */
+.cv-user.fresh, .cv-turn.fresh { animation: cv-rise 0.38s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes cv-rise { from { opacity: 0; transform: translateY(8px); } }
 .cv-text { font-size: 14px; line-height: 1.62; overflow-wrap: anywhere; }
 .cv-text > :first-child { margin-top: 0; }
 .cv-text > :last-child { margin-bottom: 0; }
@@ -29,16 +43,19 @@
 .md-pre-more:hover { color: var(--text); background: var(--card-2); }
 
 /* Steps: one line each, output only when opened. */
-.cv-steps { display: flex; flex-direction: column; margin: -4px 0; padding-left: 10px; border-left: 1px solid var(--border); }
+.cv-steps { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
 .cv-step {
-  display: grid; grid-template-columns: 12px auto minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; min-height: 26px; padding: 2px 8px 2px 2px;
-  border: 0; border-radius: 6px; background: none; color: var(--text-2); font: 12.5px var(--mono); text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: 12px auto minmax(0, 1fr); align-items: center; gap: 8px; max-width: 100%; min-height: 28px; padding: 3px 12px 3px 8px;
+  border: 0; border-radius: 99px; background: none; color: var(--text-2); font: 12.5px var(--sans, inherit); text-align: left; cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
 .cv-step:hover:not(:disabled) { background: var(--card); color: var(--text); }
 .cv-step:disabled { cursor: default; }
 .cv-step:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: -2px; }
 .cv-chev { color: var(--text-3); transition: transform 0.15s var(--ease); }
 .cv-step-name { color: var(--text); font-weight: 500; }
+.cv-steps > .cv-step:only-child { background: var(--card); }
+.cv-step-detail { font-family: var(--mono); font-size: 12px; }
 .cv-step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .cv-step.failed .cv-step-name { text-decoration: line-through; text-decoration-color: var(--text-3); }
 .cv-step-out, .cv-raw {
@@ -57,12 +74,22 @@
 .cv-note.result svg { margin-top: 0; }
 .cv-note.blocked, .cv-note.error { padding: 9px 11px; border-radius: 10px; background: var(--card); color: var(--text); }
 
-.cv-working { display: flex; align-items: center; gap: 8px; margin-left: -4px; color: var(--text-3); font-size: 12.5px; animation: cv-in 0.4s var(--ease); }
+.cv-working { display: flex; align-items: baseline; gap: 8px; color: var(--text-3); font-size: 13px; animation: cv-in 0.4s var(--ease); }
+/* The turning star, as in Claude Code. */
+.cv-star { display: inline-block; width: 1em; text-align: center; color: var(--text); font-size: 15px; line-height: 1; }
+/* Light sweeping across the word, left to right. */
+.cv-shimmer {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-3) 35%, var(--text) 50%, var(--text-3) 65%, var(--text-3) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: cv-shimmer 2.2s linear infinite, cv-in 0.4s var(--ease);
+}
+.cv-elapsed { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+@keyframes cv-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 .orb { display: block; flex: none; color: var(--text); }
 .cv-working .orb { color: var(--text-2); }
 .chat-orb { margin-bottom: 22px; animation: cv-in 0.6s var(--ease); }
 @keyframes cv-in { from { opacity: 0; transform: scale(0.94); } }
-@media (prefers-reduced-motion: reduce) { .cv-working, .chat-orb { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cv-working, .chat-orb, .cv-shimmer, .cv-user.fresh, .cv-turn.fresh { animation: none; } .cv-shimmer { color: var(--text-2); background: none; } }
 
 .cv-latest {
   position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
@@ -70,15 +97,19 @@
 }
 .cv-latest:hover { background: var(--card-2); }
 
-/* The message box. */
+/* The message box: as wide as the messages, the hint beneath it. */
+.cv-compose { max-width: 720px; width: calc(100% - 48px); margin: 6px auto 0; }
+.cv-compose.large { max-width: none; width: 100%; margin: 0; }
 .cv-composer {
-  max-width: 760px; width: calc(100% - 48px); margin: 8px auto 0; padding: 10px 10px 8px 14px; border-radius: 14px;
-  border: 1px solid var(--border-strong); background: var(--card); transition: border-color 0.15s;
+  display: flex; align-items: flex-end; gap: 10px; padding: 10px 10px 10px 18px; border-radius: 24px;
+  border: 1px solid var(--border-strong); background: var(--card); transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  box-shadow: 0 6px 24px -12px rgba(0, 0, 0, 0.45);
 }
 .cv-composer:focus-within { border-color: var(--text-3); }
-.cv-composer.blocked { background: none; border-style: dashed; }
+.cv-compose-note { padding: 7px 0 0; text-align: center; color: var(--text-3); font-size: 11.5px; }
+.cv-composer.blocked { background: none; border-style: dashed; box-shadow: none; padding: 12px 18px; }
 .cv-composer textarea {
-  display: block; width: 100%; min-height: 24px; padding: 2px 0; border: 0; outline: 0; resize: none; background: none; color: inherit; font: inherit; font-size: 14px; line-height: 1.5;
+  display: block; flex: 1; min-width: 0; min-height: 24px; padding: 6px 0; border: 0; outline: 0; resize: none; background: none; color: inherit; font: inherit; font-size: 14.5px; line-height: 1.5;
 }
 .cv-composer.blocked textarea { display: none; }
 .cv-composer textarea::placeholder { color: var(--text-3); }
@@ -87,7 +118,8 @@
 .cv-composer.blocked .cv-composer-hint { color: var(--text-2); font-size: 13px; padding: 4px 0; }
 .cv-composer.blocked .cv-send { display: none; }
 .cv-composer-hint .link { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
-.cv-send { border-radius: 9px; }
+.cv-send { flex: none; width: 34px; height: 34px; border-radius: 50%; transition: transform 0.15s var(--ease), opacity 0.15s; }
+.cv-send:not(:disabled):active { transform: scale(0.94); }
 
 /* On the agent page the conversation is a framed panel inside a longer page. */
 .cv-panel { display: flex; flex-direction: column; height: clamp(380px, 62vh, 760px); padding-bottom: 14px; border-radius: 14px; border: 1px solid var(--border); }
@@ -158,7 +190,7 @@
 .chat-hello { margin: 0; font-size: clamp(26px, 3.2vw, 34px); font-weight: 600; letter-spacing: -0.02em; text-align: center; }
 .chat-hello-sub { margin: 10px 0 26px; max-width: 52ch; color: var(--text-2); text-align: center; line-height: 1.55; }
 .chat-start .cv-composer { width: 100%; margin: 0; }
-.cv-composer.large { padding: 14px 12px 10px 18px; border-radius: 18px; }
+.cv-composer.large { padding: 14px 12px 12px 20px; border-radius: 26px; }
 .cv-composer.large textarea { min-height: 52px; font-size: 15px; }
 .chat-starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; margin-top: 14px; }
 .chat-starter {
@@ -175,9 +207,9 @@
 
 /* Reply actions and messages on their way. */
 .cv-text { position: relative; }
-.cv-actions { display: flex; gap: 2px; margin: 4px 0 0 -9px; opacity: 0; transition: opacity 0.15s; }
-.cv-text:hover .cv-actions, .cv-actions:focus-within { opacity: 1; }
-@media (hover: none) { .cv-actions { opacity: 1; } }
+.cv-actions { display: flex; gap: 2px; }
+.cv-foot .cv-actions:first-child { margin-left: -9px; }
+@media (hover: none) { .cv-foot .cv-actions { opacity: 1; } }
 .cv-pending { opacity: 0.7; }
 .cv-retry { margin-left: auto; flex: none; }
 .cv-note.error { align-items: center; }

@@ -5,7 +5,6 @@ import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { useStore, useToast } from "../store";
 import type { Agent } from "../types";
-import { Orb } from "./Orb";
 import { useChatPrefs } from "./ChatSettings";
 import "../styles/chat.css";
 
@@ -189,10 +188,134 @@ interface ConversationProps {
   pending?: { text: string; status: string } | null;
   /** Offered on an error at the end of the conversation: send the last message again. */
   onRetry?: () => void;
+  /** Who answers: its name and mark, shown on each of its replies. */
+  who?: { name: string; mark?: ReactNode };
 }
 
-export function Conversation({ events, runs, working, loading, empty, onShowEarlier, pending, onRetry }: ConversationProps) {
+// ---------- Replies: everything the agent did between two of your messages ----------
+
+type Turn =
+  | { kind: "user"; id: number; item: Extract<Item, { kind: "user" }> }
+  | { kind: "rule"; id: number; item: Item }
+  | { kind: "agent"; id: number; items: Item[] };
+
+/** Your messages, the agent's replies (text, steps, notes and its result together), and run lines between. */
+function toTurns(items: Item[]): Turn[] {
+  const out: Turn[] = [];
+  for (const it of items) {
+    if (it.kind === "user") out.push({ kind: "user", id: it.id, item: it });
+    else if (it.kind === "run" || (it.kind === "note" && it.tone === "status")) out.push({ kind: "rule", id: it.id, item: it });
+    else {
+      const last = out[out.length - 1];
+      if (last?.kind === "agent") last.items.push(it);
+      else out.push({ kind: "agent", id: it.id, items: [it] });
+    }
+  }
+  return out;
+}
+
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches || !!document.querySelector(".reduce-motion");
+
+/** Text that has just arrived flows out over about a second, word by word, instead of appearing at once. */
+function Reveal({ text, animate }: { text: string; animate: boolean }) {
+  const [shown, setShown] = useState(() => (animate && !reduceMotion() ? 0 : text.length));
+  useEffect(() => {
+    if (shown >= text.length) return;
+    const step = Math.max(3, Math.ceil(text.length / 55));
+    const id = requestAnimationFrame(() => setShown((n) => Math.min(text.length, n + step)));
+    return () => cancelAnimationFrame(id);
+  }, [shown, text]);
+  if (shown >= text.length) return <Markdown text={text} />;
+  const cut = text.lastIndexOf(" ", shown);
+  return <Markdown text={text.slice(0, cut > 0 ? cut : shown)} />;
+}
+
+function Who({ who }: { who?: ConversationProps["who"] }) {
+  if (!who) return null;
+  return <div className="cv-who">{who.mark && <span className="cv-who-mark">{who.mark}</span>}<span>{who.name}</span></div>;
+}
+
+/** One reply: who, what it said and did, and a quiet row to copy it, with how the task ended. */
+function AgentTurn({ turn, who, fresh, last, waiting, onRetry }: {
+  turn: Extract<Turn, { kind: "agent" }>; who?: ConversationProps["who"]; fresh: Set<number>; last: boolean; waiting: ReactNode; onRetry?: () => void;
+}) {
+  const body = turn.items.filter((i) => !(i.kind === "note" && i.tone === "result"));
+  const result = turn.items.find((i): i is Extract<Item, { kind: "note" }> => i.kind === "note" && i.tone === "result");
+  const said = turn.items.filter((i): i is Extract<Item, { kind: "text" }> => i.kind === "text").map((i) => i.text).join("\n\n");
+  return (
+    <div className={`cv-turn ${fresh.has(turn.id) ? "fresh" : ""} ${last ? "last" : ""}`}>
+      <Who who={who} />
+      <div className="cv-body">
+        {body.map((it, i) =>
+          it.kind === "text" ? (
+            <div key={it.id} className="cv-text"><Reveal text={it.text} animate={fresh.has(it.id)} /></div>
+          ) : (
+            <ItemView key={it.id} item={it} open={last && i === body.length - 1} onRetry={last && i === body.length - 1 ? onRetry : undefined} />
+          ),
+        )}
+        {waiting}
+      </div>
+      {(said || result) && !waiting && (
+        <div className="cv-foot">
+          {result && <span className="cv-result"><Check size={12} /> {result.text}</span>}
+          {said && <CopyText text={said} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Words while it works, changing every few seconds. Kalypso weaves at her loom on Ogygia. */
+const VERBS = ["Thinking", "Weaving", "Charting a course", "Reading the tides", "Working", "Gathering threads", "Pondering", "Navigating"];
+/** The star that turns while it works, as in Claude Code. */
+const GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
+
+/**
+ * Shown while an agent works or a message is on its way: a turning star, a word with light
+ * sweeping across it, and how long it has been. `label` fixes the word ("Starting kalypso").
+ * Still with reduced motion, apart from the timer.
+ */
+export function Waiting({ label }: { label?: string }) {
+  const [tick, setTick] = useState(0);
+  const started = useRef(Date.now());
+  const [verb] = useState(() => Math.floor(Math.random() * VERBS.length));
+  useEffect(() => {
+    // With reduced motion the star holds still; the clock still counts, once a second.
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches || !!document.querySelector(".reduce-motion");
+    const id = window.setInterval(() => setTick((t) => t + (still ? 0 : 1) + (still ? 0.0001 : 0)), still ? 1000 : 120);
+    return () => window.clearInterval(id);
+  }, []);
+  const secs = Math.floor((Date.now() - started.current) / 1000);
+  const word = label ?? VERBS[(verb + Math.floor(secs / 4)) % VERBS.length];
+  const time = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  return (
+    <div className="cv-working" role="status" aria-label={`${word}, ${time}`}>
+      <span className="cv-star" aria-hidden="true">{GLYPHS[Math.floor(tick) % GLYPHS.length]}</span>
+      <span className="cv-shimmer" key={word}>{word}…</span>
+      {secs >= 1 && <span className="cv-elapsed">{time}</span>}
+    </div>
+  );
+}
+
+export function Conversation({ events, runs, working, loading, empty, onShowEarlier, pending, onRetry, who }: ConversationProps) {
   const items = useMemo(() => toItems(events, runs), [events, runs]);
+  const turns = useMemo(() => toTurns(items), [items]);
+
+  // What arrives after the conversation has loaded rises in and flows out; what was there doesn't.
+  const seen = useRef<Set<number> | null>(null);
+  const fresh = new Set<number>();
+  if (seen.current) {
+    for (const t of turns) {
+      if (!seen.current.has(t.id)) fresh.add(t.id);
+      if (t.kind === "agent") for (const it of t.items) if (!seen.current.has(it.id)) fresh.add(it.id);
+    }
+  }
+  useEffect(() => {
+    if (loading) return;
+    const all = seen.current ?? new Set<number>();
+    for (const t of turns) { all.add(t.id); if (t.kind === "agent") t.items.forEach((it) => all.add(it.id)); }
+    seen.current = all;
+  });
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true); // follow new messages until the reader scrolls up
   const [behind, setBehind] = useState(false);
@@ -205,6 +328,16 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
     if (pinned.current) toEnd();
     else setBehind(true);
   }, [events.length, working, pending]);
+
+  // Text flowing out grows the page without new events: keep up with it while following.
+  const column = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = column.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => { if (pinned.current) toEnd(); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -221,23 +354,26 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
   return (
     <div className="cv">
       <div className="cv-scroll" ref={scroller} onScroll={onScroll} role="log" aria-live="polite">
-        <div className="cv-col">
+        <div className="cv-col" ref={column}>
           {onShowEarlier && <button className="btn ghost sm cv-earlier" onClick={onShowEarlier}>Show earlier runs</button>}
           {loading && items.length === 0 && <div className="cv-empty faint">Loading the conversation…</div>}
           {!loading && items.length === 0 && !pending && <div className="cv-empty">{empty}</div>}
-          {items.map((it, i) => (
-            <ItemView key={it.id} item={it} open={i === items.length - 1} onRetry={i === items.length - 1 && !pending ? onRetry : undefined} />
-          ))}
-          {pending && (
-            <>
-              <div className="cv-user cv-pending">{pending.text}</div>
-              <div className="cv-working" role="status"><Orb size={30} active /><span>{pending.status}</span></div>
-            </>
-          )}
-          {working && !settled && !pending && (
-            <div className="cv-working" role="status">
-              <Orb size={30} active />
-              <span>Working</span>
+          {turns.map((t, i) => {
+            const isLast = i === turns.length - 1;
+            if (t.kind === "user") return <div key={t.id} className={`cv-user ${fresh.has(t.id) ? "fresh" : ""}`} title={clock(t.item.ts)}>{t.item.text}</div>;
+            if (t.kind === "rule") return <ItemView key={t.id} item={t.item} open={false} />;
+            return (
+              <AgentTurn key={t.id} turn={t} who={who} fresh={fresh} last={isLast}
+                waiting={isLast && working && !settled && !pending ? <Waiting /> : null}
+                onRetry={isLast && !pending ? onRetry : undefined} />
+            );
+          })}
+          {/* Your message is in, and the reply hasn't started: its place, already thinking. */}
+          {pending && <div className="cv-user cv-pending fresh">{pending.text}</div>}
+          {(pending || (working && !settled && turns[turns.length - 1]?.kind !== "agent")) && (
+            <div className="cv-turn fresh last">
+              <Who who={who} />
+              <div className="cv-body"><Waiting label={pending && pending.status !== "Thinking" ? pending.status : undefined} /></div>
             </div>
           )}
         </div>
@@ -256,12 +392,7 @@ function ItemView({ item, open, onRetry }: { item: Item; open: boolean; onRetry?
     case "user":
       return <div className="cv-user" title={clock(item.ts)}>{item.text}</div>;
     case "text":
-      return (
-        <div className="cv-text">
-          <Markdown text={item.text} />
-          <CopyText text={item.text} />
-        </div>
-      );
+      return <div className="cv-text"><Markdown text={item.text} /></div>;
     case "steps":
       return <Steps steps={item.steps} live={open} />;
     case "raw":
@@ -504,15 +635,21 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
   };
 
   return (
-    <div className={`cv-composer ${blocked ? "blocked" : ""} ${large ? "large" : ""}`}>
-      <textarea ref={box} rows={1} value={text} disabled={!!blocked} autoFocus={autoFocus} placeholder={blocked ? "" : placeholder} aria-label={placeholder}
-        onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
-      <div className="cv-composer-foot">
-        <span className="cv-composer-hint">{blocked ?? (prefs.send === "enter" ? "Enter to send, Shift+Enter for a new line" : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send, Enter for a new line`)}</span>
-        <button className="btn primary icon cv-send" onClick={send} disabled={!ready} aria-label="Send" title={blocked ? undefined : text.trim() ? "Send" : "Type a message first"}>
-          <ArrowUp size={15} />
-        </button>
+    <div className={`cv-compose ${large ? "large" : ""}`}>
+      <div className={`cv-composer ${blocked ? "blocked" : ""} ${large ? "large" : ""}`}>
+        {blocked ? (
+          <span className="cv-composer-hint">{blocked}</span>
+        ) : (
+          <>
+            <textarea ref={box} rows={1} value={text} autoFocus={autoFocus} placeholder={placeholder} aria-label={placeholder}
+              onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
+            <button className="btn primary icon cv-send" onClick={send} disabled={!ready} aria-label="Send" title={text.trim() ? "Send" : "Type a message first"}>
+              <ArrowUp size={16} />
+            </button>
+          </>
+        )}
       </div>
+      {!blocked && <div className="cv-compose-note">{prefs.send === "enter" ? "Enter to send · Shift+Enter for a new line" : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send · Enter for a new line`}</div>}
     </div>
   );
 }
