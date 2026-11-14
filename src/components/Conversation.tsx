@@ -332,6 +332,18 @@ export function Conversation({ events, runs, working, loading, empty, onShowEarl
     else setBehind(true);
   }, [events.length, working, pending]);
 
+  // Sending a message always brings you to the end, wherever you had scrolled.
+  const lastSent = events.filter((e) => e.kind === "input").length;
+  const sentBefore = useRef(lastSent);
+  useLayoutEffect(() => {
+    const sent = (pending && pending.text) || lastSent > sentBefore.current;
+    sentBefore.current = lastSent;
+    if (!sent) return;
+    pinned.current = true;
+    setBehind(false);
+    toEnd(true);
+  }, [lastSent, pending?.text]);
+
   // Text flowing out grows the page without new events: keep up with it while following.
   const column = useRef<HTMLDivElement>(null);
   useEffect(() => {

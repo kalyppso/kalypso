@@ -163,7 +163,7 @@
 .chat-side-empty { margin: 2px 10px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .chat-manage { align-self: flex-start; margin: 8px 2px 0; }
 
-.chat-top { position: relative; display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 8px 16px; }
+.chat-top { position: relative; display: flex; align-items: center; gap: 10px; min-height: 84px; padding: 8px 16px; }
 /* kalypso's orb, pinned at the top of the chat: it listens while you type and moves while it thinks. */
 .chat-top-orb { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; pointer-events: none; animation: cv-in 0.5s var(--ease); }
 .chat-top .agent-avatar { width: 28px; height: 28px; border-radius: 8px; font-size: 10.5px; }
