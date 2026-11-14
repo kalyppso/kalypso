@@ -30,6 +30,8 @@ jobs:
         run: npm run check:contrast
       - name: Type-check and build
         run: npm run build
+      - name: Tests
+        run: npm test
 
   core:
     name: Core

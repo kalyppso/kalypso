@@ -156,10 +156,7 @@ export const api = {
 };
 
 /** Readable message from a core error ({ code, message }) or anything else thrown. */
-export function errorMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
-  return String(e);
-}
+export { describeError, errorMessage, type ErrorInfo } from "./errors";
 
 const day = (ts: string) => ts.slice(0, 10);
 

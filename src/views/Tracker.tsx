@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Download, GitPullRequest, Plus, RotateCcw, Ticket as TicketIcon, Trash2, X } from "lucide-react";
+import { Check, CircleAlert, Download, GitPullRequest, Plus, RotateCcw, Ticket as TicketIcon, Trash2, X } from "lucide-react";
+import { FailureCard, explainFailure } from "../components/Failure";
 import { uid, useNamespaced, useStore, useToast, useCompose } from "../store";
 import { Field, Modal, ModalActions, PageHead, PrimaryButton, initials, usd, useErrors } from "../components/ui";
 import { Markdown } from "../components/Conversation";
@@ -229,7 +230,7 @@ function TaskCard({ task: t, agent, live, dragging, selected, onDragStart, onDra
       </div>
       {t.description && <p className="task-desc">{t.description}</p>}
       {t.status === "running" && !live && <div className="bar"><span style={{ width: `${t.progress * 100}%` }} /></div>}
-      {t.status === "failed" && t.note && <p className="task-desc" style={{ color: "var(--err)" }}>{t.note}</p>}
+      {t.status === "failed" && t.note && <p className="task-desc task-failed"><CircleAlert size={12} /> {explainFailure(t.note).title}</p>}
       {t.status === "queued" && t.reviewNote && <p className="task-desc faint">Changes requested</p>}
       <div className="row small">
         <span className="avatar" style={{ width: 20, height: 20, fontSize: 9 }}>{initials(agent)}</span>
@@ -370,7 +371,12 @@ function TaskPanel({ board, task, onClose }: { board: Board; task: Task; onClose
             />
             {task.status === "running" && !board.live && <div className="bar"><span style={{ width: `${task.progress * 100}%` }} /></div>}
             {board.live && task.status === "running" && <p className="dim small">{agents.find((a) => a.id === task.agentId)?.name ?? "The agent"} is working on it. It moves to In review when the agent answers.</p>}
-            {board.live && task.status === "failed" && task.note && <p className="small" style={{ color: "var(--err)" }}>{task.note}</p>}
+            {board.live && task.status === "failed" && (
+              <FailureCard
+                failure={explainFailure(task.note || "The task failed.")}
+                actions={<button className="btn sm primary" onClick={() => board.move(task.id, "queued")}><RotateCcw size={12} /> Try again</button>}
+              />
+            )}
 
             <div>
               <textarea

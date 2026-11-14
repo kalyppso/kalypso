@@ -160,14 +160,43 @@ export function PageHead({ title, subtitle, children }: { title: ReactNode; subt
 export function Toasts() {
   const { state, dispatch } = useStore();
   const icon = { ok: <CheckCircle2 size={16} color="var(--ok)" />, warn: <TriangleAlert size={16} color="var(--warn)" />, err: <XCircle size={16} color="var(--err)" />, info: <Info size={16} color="var(--accent-hi)" /> };
+  // A toast under the pointer stays on screen after its time is up, until the pointer leaves.
+  const [held, setHeld] = useState<(typeof state.toasts)[number] | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const shown = held && !state.toasts.some((t) => t.id === held.id) ? [...state.toasts, held] : state.toasts;
   return (
-    <div className="toasts">
-      {state.toasts.map((t) => (
-        <div key={t.id} className="toast" onClick={() => dispatch({ type: "dismissToast", id: t.id })}>
-          {icon[t.tone]}
-          {t.text}
-        </div>
-      ))}
+    <div className="toasts" role="status" aria-live="polite">
+      {shown.map((t) => {
+        // "Title: what happened. What to do." from errorMessage reads as a title over its explanation.
+        const split = (t.tone === "err" || t.tone === "warn") && /^[^:]{3,60}: /.test(t.text);
+        const title = split ? t.text.slice(0, t.text.indexOf(": ")) : null;
+        const body = split ? t.text.slice(t.text.indexOf(": ") + 2) : t.text;
+        const close = () => { dispatch({ type: "dismissToast", id: t.id }); setHeld((h) => (h?.id === t.id ? null : h)); };
+        return (
+          <div
+            key={t.id}
+            className={`toast ${t.tone} ${title ? "rich" : ""}`}
+            role={t.tone === "err" ? "alert" : undefined}
+            onMouseEnter={() => setHeld(t)}
+            onMouseLeave={() => setHeld((h) => (h?.id === t.id ? null : h))}
+            onClick={t.tone === "err" ? undefined : close}
+          >
+            <span className="toast-icon">{icon[t.tone]}</span>
+            <span className="toast-text">
+              {title && <b className="toast-title">{title}</b>}
+              <span>{body}</span>
+              {t.tone === "err" && (
+                <span className="toast-actions">
+                  <button className="link" onClick={() => navigator.clipboard?.writeText(t.text).then(() => { setCopied(t.id); setTimeout(() => setCopied(null), 1400); })}>
+                    {copied === t.id ? "Copied" : "Copy details"}
+                  </button>
+                </span>
+              )}
+            </span>
+            <button className="toast-close" aria-label="Dismiss" onClick={(e) => { e.stopPropagation(); close(); }}><X size={13} /></button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -224,9 +253,14 @@ export class PageBoundary extends Component<{ children: ReactNode; page: string 
     if (!this.state.error) return this.props.children;
     return (
       <div className="empty-state" role="alert">
-        <div className="empty-title">This page ran into a problem</div>
-        <p className="faint">{this.state.error.message}</p>
-        <button className="btn" onClick={() => this.setState({ error: null })}>Try again</button>
+        <span className="empty-icon" aria-hidden><CircleAlert size={18} /></span>
+        <div className="empty-title">The {this.props.page} page ran into a problem</div>
+        <p className="faint">Nothing you saved is lost. Try again; if it happens again, copy the details into an issue so it can be fixed.</p>
+        <pre className="crash-detail">{this.state.error.message}</pre>
+        <div className="row" style={{ justifyContent: "center", gap: 8 }}>
+          <button className="btn primary" onClick={() => this.setState({ error: null })}>Try again</button>
+          <button className="btn" onClick={() => navigator.clipboard?.writeText(`${this.props.page}: ${this.state.error?.stack ?? this.state.error?.message}`)}>Copy details</button>
+        </div>
       </div>
     );
   }
