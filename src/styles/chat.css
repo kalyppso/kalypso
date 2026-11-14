@@ -163,7 +163,9 @@
 .chat-side-empty { margin: 2px 10px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .chat-manage { align-self: flex-start; margin: 8px 2px 0; }
 
-.chat-top { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 16px; }
+.chat-top { position: relative; display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 8px 16px; }
+/* kalypso's orb, pinned at the top of the chat: it listens while you type and moves while it thinks. */
+.chat-top-orb { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; pointer-events: none; animation: cv-in 0.5s var(--ease); }
 .chat-top .agent-avatar { width: 28px; height: 28px; border-radius: 8px; font-size: 10.5px; }
 .chat-top .agent-avatar::after { box-shadow: 0 0 0 2px var(--page-bg); }
 .chat-model { display: inline-flex; align-items: center; gap: 2px; border-radius: 10px; padding: 0 4px 0 10px; transition: background 0.15s; }
@@ -240,3 +242,13 @@
 .chat-crew-empty { display: grid; justify-items: center; gap: 12px; padding: 40px 0 8px; color: var(--text-2); text-align: center; }
 .chat-item .pecten { margin: 0 2px; }
 .chat-item.on .pecten { opacity: 1; }
+
+/* Files waiting to go with the next message, and the paperclip. */
+.cv-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cv-file { display: inline-flex; align-items: center; gap: 8px; max-width: 240px; height: 40px; padding: 4px 6px 4px 4px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--card); font-size: 12.5px; animation: cv-rise 0.25s var(--ease); }
+.cv-file img { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; flex: none; }
+.cv-file-kind { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card-2); color: var(--text-2); font: 600 9.5px var(--mono); flex: none; }
+.cv-file-x { display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 6px; background: none; color: var(--text-3); cursor: pointer; flex: none; }
+.cv-file-x:hover { background: var(--card-2); color: var(--text); }
+.cv-attach { flex: none; width: 34px; height: 34px; border-radius: 50%; color: var(--text-2); }
+.cv-composer.dragging { border-color: var(--accent-hi); border-style: dashed; }

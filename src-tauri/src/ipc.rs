@@ -760,3 +760,17 @@ pub async fn provider_models(s: State<'_, AppState>, ns: String, id: String) -> 
         .map_err(|e| KalypsoError::Invalid(e.to_string()))?;
     crate::providers::models(&s.db, &s.vault, &http, &ns, &id).await
 }
+
+/// A file you attach in a chat: written into the agent's sandbox, which is started if needed.
+/// `data` is base64. Returns the file's path in the sandbox, for the message to point at.
+#[tauri::command]
+pub async fn agent_attach(s: State<'_, AppState>, ns: String, id: String, name: String, data: String) -> Result<String> {
+    use base64::Engine;
+    ensure_ns(&s, &ns)?;
+    let a = agent::get(&s.db, &ns, &id)?;
+    let sb = a.sandbox_id.ok_or_else(|| KalypsoError::Invalid(format!("{} has no sandbox to put files in; assign one first", a.name)))?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|_| KalypsoError::Invalid(format!("{name} could not be read")))?;
+    sandbox::attach(&s.db, &s.rt, &ns, &sb, &name, &bytes).await
+}

@@ -15,7 +15,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import readline from "node:readline";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const SOCK = process.env.KALYPSO_GATEWAY_SOCK || "/run/kalypso/gateway/gateway.sock";
 const KEY_FILE = process.env.KALYPSO_GATEWAY_KEY_FILE || "/run/kalypso/secrets/KALYPSO_GATEWAY_KEY";
@@ -119,12 +119,25 @@ const TOOLS = [
   },
   {
     name: "read_file",
-    description: "Read a text file. Paths are relative to your working directory unless absolute.",
+    description: "Read a file: text, an image (png, jpg, gif, webp: you'll see it) or a PDF (its text). Paths are relative to your working directory unless absolute.",
     parameters: { type: "object", properties: { path: { type: "string" }, offset: { type: "integer", description: "first line, from 1" }, limit: { type: "integer", description: "how many lines" } }, required: ["path"] },
     policy: (a) => ({ kind: "file_read", path: inWork(a.path) }),
     summary: (a) => a.path,
     run: async (a) => {
-      const lines = fs.readFileSync(inWork(a.path), "utf8").split("\n");
+      const file = inWork(a.path);
+      const ext = path.extname(file).toLowerCase();
+      if (IMAGE_TYPES[ext]) {
+        const bytes = fs.readFileSync(file);
+        if (bytes.length > MAX_IMAGE) return `${a.path} is ${Math.round(bytes.length / 1024 / 1024)} MB; images up to ${MAX_IMAGE / 1024 / 1024} MB can be looked at.`;
+        images.push({ path: a.path, url: `data:${IMAGE_TYPES[ext]};base64,${bytes.toString("base64")}` });
+        return `Opened the image ${a.path}. It follows this message, for you to look at.`;
+      }
+      if (ext === ".pdf") {
+        const out = spawnSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
+        if (out.status === 0 && out.stdout.trim()) return clip(out.stdout);
+        return `${a.path} is a PDF and this sandbox has no PDF reader (pdftotext). Ask for it to be installed, or for a model that reads PDFs directly.`;
+      }
+      const lines = fs.readFileSync(file, "utf8").split("\n");
       const from = Math.max(Number(a.offset) || 1, 1) - 1;
       const to = a.limit ? from + Number(a.limit) : lines.length;
       return clip(lines.slice(from, to).map((l, i) => `${from + i + 1}\t${l}`).join("\n"));
@@ -205,6 +218,14 @@ function modelError(status, body) {
   return `${PROVIDER} answered ${status}: ${msg}`;
 }
 
+// Images opened with read_file this turn: shown to the model in one message after the tool results
+// (tool results can only be text). Once the model has seen them they're replaced with a note, so
+// they aren't sent again with every later request.
+const IMAGE_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+const MAX_IMAGE = 5 * 1024 * 1024;
+let images = [];
+let shownAt = -1;
+
 // Rate limits and overloaded servers pass: wait as long as the provider asks, then try again.
 const RETRY = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 const MAX_ATTEMPTS = 8;
@@ -256,6 +277,10 @@ async function work(task) {
       emit({ t: "error", text: modelError(res.status, res.body) });
       return;
     }
+    if (shownAt >= 0 && Array.isArray(messages[shownAt]?.content)) {
+      messages[shownAt] = { role: "user", content: `${messages[shownAt].content[0].text} (shown earlier; open them again to look again)` };
+      shownAt = -1;
+    }
     tokens.in += res.body.usage?.prompt_tokens ?? 0;
     tokens.out += res.body.usage?.completion_tokens ?? 0;
     const msg = res.body.choices?.[0]?.message;
@@ -294,6 +319,11 @@ async function work(task) {
         }
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: clip(String(result)) });
+    }
+    if (images.length) {
+      messages.push({ role: "user", content: [{ type: "text", text: `The image${images.length === 1 ? "" : "s"} you opened: ${images.map((i) => i.path).join(", ")}` }, ...images.map((i) => ({ type: "image_url", image_url: { url: i.url } }))] });
+      shownAt = messages.length - 1;
+      images = [];
     }
     save();
   }

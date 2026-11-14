@@ -339,6 +339,55 @@ pub async fn refresh(db: &Db, rt: &Runtime, ns: &str, id: &str) -> Result<Sandbo
     get(db, ns, id)
 }
 
+/// Where files you attach in a chat land in a sandbox.
+pub const ATTACHMENTS_DIR: &str = "/work/attachments";
+/// The largest file you can attach.
+pub const MAX_ATTACHMENT: usize = 25 * 1024 * 1024;
+
+/// A file name that is safe on any file system and in a shell: letters, digits, `.`, `-`, `_`.
+pub fn safe_file_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let mut out: String = base.chars().map(|c| if c.is_ascii_alphanumeric() || ".-_".contains(c) { c } else { '-' }).collect();
+    out = out.trim_matches(|c| c == '.' || c == '-').to_string();
+    if out.is_empty() {
+        out = "file".into();
+    }
+    if out.len() > 80 {
+        let ext = out.rsplit_once('.').map(|(_, e)| e.to_string()).filter(|e| e.len() <= 8);
+        out.truncate(70);
+        if let Some(e) = ext {
+            out = format!("{out}.{e}");
+        }
+    }
+    out
+}
+
+/// Put a file you attached into the sandbox, starting it if it is stopped, and return its path
+/// there. Names get a time prefix so two attachments never overwrite each other.
+pub async fn attach(db: &Db, rt: &Runtime, ns: &str, id: &str, name: &str, bytes: &[u8]) -> Result<String> {
+    if bytes.is_empty() {
+        return Err(KalypsoError::Invalid(format!("{name} is empty")));
+    }
+    if bytes.len() > MAX_ATTACHMENT {
+        return Err(KalypsoError::Invalid(format!("{name} is larger than {} MB", MAX_ATTACHMENT / 1024 / 1024)));
+    }
+    let mut rec = get(db, ns, id)?;
+    if rec.status != "running" {
+        rec = start(db, rt, ns, id).await?;
+    }
+    let p = provider_for(rt, &rec)?;
+    let file = format!("{}-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"), safe_file_name(name));
+    let path = format!("{ATTACHMENTS_DIR}/{file}");
+    // Readable by the agent's user; only KALYPSO writes here.
+    let script = format!("mkdir -p {ATTACHMENTS_DIR} && chmod 755 {ATTACHMENTS_DIR} && cat > \"$1\" && chmod 644 \"$1\"");
+    let code = p.exec_with_stdin(ns, id, &["sh", "-c", &script, "sh", &path], bytes).await?;
+    if code != 0 {
+        return Err(KalypsoError::Runtime(format!("could not write {name} into {}", rec.name)));
+    }
+    db.audit(Some(ns), "user", "sandbox.attach", &format!("{}: {file}", rec.name))?;
+    Ok(path)
+}
+
 /// Run a command in a sandbox of the default provider and collect its output.
 /// Code that has the record uses its provider directly.
 pub async fn exec(rt: &Runtime, ns: &str, id: &str, cmd: &[&str], detach: bool) -> Result<(i64, String)> {
@@ -525,6 +574,18 @@ mod tests {
     }
 
     #[test]
+    fn attachment_names_are_safe() {
+        assert_eq!(safe_file_name("Screenshot 2026-11-14 at 21.03.png"), "Screenshot-2026-11-14-at-21.03.png");
+        assert_eq!(safe_file_name("../../etc/passwd"), "passwd");
+        assert_eq!(safe_file_name("C:\\Users\\me\\report (final).pdf"), "report--final-.pdf");
+        assert_eq!(safe_file_name("$(rm -rf).txt"), "rm--rf-.txt");
+        assert_eq!(safe_file_name("..."), "file");
+        let long = format!("{}.pdf", "a".repeat(200));
+        let short = safe_file_name(&long);
+        assert!(short.len() <= 80 && short.ends_with(".pdf"), "{short}");
+    }
+
+    #[test]
     fn validation_rejects_bad_specs() {
         assert!(validate(&spec("ok-name")).is_ok());
         assert_eq!(validate(&spec("bad name!")).unwrap_err().code(), "invalid");
@@ -543,6 +604,28 @@ mod tests {
 
     /// Namespace secrets arrive as private files; agent-scoped ones don't; values never
     /// show up in the container's configuration.
+    #[tokio::test]
+    async fn attached_files_land_in_the_sandbox_readable() {
+        if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {
+            return;
+        }
+        let rt = Runtime::detect().await;
+        let db = Db::open_in_memory().unwrap();
+        let ns = format!("at{}", &new_id("x")[2..8]);
+        db.with(|c| Ok(c.execute("INSERT INTO namespaces (id, name) VALUES (?1, ?1)", [&ns])?)).unwrap();
+        // Stopped: attaching starts it.
+        let sb = create(&db, &rt, &ns, spec("attach")).await.unwrap();
+        let bytes = b"\x89PNG\r\n binary \0 and text";
+        let path = attach(&db, &rt, &ns, &sb.id, "My screenshot (1).png", bytes).await.unwrap();
+        assert!(path.starts_with("/work/attachments/") && path.ends_with("-My-screenshot--1-.png"), "{path}");
+        let (code, out) = exec(&rt, &ns, &sb.id, &["sh", "-c", &format!("stat -c %a {path} && wc -c < {path}")], false).await.unwrap();
+        assert_eq!(code, 0, "{out}");
+        assert!(out.contains("644"), "readable by the agent: {out}");
+        assert!(out.contains(&bytes.len().to_string()), "every byte arrives: {out}");
+        assert!(attach(&db, &rt, &ns, &sb.id, "empty.txt", b"").await.is_err());
+        remove(&db, &rt, &ns, &sb.id).await.unwrap();
+    }
+
     #[tokio::test]
     async fn secrets_are_delivered_as_files() {
         if std::env::var("KALYPSO_TEST_RUNTIME").is_err() {

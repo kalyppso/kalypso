@@ -126,6 +126,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::provider_save,
         ipc::provider_remove,
         ipc::provider_models,
+        ipc::agent_attach,
         ipc::task_list,
         ipc::task_create,
         ipc::task_update,
