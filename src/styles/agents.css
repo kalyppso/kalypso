@@ -77,3 +77,4 @@
   .agent-convo { height: 70vh; }
   .agent-side { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; }
 }
+.agent-failure { max-width: 768px; width: 100%; margin: 16px auto 0; padding: 0 24px; }

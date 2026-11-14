@@ -8,6 +8,7 @@ import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
 import { providerModels, useModelChoices, useProviders } from "../components/Providers";
 import { Pecten } from "../components/Pecten";
+import { FailureCard, explainFailure } from "../components/Failure";
 import { Logo } from "../components/Logo";
 import type { AgentPatch } from "../bindings/AgentPatch";
 import { openSettings } from "./Settings";
@@ -313,7 +314,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       onBack={onBack}
       working={gate.working}
       pulse={received}
-      reason={a.statusReason ? <p className={`agent-reason clip ${bad ? "bad" : ""}`}>{a.statusReason}</p> : undefined}
+      reason={a.statusReason && !bad ? <p className="agent-reason clip">{a.statusReason}</p> : undefined}
       actions={
         <>
           <button className="btn" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
@@ -329,6 +330,19 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       }
       conversation={
         <>
+          {bad && (
+            <div className="agent-failure">
+              <FailureCard
+                failure={explainFailure(a.statusReason || `${a.name} failed`)}
+                actions={
+                  <>
+                    <button className="btn sm primary" disabled={busy || !sb} onClick={() => act(`${a.name} started`, () => api.agentStart(state.ns, a.id))}><Play size={12} /> Start again</button>
+                    <button className="btn sm" onClick={() => setEditing(true)}><Pencil size={12} /> Edit</button>
+                  </>
+                }
+              />
+            </div>
+          )}
           <Conversation
             who={{ name: a.name, mark: a.master ? <Logo size={26} fine /> : <Pecten size={26} active={gate.working} pulse={received} /> }}
             events={convo.events}

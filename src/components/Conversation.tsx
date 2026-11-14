@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, CircleAlert, Copy, RotateCcw, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronRight, Copy, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, errorMessage, isLive, onAgentUpdate, openUrl } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
 import { useStore, useToast } from "../store";
 import type { Agent } from "../types";
 import { useChatPrefs } from "./ChatSettings";
+import { FailureCard, explainFailure } from "./Failure";
 import "../styles/chat.css";
 
 /**
@@ -405,12 +406,16 @@ function ItemView({ item, open, onRetry }: { item: Item; open: boolean; onRetry?
     case "note":
       if (item.tone === "status") return <div className="cv-rule"><span>{item.text}</span></div>;
       if (item.tone === "result") return <div className="cv-note result"><Check size={13} /> {item.text}</div>;
+      // A warning from a rule stays a quiet line; a block or a failure explains itself.
+      if (item.tone === "policy") {
+        return <div className="cv-note policy"><ShieldAlert size={14} /><span>{item.text}</span></div>;
+      }
       return (
-        <div className={`cv-note ${item.tone}`} role={item.tone === "policy" ? undefined : "alert"}>
-          {item.tone === "error" ? <CircleAlert size={14} /> : <ShieldAlert size={14} />}
-          <span>{item.text}</span>
-          {onRetry && item.tone === "error" && <button className="btn sm cv-retry" onClick={onRetry}><RotateCcw size={12} /> Try again</button>}
-        </div>
+        <FailureCard
+          failure={explainFailure(item.text)}
+          tone={item.tone === "blocked" ? "blocked" : "error"}
+          actions={onRetry && item.tone === "error" ? <button className="btn sm primary" onClick={onRetry}><RotateCcw size={12} /> Try again</button> : undefined}
+        />
       );
   }
 }

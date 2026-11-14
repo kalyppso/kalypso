@@ -475,7 +475,9 @@ export function useToast() {
     (text: string, tone: Toast["tone"] = "ok") => {
       const id = uid("toast");
       dispatch({ type: "toast", toast: { id, text, tone } });
-      setTimeout(() => dispatch({ type: "dismissToast", id }), 3200);
+      // Errors stay long enough to read (and copy); the Toasts view keeps them while hovered.
+      const ms = tone === "err" ? 10_000 : tone === "warn" ? 6_000 : 3_200;
+      setTimeout(() => dispatch({ type: "dismissToast", id }), ms);
     },
     [dispatch],
   );

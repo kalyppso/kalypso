@@ -19,4 +19,4 @@ single-context layout: one `GLOSSARY.md` at the repo root plus `docs/adr/`. See 
 - **Milestones** are the roadmap phases; the pinned [Roadmap](https://github.com/kalyppso/kalypso/issues/41) issue lists every issue per phase. Tick its box when an issue closes.
 - **Architecture**: `docs/ARCHITECTURE.md` is the design reference; update the relevant section in the same PR as the change.
 - **Types across IPC** are generated from Rust with `ts-rs` into `src/bindings/` by `cargo test`; commit them, don't edit them by hand.
-- **Checks** before a PR: `npm run build`, and in `src-tauri/` `cargo fmt --check`, `cargo clippy --all-targets` and `cargo test`. Container tests run with `KALYPSO_TEST_RUNTIME=1` against Docker or Podman.
+- **Checks** before a PR: `npm run build` and `npm test`, and in `src-tauri/` `cargo fmt --check`, `cargo clippy --all-targets` and `cargo test`. Container tests run with `KALYPSO_TEST_RUNTIME=1` against Docker or Podman.
