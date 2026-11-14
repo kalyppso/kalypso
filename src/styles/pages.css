@@ -54,3 +54,9 @@
 .provider-add { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; }
 .provider-connect { display: grid; gap: 10px; }
 .provider-connect.compact .field { margin: 0; }
+
+/* Choosing which agents get a secret, or which secrets an agent gets. */
+.grant-list { display: grid; gap: 2px; max-height: 180px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
+.grant-item { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.grant-item:hover { background: var(--card); }
+.grant-item input { accent-color: var(--accent); }

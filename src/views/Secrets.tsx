@@ -162,7 +162,10 @@ function NewSecret({ onClose }: { onClose: () => void }) {
   const [scope, setScope] = useState<"namespace" | "agent" | "gateway" | "on-request">("namespace");
   const [scopeTouched, setScopeTouched] = useState(false);
   const { errors, check, clear } = useErrors();
-  const { secrets } = useNamespaced();
+  const { secrets, agents } = useNamespaced();
+  // For "only agents you choose": who gets it. The master agent works through the others.
+  const crew = agents.filter((a) => !a.master);
+  const [grantTo, setGrantTo] = useState<string[]>([]);
   // Model provider keys belong to the gateway unless the user says otherwise.
   const onKey = (v: string) => {
     setKey(v);
@@ -183,8 +186,16 @@ function NewSecret({ onClose }: { onClose: () => void }) {
     if (!ok) return;
     if (isLive()) {
       api.secretSet(state.ns, k, value, scope)
+        .then(async (meta) => {
+          // Grant it to the chosen agents, keeping what each already has.
+          if (scope === "agent") {
+            for (const a of crew.filter((x) => grantTo.includes(x.id))) {
+              await api.agentUpdate(state.ns, a.id, { secrets: [...new Set([...a.secrets, meta.id])] });
+            }
+          }
+        })
         .then(() => syncNamespace(state.ns, dispatch))
-        .then(() => { toast(`Saved ${k}`); onClose(); })
+        .then(() => { toast(scope === "agent" && grantTo.length ? `Saved ${k} for ${grantTo.length} agent${grantTo.length === 1 ? "" : "s"}` : `Saved ${k}`); onClose(); })
         .catch((e) => toast(errorMessage(e), "err"));
       return;
     }
@@ -203,11 +214,30 @@ function NewSecret({ onClose }: { onClose: () => void }) {
       <label className="field">Scope
         <select className="select" value={scope} onChange={(e) => { setScopeTouched(true); setScope(e.target.value as typeof scope); }}>
           <option value="namespace">Every agent in {state.ns}</option>
-          <option value="agent">Only agents you grant it to</option>
+          <option value="agent">Only agents you choose</option>
           <option value="gateway">Model gateway only (never sent to sandboxes)</option>
           {isLive() && <option value="on-request">On request: only to commands you approve</option>}
         </select>
       </label>
+      {scope === "agent" && (
+        <div className="field" role="group" aria-labelledby="grant-to">
+          <span id="grant-to">Agents that get it</span>
+          {crew.length === 0 ? (
+            <span className="faint small">No agents yet. Save it now and grant it from an agent's page (Edit).</span>
+          ) : (
+            <div className="grant-list">
+              {crew.map((a) => (
+                <label key={a.id} className="grant-item">
+                  <input type="checkbox" checked={grantTo.includes(a.id)} onChange={(e) => setGrantTo(e.target.checked ? [...grantTo, a.id] : grantTo.filter((x) => x !== a.id))} />
+                  <span>{a.name}</span>
+                  <span className="faint small clip">{a.role}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <span className="faint small">It is written into each chosen agent's sandbox, so agents sharing that sandbox can read it too. Change who has it on an agent's page.</span>
+        </div>
+      )}
       {scope === "on-request" && (
         <p className="faint small" style={{ margin: 0 }}>
           Never in a sandbox. An agent asks with <span className="mono">kx-secret run {key.trim() || "NAME"} -- command</span>; once a policy or you approve,

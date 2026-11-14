@@ -51,6 +51,8 @@ pub struct AgentRecord {
     /// How hard the model thinks: "low", "medium", "high", "xhigh" or "max"; empty for the
     /// model's own default. Fixed for a run, because changing it mid-conversation breaks the cache.
     pub effort: String,
+    /// Agent-scoped secrets granted to it (secret ids), delivered to its sandbox.
+    pub secrets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -121,6 +123,9 @@ pub struct AgentPatch {
     /// Some("") goes back to the model's default.
     #[ts(optional)]
     pub effort: Option<String>,
+    /// The agent-scoped secrets it may have (secret ids); replaces the current grants.
+    #[ts(optional)]
+    pub secrets: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -155,7 +160,7 @@ pub struct AgentEvent {
 const RUNTIMES: &[&str] = &["command", "claude-sdk", "claude-code", "openai-compat"];
 const RESTARTS: &[&str] = &["never", "on-failure", "always"];
 const COLS: &str =
-    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch, master, effort";
+    "id, ns, name, role, runtime, model, sandbox_id, command, max_turns, restart, max_restarts, status, status_reason, created_at, repo, repo_account, branch, master, effort,\n     (SELECT group_concat(secret_id) FROM agent_secrets WHERE agent_id = agents.id)";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
     Ok(AgentRecord {
@@ -178,6 +183,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<AgentRecord> {
         branch: r.get(16)?,
         master: r.get(17)?,
         effort: r.get(18)?,
+        secrets: r.get::<_, Option<String>>(19)?.map(|s| s.split(',').map(str::to_string).collect()).unwrap_or_default(),
     })
 }
 
@@ -428,6 +434,17 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
         a.effort = v.trim().to_string();
     }
     check_effort(&a.runtime, &a.effort)?;
+    if let Some(ids) = &p.secrets {
+        // Only this namespace's agent-scoped secrets can be granted; namespace-wide ones reach every agent anyway.
+        let grantable: Vec<String> = db.with(|c| {
+            let mut st = c.prepare("SELECT id FROM secrets WHERE ns = ?1 AND scope = 'agent'")?;
+            let rows = st.query_map([ns], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+            Ok(rows)
+        })?;
+        if let Some(bad) = ids.iter().find(|id| !grantable.contains(id)) {
+            return Err(KalypsoError::Invalid(format!("{bad} isn't a secret for chosen agents in {ns}")));
+        }
+    }
     check(&a.runtime, &a.restart, &a.command, a.max_restarts, a.max_turns)?;
     check_model(&a.runtime, &a.model)?;
     check_sandbox(db, ns, a.sandbox_id.as_deref())?;
@@ -455,6 +472,15 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
         )?;
         Ok(())
     })?;
+    if let Some(ids) = &p.secrets {
+        db.with(|c| {
+            c.execute("DELETE FROM agent_secrets WHERE agent_id = ?1", [id])?;
+            for s in ids {
+                c.execute("INSERT OR IGNORE INTO agent_secrets (agent_id, secret_id) VALUES (?1, ?2)", (id, s))?;
+            }
+            Ok(())
+        })?;
+    }
     let what = if old_name == a.name { a.name.clone() } else { format!("{old_name} renamed to {}", a.name) };
     db.audit(Some(ns), "user", "agent.update", &what)?;
     get(db, ns, id)
@@ -707,5 +733,36 @@ mod tests {
         let err = update(&db, "work", &a.id, AgentPatch { name: Some("Writer".into()), ..Default::default() }).unwrap_err();
         assert_eq!(err.code(), "conflict");
         assert!(update(&db, "work", &a.id, AgentPatch { name: Some("bad name!".into()), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn granted_secrets_reach_only_that_agents_sandbox() {
+        let db = db();
+        let vault = crate::vault::Vault::ephemeral();
+        vault.create_ns_key(&db, "work").unwrap();
+        db.with(|c| {
+            Ok(c.execute(
+                "INSERT INTO sandboxes (id, ns, name, runtime, image, cpu, mem_mb, network) VALUES ('sb-2','work','other','docker','alpine',1,512,'isolated')",
+                [],
+            )?)
+        })
+        .unwrap();
+        let deploy = vault.set(&db, "work", "DEPLOY_TOKEN", "dpl_123", "agent").unwrap();
+        let shared = vault.set(&db, "work", "SHARED", "s", "namespace").unwrap();
+        let a = create(&db, "work", new("deployer")).unwrap();
+        let keys = |sb: &str| vault.for_delivery(&db, "work", sb).unwrap().into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+        assert_eq!(keys("sb-1"), ["SHARED"], "not granted yet");
+
+        let a = update(&db, "work", &a.id, AgentPatch { secrets: Some(vec![deploy.id.clone()]), ..Default::default() }).unwrap();
+        assert_eq!(a.secrets, std::slice::from_ref(&deploy.id));
+        assert_eq!(keys("sb-1"), ["DEPLOY_TOKEN", "SHARED"]);
+        assert_eq!(keys("sb-2"), ["SHARED"], "other sandboxes don't get it");
+
+        // Only agent-scoped secrets of this namespace can be granted.
+        let err = update(&db, "work", &a.id, AgentPatch { secrets: Some(vec![shared.id.clone()]), ..Default::default() }).unwrap_err();
+        assert_eq!(err.code(), "invalid");
+        let a = update(&db, "work", &a.id, AgentPatch { secrets: Some(vec![]), ..Default::default() }).unwrap();
+        assert!(a.secrets.is_empty());
+        assert_eq!(keys("sb-1"), ["SHARED"]);
     }
 }

@@ -187,7 +187,7 @@ export async function syncNamespace(ns: string, dispatch: (a: Action) => void) {
 
 export const toAgent = (a: AgentRecord): Agent => ({
   id: a.id, ns: a.ns, name: a.name, role: a.role, model: a.model, status: a.status as Agent["status"], sandboxId: a.sandbox_id,
-  skills: [], mcps: [], secrets: [], statusReason: a.status_reason, runtime: a.runtime, command: a.command,
+  skills: [], mcps: [], secrets: a.secrets, statusReason: a.status_reason, runtime: a.runtime, command: a.command,
   restart: a.restart, maxRestarts: a.max_restarts, maxTurns: a.max_turns, effort: a.effort,
   repo: a.repo, repoAccount: a.repo_account, branch: a.branch, master: a.master,
   config: [`# ${a.name} (${a.runtime})`, `command: ${a.command}`, `restart: ${a.restart}`, `max_restarts: ${a.max_restarts}`, `max_turns: ${a.max_turns || "no limit"}`].join("\n"),

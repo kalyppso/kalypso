@@ -447,9 +447,15 @@ pub fn agent_create(s: State<'_, AppState>, ns: String, agent: NewAgent) -> Resu
 
 /// Changes apply from the agent's next start.
 #[tauri::command]
-pub fn agent_update(s: State<'_, AppState>, ns: String, id: String, patch: AgentPatch) -> Result<AgentRecord> {
+pub async fn agent_update(s: State<'_, AppState>, ns: String, id: String, patch: AgentPatch) -> Result<AgentRecord> {
     ensure_ns(&s, &ns)?;
-    agent::update(&s.db, &ns, &id, patch)
+    // New grants, or a move to another sandbox, change which secrets running sandboxes hold.
+    let regrant = patch.secrets.is_some() || patch.sandbox_id.is_some();
+    let a = agent::update(&s.db, &ns, &id, patch)?;
+    if regrant {
+        sandbox::redeliver_running(&s.db, &s.vault, &s.rt, &ns).await;
+    }
+    Ok(a)
 }
 
 #[tauri::command]

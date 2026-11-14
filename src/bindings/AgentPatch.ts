@@ -16,4 +16,8 @@ repo?: string, repo_account?: string,
 /**
  * Some("") goes back to the model's default.
  */
-effort?: string, };
+effort?: string, 
+/**
+ * The agent-scoped secrets it may have (secret ids); replaces the current grants.
+ */
+secrets?: Array<string>, };
