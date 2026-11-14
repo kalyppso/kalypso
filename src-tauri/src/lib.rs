@@ -18,6 +18,7 @@ pub mod providers;
 pub mod repo;
 pub mod sandbox;
 pub mod setup;
+pub mod skills;
 pub mod store;
 pub mod task;
 pub mod terminal;
@@ -129,6 +130,12 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::provider_models,
         ipc::agent_attach,
         ipc::mcp_list,
+        ipc::mcp_assign,
+        ipc::skill_list,
+        ipc::skill_save,
+        ipc::skill_delete,
+        ipc::skill_assign,
+        ipc::prompt_assign,
         ipc::mcp_save,
         ipc::mcp_delete,
         ipc::task_list,

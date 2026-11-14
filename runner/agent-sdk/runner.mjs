@@ -224,8 +224,27 @@ function mcpServers() {
   return Object.keys(out).length ? out : undefined;
 }
 
+// Skills KALYPSO gives this agent (Toolkit, #24), written where the SDK finds skills (the
+// agent's own config folder, never your project) and enabled by name: exactly these, no others.
+function installSkills() {
+  let list = [];
+  try { list = JSON.parse(process.env.KALYPSO_SKILLS || "[]"); } catch { return []; }
+  const dir = path.join(STATE, "claude", "skills");
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* first run */ }
+  const names = [];
+  for (const k of list) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(k.name)) continue;
+    fs.mkdirSync(path.join(dir, k.name), { recursive: true });
+    fs.writeFileSync(path.join(dir, k.name, "SKILL.md"), k.content);
+    names.push(k.name);
+  }
+  return names;
+}
+const skillNames = installSkills();
+
 const options = {
   model: process.env.KALYPSO_MODEL || undefined,
+  skills: skillNames,
   mcpServers: mcpServers(),
   // Reasoning effort from the agent's settings; unset keeps the model's default. Fixed for the
   // run: changing it mid-conversation would invalidate the prompt cache.
@@ -238,7 +257,8 @@ const options = {
   allowDangerouslySkipPermissions: true,
   hooks: { PreToolUse: [{ hooks: [preToolUse], timeout: 900 }] },
   systemPrompt: { type: "preset", preset: "claude_code", append },
-  settingSources: ["project"],
+  // "user" is the agent's own config folder (CLAUDE_CONFIG_DIR below), where its skills are.
+  settingSources: ["project", "user"],
   env: {
     ...process.env,
     ANTHROPIC_BASE_URL: `${base}/anthropic`,

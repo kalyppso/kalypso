@@ -179,7 +179,11 @@ impl Supervisor {
                 tracing::warn!(agent = %agent.name, error = %e, "could not read the agent's MCP servers");
                 "{}".into()
             });
-            let ctx = AgentCtx { agent: &agent, sandbox_id: &live.sandbox_id, provider: live.provider.clone(), extra, mcp };
+            let skills = crate::skills::bundle_for(&self.db, &agent).unwrap_or_else(|e| {
+                tracing::warn!(agent = %agent.name, error = %e, "could not read the agent's skills");
+                "[]".into()
+            });
+            let ctx = AgentCtx { agent: &agent, sandbox_id: &live.sandbox_id, provider: live.provider.clone(), extra, mcp, skills };
             let run = match rt.start(&ctx).await {
                 Ok(r) => r,
                 Err(e) => {
