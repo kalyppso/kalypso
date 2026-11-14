@@ -146,6 +146,22 @@ pub fn save(db: &Db, ns: &str, input: PromptInput) -> Result<Prompt> {
     get(db, ns, &id)
 }
 
+/// Give one agent a prompt, or take it away, without touching the other agents it is assigned to.
+pub fn assign(db: &Db, ns: &str, id: &str, agent_id: &str, on: bool) -> Result<()> {
+    if !list(db, ns)?.iter().any(|p| p.id == id) {
+        return Err(KalypsoError::NotFound(format!("prompt {id}")));
+    }
+    crate::agent::get(db, ns, agent_id)?;
+    db.with(|c| {
+        if on {
+            c.execute("INSERT OR IGNORE INTO agent_prompts (agent_id, prompt_id) VALUES (?1, ?2)", (agent_id, id))?;
+        } else {
+            c.execute("DELETE FROM agent_prompts WHERE agent_id = ?1 AND prompt_id = ?2", (agent_id, id))?;
+        }
+        Ok(())
+    })
+}
+
 pub fn delete(db: &Db, ns: &str, id: &str) -> Result<()> {
     let p = get(db, ns, id)?;
     db.with(|c| Ok(c.execute("DELETE FROM prompts WHERE id = ?1 AND ns = ?2", (id, ns))?))?;

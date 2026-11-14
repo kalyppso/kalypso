@@ -795,3 +795,44 @@ pub fn mcp_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> 
     ensure_ns(&s, &ns)?;
     crate::mcp::delete(&s.db, &ns, &id)
 }
+
+/// Give one agent an MCP server, or take it away.
+#[tauri::command]
+pub fn mcp_assign(s: State<'_, AppState>, ns: String, id: String, agent_id: String, on: bool) -> Result<crate::mcp::McpServer> {
+    ensure_ns(&s, &ns)?;
+    crate::mcp::assign(&s.db, &ns, &id, &agent_id, on)
+}
+
+// Skills (#24).
+
+#[tauri::command]
+pub fn skill_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::skills::Skill>> {
+    ensure_ns(&s, &ns)?;
+    crate::skills::list(&s.db, &ns)
+}
+
+#[tauri::command]
+pub fn skill_save(s: State<'_, AppState>, ns: String, skill: crate::skills::SkillInput) -> Result<crate::skills::Skill> {
+    ensure_ns(&s, &ns)?;
+    crate::skills::save(&s.db, &ns, skill)
+}
+
+#[tauri::command]
+pub fn skill_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::skills::delete(&s.db, &ns, &id)
+}
+
+/// Give one agent a skill, or take it away.
+#[tauri::command]
+pub fn skill_assign(s: State<'_, AppState>, ns: String, id: String, agent_id: String, on: bool) -> Result<crate::skills::Skill> {
+    ensure_ns(&s, &ns)?;
+    crate::skills::assign(&s.db, &ns, &id, &agent_id, on)
+}
+
+/// Give one agent a prompt (persona or instruction), or take it away.
+#[tauri::command]
+pub fn prompt_assign(s: State<'_, AppState>, ns: String, id: String, agent_id: String, on: bool) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::prompts::assign(&s.db, &ns, &id, &agent_id, on)
+}

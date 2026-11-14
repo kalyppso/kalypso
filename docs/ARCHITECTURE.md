@@ -199,7 +199,8 @@ A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes thro
 - Health: a heartbeat every 10 s; the measured latency is shown on each link.
 
 ### 4.7 Skills and MCP registry
-- **Skills** are folders containing a `SKILL.md`, installed from local paths or git. They are versioned, and mounted read-only into a sandbox at `/opt/kalypso/skills/<name>` when attached to an agent.
+- **Skills** (`src-tauri/src/skills.rs`, tables `skills` and `agent_skills`) are a `SKILL.md` per skill, kept per namespace, added in Toolkit by pasting or uploading it (name and description come from its front matter). Each goes to every agent, chosen agents, or kalypso only. At each start the supervisor passes the agent's skills as `KALYPSO_SKILLS`: the Claude runner writes them to the agent's own config folder (`$CLAUDE_CONFIG_DIR/skills/<name>/SKILL.md`, loaded through the `user` setting source) and enables exactly those with the SDK's `skills` option; the OpenAI-compatible runner writes them to its state folder and lists them in its instructions to open when a task matches. Skill files are readable by the agent, so they never hold secrets. Scanning before install is #152.
+- **An agent's page** shows everything it gets in one place (secrets, prompts, MCP servers, skills), each removable, with + Add and "New…" to make one for that agent. Secrets reach a running agent at once; the rest apply from its next start, with a Restart button.
 - **MCP servers** (`src-tauri/src/mcp.rs`, tables `mcp_servers` and `mcp_agents`) are kept per namespace, managed in Toolkit, and come in two kinds:
   - `stdio` servers run *inside* the agent's sandbox, started by its runner, so their filesystem and network access are the sandbox's.
   - `http` and `sse` servers are reached from the sandbox: through the namespace network, or the egress proxy and its allow-list for `internet` sandboxes (#33).

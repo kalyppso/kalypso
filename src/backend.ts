@@ -30,6 +30,8 @@ import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { Prompt } from "./bindings/Prompt";
 import type { McpServer } from "./bindings/McpServer";
+import type { Skill } from "./bindings/Skill";
+import type { SkillInput } from "./bindings/SkillInput";
 import type { McpInput } from "./bindings/McpInput";
 import type { ModelProvider } from "./bindings/ModelProvider";
 import type { ProviderInput } from "./bindings/ProviderInput";
@@ -125,6 +127,12 @@ export const api = {
   mcpList: (ns: string) => invoke<McpServer[]>("mcp_list", { ns }),
   mcpSave: (ns: string, server: McpInput) => invoke<McpServer>("mcp_save", { ns, server }),
   mcpDelete: (ns: string, id: string) => invoke<void>("mcp_delete", { ns, id }),
+  mcpAssign: (ns: string, id: string, agentId: string, on: boolean) => invoke<McpServer>("mcp_assign", { ns, id, agentId, on }),
+  skillList: (ns: string) => invoke<Skill[]>("skill_list", { ns }),
+  skillSave: (ns: string, skill: SkillInput) => invoke<Skill>("skill_save", { ns, skill }),
+  skillDelete: (ns: string, id: string) => invoke<void>("skill_delete", { ns, id }),
+  skillAssign: (ns: string, id: string, agentId: string, on: boolean) => invoke<Skill>("skill_assign", { ns, id, agentId, on }),
+  promptAssign: (ns: string, id: string, agentId: string, on: boolean) => invoke<void>("prompt_assign", { ns, id, agentId, on }),
   taskList: (ns: string) => invoke<TaskRecord[]>("task_list", { ns }),
   taskCreate: (ns: string, task: NewTask) => invoke<TaskRecord>("task_create", { ns, task }),
   taskUpdate: (ns: string, id: string, patch: TaskPatch) => invoke<TaskRecord>("task_update", { ns, id, patch }),

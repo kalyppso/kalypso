@@ -8,6 +8,7 @@ import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
 import { providerModels, useModelChoices, useProviders } from "../components/Providers";
 import { Pecten } from "../components/Pecten";
+import { AgentGear } from "../components/AgentGear";
 import { FailureCard, explainFailure } from "../components/Failure";
 import { Logo } from "../components/Logo";
 import type { AgentPatch } from "../bindings/AgentPatch";
@@ -276,9 +277,7 @@ function NewAgent({ onClose }: { onClose: () => void }) {
 function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const { sandboxes, secrets } = useNamespaced();
-  // What reaches its sandbox: the namespace's secrets and those granted to it.
-  const itsSecrets = secrets.filter((x) => x.scope === "namespace" || (a.secrets ?? []).includes(x.id)).map((x) => x.key);
+  const { sandboxes } = useNamespaced();
   const sb = sandboxes.find((s) => s.id === a.sandboxId);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -369,9 +368,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
             ]}
           />
           <button className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => setEditing(true)}><Pencil size={12} /> Edit settings</button>
-          <Section title="Secrets">
-            <Chips items={itsSecrets} mono />
-          </Section>
+          <AgentGear agent={a} />
           <RepoSection agent={a} />
           <Section title={runner ? "First task" : "Command"}>
             {runner ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}

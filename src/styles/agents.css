@@ -78,3 +78,20 @@
   .agent-side { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; }
 }
 .agent-failure { max-width: 768px; width: 100%; margin: 16px auto 0; padding: 0 24px; }
+
+/* What an agent gets: secrets, prompts, tools and skills, as chips with × and + Add. */
+.gear { display: flex; flex-direction: column; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.gear-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gear-head h3 { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.gear-section { display: flex; flex-direction: column; gap: 6px; }
+.gear-title { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.gear-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.gear-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 10px; border-radius: 99px; background: var(--card-2); font-size: 12.5px; max-width: 100%; }
+.gear-chip.fixed { padding-right: 10px; background: var(--card); color: var(--text-2); }
+.gear-chip .mono { font-size: 12px; }
+.gear-note { color: var(--text-3); font-size: 11px; }
+.gear-chip button { display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; }
+.gear-chip button:hover { background: var(--card); color: var(--text); }
+.gear-add { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border: 1px dashed var(--border-strong); border-radius: 99px; background: none; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.gear-add:hover { color: var(--text); border-color: var(--text-3); }
+.gear-pop { min-width: 240px; max-height: 300px; overflow: auto; }

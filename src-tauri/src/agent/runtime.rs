@@ -24,6 +24,8 @@ pub struct AgentCtx<'a> {
     pub extra: String,
     /// Its MCP servers as the SDK's `mcpServers` JSON (`mcp::config_for`); "{}" for none.
     pub mcp: String,
+    /// Its skills as `[{"name", "description", "content"}]` (`skills::bundle_for`); "[]" for none.
+    pub skills: String,
 }
 
 /// Something an agent produced, already split into readable pieces.
@@ -156,6 +158,7 @@ impl AgentRuntime for ClaudeSdkRuntime {
             // Empty: the model's own default.
             format!("KALYPSO_EFFORT={}", a.effort),
             format!("KALYPSO_MCP={}", ctx.mcp),
+            format!("KALYPSO_SKILLS={}", ctx.skills),
         ];
         let setup = if a.master { super::master::install(&mut env) } else { String::new() };
         let wrapper = format!("echo $$ > {pid_file}; [ -f {RUNNER} ] || {{ echo '{missing}'; exit 64; }}; {setup}exec node {RUNNER}");
@@ -210,6 +213,7 @@ impl AgentRuntime for OpenAiRuntime {
             format!("KALYPSO_MAX_TURNS={}", a.max_turns),
             // Empty: the model's own default.
             format!("KALYPSO_EFFORT={}", a.effort),
+            format!("KALYPSO_SKILLS={}", ctx.skills),
         ];
         let setup = if a.master { super::master::install(&mut env) } else { String::new() };
         let wrapper =

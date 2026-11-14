@@ -190,12 +190,27 @@ const toolSpecs = TOOLS.map((t) => ({ type: "function", function: { name: t.name
 const role = (process.env.KALYPSO_ROLE || "").trim();
 const repo = process.env.KALYPSO_REPO;
 const branch = process.env.KALYPSO_BRANCH;
+// Skills KALYPSO gives this agent: written as files, listed below so the model opens one when it fits.
+const skillsDir = path.join(STATE, "skills");
+const skills = (() => {
+  let list = [];
+  try { list = JSON.parse(process.env.KALYPSO_SKILLS || "[]"); } catch { return []; }
+  try { fs.rmSync(skillsDir, { recursive: true, force: true }); } catch { /* first run */ }
+  return list.filter((k) => /^[a-z0-9][a-z0-9-]*$/.test(k.name)).map((k) => {
+    const file = path.join(skillsDir, k.name, "SKILL.md");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, k.content);
+    return { ...k, file };
+  });
+})();
+
 const system = [
   `You are ${AGENT}, an agent running inside a KALYPSO sandbox. Your working directory is ${WORK}. You act through tools: bash, read_file, write_file, edit_file and list_files.`,
   "KALYPSO checks every tool call against the workspace's policies. If a call is blocked, the reason says why: do not try to get around it, find another way or explain what you need.",
   "Secrets marked on-request are not in your environment. To run a command that needs one, use: kx-secret run NAME --purpose \"why\" -- <command>. Never try to read, print or copy secret values.",
   repo && `You work in the GitHub repository ${repo}, cloned at ${WORK}, on your own branch ${branch}. Commit your work there. To share it, push your branch (git push -u origin ${branch}) and open a pull request with: gh-api POST /repos/${repo}/pulls '{"title":"…","head":"${branch}","base":"<default branch>","body":"…"}'. Never push to main or master, and never force-push.`,
   "Work step by step, check your results (run the tests), and finish with a short summary of what you did.",
+  skills.length && `Skills you have. When a task matches one, read its file with read_file first and follow it:\n${skills.map((k) => `- ${k.name}: ${k.description} (${k.file})`).join("\n")}`,
   role && `Your role: ${role}`,
 ].filter(Boolean).join("\n");
 

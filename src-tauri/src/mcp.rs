@@ -207,6 +207,28 @@ pub fn save(db: &Db, ns: &str, input: McpInput) -> Result<McpServer> {
     get(db, ns, &id)
 }
 
+/// Give one agent a server, or take it away, without touching anyone else's.
+pub fn assign(db: &Db, ns: &str, id: &str, agent_id: &str, on: bool) -> Result<McpServer> {
+    let s = get(db, ns, id)?;
+    crate::agent::get(db, ns, agent_id)?;
+    if s.scope != "chosen" {
+        return Err(KalypsoError::Invalid(format!(
+            "{} goes to {}; change who gets it in Toolkit",
+            s.name,
+            if s.scope == "all" { "every agent" } else { "kalypso only" }
+        )));
+    }
+    db.with(|c| {
+        if on {
+            c.execute("INSERT OR IGNORE INTO mcp_agents (server_id, agent_id) VALUES (?1, ?2)", (id, agent_id))?;
+        } else {
+            c.execute("DELETE FROM mcp_agents WHERE server_id = ?1 AND agent_id = ?2", (id, agent_id))?;
+        }
+        Ok(())
+    })?;
+    get(db, ns, id)
+}
+
 pub fn delete(db: &Db, ns: &str, id: &str) -> Result<()> {
     let s = get(db, ns, id)?;
     db.with(|c| Ok(c.execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?))?;
