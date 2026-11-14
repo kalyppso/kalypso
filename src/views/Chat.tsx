@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, Settings2, SlidersHorizontal, Square } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
-import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
+import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate } from "../components/Conversation";
 import { Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
 import { Pecten } from "../components/Pecten";
@@ -221,6 +221,16 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
     }
   };
 
+  // Files go into kalypso's sandbox; kalypso is created first if this is the first message.
+  const attachForMaster = async (file: File) => {
+    let m = master;
+    if (!m) {
+      m = toAgent(await api.masterEnsure(state.ns, await startModel(state.ns)));
+      await sync();
+    }
+    return api.agentAttach(state.ns, m.id, file.name, await fileToBase64(file));
+  };
+
   const act = (done: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     fn().then(sync).then(() => toast(done)).catch((e) => toast(errorMessage(e), "err")).finally(() => setBusy(false));
@@ -231,8 +241,26 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
   const working = live && master?.status === "running";
   const fresh = !loading && events.length === 0 && !pending;
 
+  // The pinned orb: busy while a message is on its way or unanswered, a wave on each reply.
+  const lastIn = events.map((e) => e.kind).lastIndexOf("input");
+  const lastEnd = Math.max(events.map((e) => e.kind).lastIndexOf("result"), events.map((e) => e.kind).lastIndexOf("error"));
+  const thinking = !!pending || (working && lastIn > lastEnd);
+  const replies = events.filter((e) => e.kind === "text" || e.kind === "result").length;
+  const [received, setReceived] = useState(0);
+  const seenReplies = useRef<number | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    if (seenReplies.current !== null && replies > seenReplies.current) setReceived((n) => n + 1);
+    seenReplies.current = replies;
+  }, [replies, loading]);
+
   const head = (
     <header className="chat-top">
+      {!fresh && (
+        <span className="chat-top-orb" aria-hidden="true">
+          <Orb size={56} active={thinking} pulse={sent + received} beat={beat} />
+        </span>
+      )}
       <ModelPicker master={master} />
       <span className="spacer" />
       {master && live && <Status value={master.status} />}
@@ -263,7 +291,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
             <h1 className="chat-hello">What should we work on?</h1>
             <p className="chat-hello-sub">kalypso plans the work, creates agents for each part, and reports back here.</p>
             {keyCard}
-            <Composer onSend={send} placeholder="Ask anything, or describe the work" autoFocus value={draft} onValue={type} large blocked={blocked} />
+            <Composer onSend={send} placeholder="Ask anything, or describe the work" autoFocus value={draft} onValue={type} large blocked={blocked} attach={live ? attachForMaster : undefined} />
             {hasKey && (
               <div className="chat-starters">
                 {STARTERS.map((s) => <button key={s} className="chat-starter" onClick={() => type(s)}>{s}</button>)}
@@ -284,7 +312,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
       ) : (
         <>
           {keyCard && <div className="chat-key-wrap">{keyCard}</div>}
-          <Composer onSend={send} placeholder="Message kalypso" value={draft} onValue={setDraft} blocked={blocked} />
+          <Composer onSend={send} placeholder="Message kalypso" value={draft} onValue={type} blocked={blocked} attach={live ? attachForMaster : undefined} />
         </>
       )}
     </section>
@@ -404,7 +432,8 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
       <Conversation events={convo.events} runs={convo.runs} loading={convo.loading} working={gate.working} onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}
         who={{ name: a.name, mark: <Pecten size={26} active={gate.working} pulse={received} /> }}
         empty={<div className="chat-crew-empty"><Pecten size={96} active={gate.working} pulse={received} /><span>{gate.working ? `${a.name} is working on it.` : `${a.name} hasn't done anything yet. Send it a message to give it work.`}</span></div>} />
-      <Composer onSend={convo.send} placeholder={`Message ${a.name} directly`} blocked={gate.blocked} />
+      <Composer onSend={convo.send} placeholder={`Message ${a.name} directly`} blocked={gate.blocked}
+        attach={isLive() && a.sandboxId ? async (f) => api.agentAttach(state.ns, a.id, f.name, await fileToBase64(f)) : undefined} />
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Bot, ChevronRight, Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import { uid, useNamespaced, useStore, useToast, useCompose, useFocus } from "../store";
-import { Composer, Conversation, useAgentConversation, useAgentGate } from "../components/Conversation";
+import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate } from "../components/Conversation";
 import { CodeReveal, EmptyState, Field, AgentFace, Modal, ModalActions, PageHead, PrimaryButton, Status, useErrors, Skeleton } from "../components/ui";
 import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
@@ -352,7 +352,8 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
             onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}
             empty={<div className="chat-crew-empty">{!a.master && <Pecten size={88} active={gate.working} pulse={received} />}<span>No runs yet. Start {a.name}, or send it a message, and what it does shows up here.</span></div>}
           />
-          <Composer onSend={convo.send} placeholder={`Message ${a.name}`} blocked={gate.blocked} />
+          <Composer onSend={convo.send} placeholder={`Message ${a.name}`} blocked={gate.blocked}
+            attach={a.sandboxId ? async (f) => api.agentAttach(state.ns, a.id, f.name, await fileToBase64(f)) : undefined} />
         </>
       }
       side={

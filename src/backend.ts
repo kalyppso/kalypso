@@ -140,6 +140,8 @@ export const api = {
   agentPause: (ns: string, id: string) => invoke<AgentRecord>("agent_pause", { ns, id }),
   agentResume: (ns: string, id: string) => invoke<AgentRecord>("agent_resume", { ns, id }),
   agentSend: (ns: string, id: string, message: string) => invoke<void>("agent_send", { ns, id, message }),
+  /** Put a file (base64) into the agent's sandbox; returns its path there. */
+  agentAttach: (ns: string, id: string, name: string, data: string) => invoke<string>("agent_attach", { ns, id, name, data }),
   agentRuns: (ns: string, id: string, limit = 50) => invoke<AgentRun[]>("agent_runs", { ns, id, limit }),
   agentEvents: (ns: string, runId: string, after = 0) => invoke<AgentEvent[]>("agent_events", { ns, runId, after }),
   usageSummary: (ns: string | null, days: number) => invoke<UsageSummary>("usage_summary", { ns, days }),

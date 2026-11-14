@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronRight, Copy, RotateCcw, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Paperclip, X, Check, ChevronRight, Copy, RotateCcw, ShieldAlert } from "lucide-react";
 import { api, errorMessage, isLive, onAgentUpdate, openUrl } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
 import type { AgentRun } from "../bindings/AgentRun";
@@ -204,6 +204,8 @@ type Turn =
 function toTurns(items: Item[]): Turn[] {
   const out: Turn[] = [];
   for (const it of items) {
+    // Lifecycle chatter ("started", "model · 5 tools") says nothing a reader needs; the run line stays.
+    if (it.kind === "note" && it.tone === "status" && /^(started|resumed)$|·\s*\d+ tools(\s*·\s*resumed)?$/i.test(it.text.trim())) continue;
     if (it.kind === "user") out.push({ kind: "user", id: it.id, item: it });
     else if (it.kind === "run" || (it.kind === "note" && it.tone === "status")) out.push({ kind: "rule", id: it.id, item: it });
     else {
@@ -596,9 +598,42 @@ interface ComposerProps {
   /** Why nothing can be sent right now; shown in place of the hint, with the box disabled. */
   blocked?: ReactNode;
   autoFocus?: boolean;
+  /** Puts a file where the agent can read it and returns its path there. Shows the paperclip, drop and paste. */
+  attach?: (file: File) => Promise<string>;
 }
 
-export function Composer({ onSend, placeholder, blocked, autoFocus, value, onValue, large }: ComposerProps) {
+/** A file waiting to go with the next message. */
+interface Pending { id: string; file: File; preview?: string }
+
+const IMAGE = /^image\//;
+const MAX_FILE = 25 * 1024 * 1024;
+const kind = (f: File) => (IMAGE.test(f.type) ? "image" : /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name) ? "PDF" : "file");
+const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** A file as base64, for the core. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ""));
+    r.onerror = () => reject(r.error ?? new Error(`${file.name} could not be read`));
+    r.readAsDataURL(file);
+  });
+}
+
+export function Composer({ onSend, placeholder, blocked, autoFocus, value, onValue, large, attach }: ComposerProps) {
+  const [files, setFiles] = useState<Pending[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const addFiles = (list: FileList | File[] | null) => {
+    if (!attach || !list) return;
+    const next: Pending[] = [];
+    for (const f of Array.from(list)) {
+      if (f.size > MAX_FILE) { toast(`${f.name} is larger than 25 MB`, "warn"); continue; }
+      next.push({ id: `${f.name}-${f.size}-${Math.random()}`, file: f, preview: IMAGE.test(f.type) ? URL.createObjectURL(f) : undefined });
+    }
+    if (next.length) setFiles((fs) => [...fs, ...next].slice(0, 10));
+  };
+  const removeFile = (id: string) => setFiles((fs) => { fs.find((f) => f.id === id)?.preview && URL.revokeObjectURL(fs.find((f) => f.id === id)!.preview!); return fs.filter((f) => f.id !== id); });
   const toast = useToast();
   const [own, setOwn] = useState("");
   const text = value ?? own;
@@ -620,14 +655,28 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
     if (el && document.activeElement !== el) { el.focus(); el.setSelectionRange(value.length, value.length); }
   }, [value]);
 
-  const ready = !!text.trim() && !blocked && !sending;
-  const send = () => {
+  const ready = (!!text.trim() || files.length > 0) && !blocked && !sending;
+  const send = async () => {
     if (!ready) return;
     setSending(true);
-    onSend(text.trim())
-      .then(() => setText(""))
-      .catch((e) => toast(errorMessage(e), "err"))
-      .finally(() => { setSending(false); box.current?.focus(); });
+    try {
+      let message = text.trim();
+      if (files.length && attach) {
+        // Each file goes into the agent's sandbox; the message says where, so the agent reads it with its tools.
+        const lines: string[] = [];
+        for (const f of files) lines.push(`- ${await attach(f.file)} (${kind(f.file)}, ${f.file.name})`);
+        message = `${message || "Have a look at the attached files."}\n\nAttached files, in your sandbox (read them with your file tool; images and PDFs too):\n${lines.join("\n")}`;
+      }
+      await onSend(message);
+      setText("");
+      files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+      setFiles([]);
+    } catch (e) {
+      toast(errorMessage(e), "err");
+    } finally {
+      setSending(false);
+      box.current?.focus();
+    }
   };
   const [prefs] = useChatPrefs();
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -641,20 +690,43 @@ export function Composer({ onSend, placeholder, blocked, autoFocus, value, onVal
 
   return (
     <div className={`cv-compose ${large ? "large" : ""}`}>
-      <div className={`cv-composer ${blocked ? "blocked" : ""} ${large ? "large" : ""}`}>
+      {files.length > 0 && (
+        <div className="cv-files">
+          {files.map((f) => (
+            <span key={f.id} className="cv-file" title={`${f.file.name}, ${size(f.file.size)}`}>
+              {f.preview ? <img src={f.preview} alt="" /> : <span className="cv-file-kind">{kind(f.file) === "PDF" ? "PDF" : "FILE"}</span>}
+              <span className="clip">{f.file.name}</span>
+              <button className="cv-file-x" onClick={() => removeFile(f.id)} aria-label={`Remove ${f.file.name}`} disabled={sending}><X size={12} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div
+        className={`cv-composer ${blocked ? "blocked" : ""} ${large ? "large" : ""} ${dragging ? "dragging" : ""}`}
+        onDragOver={attach && !blocked ? (e) => { e.preventDefault(); setDragging(true); } : undefined}
+        onDragLeave={() => setDragging(false)}
+        onDrop={attach && !blocked ? (e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); } : undefined}
+      >
         {blocked ? (
           <span className="cv-composer-hint">{blocked}</span>
         ) : (
           <>
+            {attach && (
+              <>
+                <button type="button" className="btn ghost icon cv-attach" onClick={() => picker.current?.click()} aria-label="Attach files" title="Attach files, images or PDFs (or drop or paste them)" disabled={sending}><Paperclip size={16} /></button>
+                <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              </>
+            )}
             <textarea ref={box} rows={1} value={text} autoFocus={autoFocus} placeholder={placeholder} aria-label={placeholder}
-              onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
+              onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
+              onPaste={attach ? (e) => { const imgs = Array.from(e.clipboardData.files); if (imgs.length) { e.preventDefault(); addFiles(imgs); } } : undefined} />
             <button className="btn primary icon cv-send" onClick={send} disabled={!ready} aria-label="Send" title={text.trim() ? "Send" : "Type a message first"}>
               <ArrowUp size={16} />
             </button>
           </>
         )}
       </div>
-      {!blocked && <div className="cv-compose-note">{prefs.send === "enter" ? "Enter to send · Shift+Enter for a new line" : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send · Enter for a new line`}</div>}
+      {!blocked && <div className="cv-compose-note">{sending && files.length ? "Sending files…" : prefs.send === "enter" ? `Enter to send · Shift+Enter for a new line${attach ? " · drop or paste files" : ""}` : `${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}+Enter to send · Enter for a new line`}</div>}
     </div>
   );
 }

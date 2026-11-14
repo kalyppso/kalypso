@@ -4,7 +4,7 @@
 FROM docker.io/library/node:22-bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git curl ripgrep procps python3 \
+ && apt-get install -y --no-install-recommends ca-certificates git curl ripgrep procps python3 poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/kalypso/runner
