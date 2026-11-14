@@ -258,7 +258,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
     <header className="chat-top">
       {!fresh && (
         <span className="chat-top-orb" aria-hidden="true">
-          <Orb size={56} active={thinking} pulse={sent + received} beat={beat} />
+          <Orb size={78} active={thinking} pulse={sent + received} beat={beat} />
         </span>
       )}
       <ModelPicker master={master} />

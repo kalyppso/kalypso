@@ -274,7 +274,10 @@ fn check_spec(spec: &Spec, call: &ToolCall, secrets: &[String]) -> Option<String
                 return None;
             }
             let path = normalize_path(call.path.as_deref()?);
-            let hit = |list: &Vec<String>| list.iter().any(|p| glob(p).is_ok_and(|g| g.is_match(&path)));
+            // "/work/**" covers /work itself too: a folder's rule includes the folder.
+            let hit = |list: &Vec<String>| {
+                list.iter().any(|p| glob(p).is_ok_and(|g| g.is_match(&path)) || p.strip_suffix("/**").is_some_and(|base| path == base))
+            };
             if hit(deny) {
                 Some(format!("{path} is a protected path"))
             } else if !allow.is_empty() && !hit(allow) {
@@ -900,6 +903,12 @@ mod tests {
         assert!(evaluate(&ps, &file("/work/src/main.rs"), &[]).is_empty());
         assert!(evaluate(&ps, &file("notes/todo.md"), &[]).is_empty(), "relative to /work");
         assert!(evaluate(&ps, &file("/tmp/x"), &[]).is_empty());
+        // The workspace folder itself, however it's written (listing "." or "/work").
+        for p in ["/work", ".", "./", "/work/", "/tmp"] {
+            assert!(evaluate(&ps, &file(p), &[]).is_empty(), "{p} is inside the workspace");
+        }
+        assert!(!evaluate(&ps, &file("/"), &[]).is_empty(), "the root isn't");
+        assert!(!evaluate(&ps, &file("/workshop"), &[]).is_empty(), "a folder starting with work isn't");
         let hit = evaluate(&ps, &file("/work/../etc/shadow"), &[]);
         assert_eq!(names(&hit), ["Stay inside the workspace"]);
         assert!(hit[0].reason.starts_with("/etc/shadow is outside"));
