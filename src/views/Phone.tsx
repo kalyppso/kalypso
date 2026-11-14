@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RotateCw } from "lucide-react";
+import { SandboxTarget } from "../components/SandboxTarget";
 
 const DEVICES = [
   { id: "iphone15", label: "iPhone 15", w: 393, h: 852 },
@@ -26,9 +27,10 @@ export function PhonePane() {
         <select className="select" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} aria-label="Device">
           {DEVICES.map((d) => <option key={d.id} value={d.id}>{d.label} ({d.w}×{d.h})</option>)}
         </select>
-        <input className="input mono" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="URL" title="Tip: point this at a sandbox's forwarded port, e.g. http://localhost:5173" />
+        <input className="input mono" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="URL" />
         <button className="btn sm">Open</button>
         <button type="button" className="btn ghost sm" onClick={() => setNonce(nonce + 1)} aria-label="Reload"><RotateCw size={14} /></button>
+        <SandboxTarget onOpen={(u) => { setDraft(u); setUrl(u); setNonce(nonce + 1); }} />
       </form>
       <div className="phone-stage">
         <div className="phone">

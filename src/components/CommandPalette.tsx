@@ -4,6 +4,7 @@ import type { ViewId } from "../types";
 import { useStore } from "../store";
 import { themePatch, themes } from "../themes";
 import { NAV } from "./Sidebar";
+import { Settings as SettingsIcon } from "lucide-react";
 import { TOOLS } from "../views/Terminal";
 
 interface Command {
@@ -22,7 +23,7 @@ export function CommandPalette() {
   const close = () => dispatch({ type: "palette", open: false });
 
   const commands = useMemo<Command[]>(() => {
-    const go = NAV.flatMap((g) => g.items).map(({ id, label, icon: Icon }) => ({
+    const go = [...NAV.flatMap((g) => g.items), { id: "settings" as const, label: "Settings", icon: SettingsIcon }].map(({ id, label, icon: Icon }) => ({
       id: `go-${id}`, group: "Go to", label, icon: <Icon size={16} />,
       run: () => dispatch({ type: "view", view: id }),
     }));

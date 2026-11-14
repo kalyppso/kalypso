@@ -727,3 +727,14 @@ button.repo-row:hover, button.repo-row:focus-visible { background: var(--hover);
 
 /* ---------- No container engine yet ---------- */
 .no-engine { display: flex; align-items: center; gap: 16px; justify-content: space-between; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 10px; }
+
+/* The foot of the sidebar: your account, and Settings right beside it. */
+.sidebar-me { display: flex; align-items: center; gap: 2px; }
+.sidebar-me > .pop-wrap { flex: 1; min-width: 0; }
+.sidebar-settings { flex: none; width: 34px; height: 34px; color: var(--text-2); }
+.sidebar-settings:hover, .sidebar-settings.on { color: var(--text); }
+.user-line { font-size: 13px; }
+/* Open an app inside a sandbox, from the Browser and the Phone. */
+.sb-target { display: flex; align-items: center; gap: 6px; flex: none; padding-left: 8px; border-left: 1px solid var(--border); }
+.sb-target .select { height: 28px; max-width: 150px; font-size: 12px; }
+.sb-target .input { width: 64px; height: 28px; font-size: 12px; }
