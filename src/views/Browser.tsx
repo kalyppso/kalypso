@@ -1,3 +1,4 @@
+import { SandboxTarget } from "../components/SandboxTarget";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from "lucide-react";
 import { uid, useStore } from "../store";
@@ -83,6 +84,7 @@ export function BrowserPane() {
           <button type="button" className="btn ghost sm" onClick={() => step(1)} disabled={tab.index >= tab.history.length - 1} title="Forward" aria-label="Forward"><ArrowRight size={14} /></button>
           <button type="button" className="btn ghost sm" onClick={() => update(tab.id, (t) => ({ ...t, nonce: t.nonce + 1 }))} title="Reload" aria-label="Reload"><RotateCw size={14} /></button>
           <input className="input mono" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search or enter address" />
+          <SandboxTarget onOpen={go} />
         </form>
         {tabs.map((t) => (
           <iframe

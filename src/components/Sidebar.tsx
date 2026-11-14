@@ -66,14 +66,11 @@ export const NAV: { title: string; items: NavDef[] }[] = [
       { id: "registry", label: "Toolkit", icon: Puzzle },
     ],
   },
-  {
-    // Terminal, browser and phone live in the tools layer, opened from the status bar.
-    title: "App",
-    items: [{ id: "settings", label: "Settings", icon: Settings }],
-  },
 ];
+// Settings sits next to your account at the foot of the sidebar; terminal, browser and phone
+// live in the tools layer, opened from the status bar.
 
-export const viewLabel = (id: ViewId) => NAV.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? id;
+export const viewLabel = (id: ViewId) => (id === "settings" ? "Settings" : NAV.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? id);
 
 /** Badge counts per page, from the current namespace. */
 function useCounts(): Partial<Record<ViewId, number>> {
@@ -151,13 +148,32 @@ export function Sidebar({ rail = false, hidden = false }: { rail?: boolean; hidd
         })}
       </nav>
       <div className="sidebar-foot">
-        <UserMenu compact={rail} />
+        <div className="sidebar-me">
+          <UserMenu compact={rail} />
+          {!rail && <SettingsButton />}
+        </div>
+        {rail && <SettingsButton />}
       </div>
     </aside>
   );
 }
 
 const FOLDED_KEY = "kalypso.nav.folded";
+
+function SettingsButton() {
+  const { state, dispatch } = useStore();
+  return (
+    <button
+      className={`btn ghost icon sidebar-settings ${state.view === "settings" ? "on" : ""}`}
+      title="Settings"
+      aria-label="Settings"
+      aria-current={state.view === "settings" ? "page" : undefined}
+      onClick={() => dispatch({ type: "view", view: "settings" })}
+    >
+      <Settings size={16} />
+    </button>
+  );
+}
 
 function UserMenu({ compact = false, below = false }: { compact?: boolean; below?: boolean }) {
   const { state, dispatch } = useStore();
@@ -171,11 +187,11 @@ function UserMenu({ compact = false, below = false }: { compact?: boolean; below
           {user.name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
           <i className="presence" aria-hidden />
         </span>
-        <div style={{ minWidth: 0 }}>
-          <div className="clip" style={{ fontWeight: 500 }}>{user.name}</div>
-          <div className="faint small clip">{user.email || (user.provider === "local" ? "On this machine" : "")}</div>
+        <div className="clip user-line" style={{ minWidth: 0 }}>
+          <span style={{ fontWeight: 500 }}>{user.name}</span>
+          <span className="faint"> · {user.email || (user.provider === "local" ? "On this machine" : "")}</span>
         </div>
-        <ChevronsUpDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
+        <ChevronDown size={14} className="faint" style={{ marginLeft: "auto", flex: "none" }} />
       </button>
       {open && (
         <div className="popover" style={below ? { right: 0, left: "auto", minWidth: 220 } : { top: "auto", bottom: "calc(100% + 6px)", left: 0, right: "auto", width: compact ? 220 : "100%", minWidth: 0 }}>
