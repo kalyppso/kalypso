@@ -252,3 +252,8 @@
 .cv-file-x:hover { background: var(--card-2); color: var(--text); }
 .cv-attach { flex: none; width: 34px; height: 34px; border-radius: 50%; color: var(--text-2); }
 .cv-composer.dragging { border-color: var(--accent-hi); border-style: dashed; }
+
+/* Whatever sits left of the pinned orb stops before it. */
+.chat-top-who { min-width: 0; max-width: calc(50% - 160px); overflow: hidden; }
+.chat-top-who .chat-head-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-top .chat-model { max-width: calc(50% - 60px); overflow: hidden; }

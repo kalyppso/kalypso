@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, KeyRound, MessageSquare, Pause, Play, Plus, Settings2, SlidersHorizontal, Square } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import type { AgentEvent } from "../bindings/AgentEvent";
-import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate } from "../components/Conversation";
+import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate, useOrbState } from "../components/Conversation";
 import { Skeleton, Status } from "../components/ui";
 import { Orb } from "../components/Orb";
 import { Pecten } from "../components/Pecten";
@@ -402,6 +402,7 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
   const { state, dispatch } = useStore();
   const convo = useAgentConversation(state.ns, a);
   const gate = useAgentGate(a, () => syncNamespace(state.ns, dispatch));
+  const orb = useOrbState(convo.events, gate.working, convo.loading);
   // Its replies, counted once the transcript has loaded: each new one fans the shell open.
   const replies = convo.events.filter((e) => e.kind === "text" || e.kind === "result" || e.kind === "error").length;
   const [received, setReceived] = useState(0);
@@ -422,7 +423,8 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
       <header className="chat-top">
         <button className="btn ghost sm icon" onClick={onBack} title="Back to kalypso (Esc)" aria-label="Back to kalypso"><ArrowLeft size={14} /></button>
         <span className="chat-crew-mark"><Pecten size={38} active={gate.working} pulse={received} label={`${a.name}${gate.working ? ", working" : ""}`} /></span>
-        <div style={{ minWidth: 0 }}>
+        <span className="chat-top-orb" aria-hidden="true"><Orb size={78} active={orb.thinking} pulse={orb.received} /></span>
+        <div className="chat-top-who">
           <div className="chat-head-name"><span className="clip">{a.name}</span><Status value={a.status} /></div>
           <div className="chat-head-sub clip"><span className="mono">{a.model || a.runtime}</span>{a.role ? ` · ${a.role}` : ""}</div>
         </div>

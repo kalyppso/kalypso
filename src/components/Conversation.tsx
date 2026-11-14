@@ -74,6 +74,28 @@ export function toItems(events: AgentEvent[], runs: AgentRun[] = []): Item[] {
   return items;
 }
 
+// ---------- The pinned orb's state ----------
+
+/**
+ * For the orb pinned on top of a chat: thinking while the last message is unanswered (or one is on
+ * its way), and a count that rises with each reply that arrives after the chat loaded.
+ */
+export function useOrbState(events: AgentEvent[], working: boolean, loading: boolean, pending?: unknown) {
+  const kinds = events.map((e) => e.kind);
+  const lastIn = kinds.lastIndexOf("input");
+  const lastEnd = Math.max(kinds.lastIndexOf("result"), kinds.lastIndexOf("error"));
+  const thinking = !!pending || (working && lastIn > lastEnd);
+  const replies = kinds.filter((k) => k === "text" || k === "result").length;
+  const [received, setReceived] = useState(0);
+  const seen = useRef<number | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    if (seen.current !== null && replies > seen.current) setReceived((n) => n + 1);
+    seen.current = replies;
+  }, [replies, loading]);
+  return { thinking, received };
+}
+
 // ---------- Loading and following an agent's conversation ----------
 
 const RUNS_PER_PAGE = 4;

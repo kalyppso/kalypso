@@ -95,3 +95,8 @@
 .gear-add { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border: 1px dashed var(--border-strong); border-radius: 99px; background: none; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }
 .gear-add:hover { color: var(--text); border-color: var(--text-3); }
 .gear-pop { min-width: 240px; max-height: 300px; overflow: auto; }
+/* The side panel scrolls, which would clip a floating list: + Add opens its list inline, on its own row. */
+.gear-chips .pop-wrap { display: contents; }
+.gear-chips .popover.gear-pop { position: static; flex-basis: 100%; width: 100%; min-width: 0; margin-top: 2px; box-shadow: none; animation: none; }
+/* The orb, pinned on top of the agent's conversation. */
+.agent-orb { display: grid; place-items: center; flex: none; padding: 10px 0 2px; }
