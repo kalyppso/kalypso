@@ -47,3 +47,6 @@
 .clamp-2, .clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 .clamp-2 { -webkit-line-clamp: 2; }
 .clamp-3 { -webkit-line-clamp: 3; }
+
+/* An MCP server's variables or headers: name, where the value comes from, the value. */
+.mcp-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1.4fr) auto; gap: 6px; align-items: center; }

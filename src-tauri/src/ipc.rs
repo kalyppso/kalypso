@@ -774,3 +774,24 @@ pub async fn agent_attach(s: State<'_, AppState>, ns: String, id: String, name: 
         .map_err(|_| KalypsoError::Invalid(format!("{name} could not be read")))?;
     sandbox::attach(&s.db, &s.rt, &ns, &sb, &name, &bytes).await
 }
+
+// MCP servers (#25): tools for agents.
+
+#[tauri::command]
+pub fn mcp_list(s: State<'_, AppState>, ns: String) -> Result<Vec<crate::mcp::McpServer>> {
+    ensure_ns(&s, &ns)?;
+    crate::mcp::list(&s.db, &ns)
+}
+
+/// Add or change a server. Agents pick it up from their next start.
+#[tauri::command]
+pub fn mcp_save(s: State<'_, AppState>, ns: String, server: crate::mcp::McpInput) -> Result<crate::mcp::McpServer> {
+    ensure_ns(&s, &ns)?;
+    crate::mcp::save(&s.db, &ns, server)
+}
+
+#[tauri::command]
+pub fn mcp_delete(s: State<'_, AppState>, ns: String, id: String) -> Result<()> {
+    ensure_ns(&s, &ns)?;
+    crate::mcp::delete(&s.db, &ns, &id)
+}

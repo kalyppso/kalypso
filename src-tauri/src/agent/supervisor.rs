@@ -174,7 +174,12 @@ impl Supervisor {
                 tracing::warn!(agent = %agent.name, error = %e, "could not put together the agent's prompts");
                 String::new()
             });
-            let ctx = AgentCtx { agent: &agent, sandbox_id: &live.sandbox_id, provider: live.provider.clone(), extra };
+            // Its MCP servers, also read at each start, so switching one off applies from the next run.
+            let mcp = crate::mcp::config_for(&self.db, &agent).map(|v| v.to_string()).unwrap_or_else(|e| {
+                tracing::warn!(agent = %agent.name, error = %e, "could not read the agent's MCP servers");
+                "{}".into()
+            });
+            let ctx = AgentCtx { agent: &agent, sandbox_id: &live.sandbox_id, provider: live.provider.clone(), extra, mcp };
             let run = match rt.start(&ctx).await {
                 Ok(r) => r,
                 Err(e) => {

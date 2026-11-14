@@ -200,11 +200,13 @@ A local HTTP proxy (`src-tauri/src/gateway/`) that every model request goes thro
 
 ### 4.7 Skills and MCP registry
 - **Skills** are folders containing a `SKILL.md`, installed from local paths or git. They are versioned, and mounted read-only into a sandbox at `/opt/kalypso/skills/<name>` when attached to an agent.
-- **MCP servers** come in two kinds:
-  - `stdio` servers run *inside* the agent's sandbox, so their filesystem access is limited by the sandbox.
-  - `http` and `sse` servers are reached through the namespace network or the egress allow-list.
-- For each agent, KALYPSO writes an `mcp.json` (shown behind "Show generated mcp.json").
-- A health checker connects every 60 s and calls `tools/list` to fill in the tool count and health status.
+- **MCP servers** (`src-tauri/src/mcp.rs`, tables `mcp_servers` and `mcp_agents`) are kept per namespace, managed in Toolkit, and come in two kinds:
+  - `stdio` servers run *inside* the agent's sandbox, started by its runner, so their filesystem and network access are the sandbox's.
+  - `http` and `sse` servers are reached from the sandbox: through the namespace network, or the egress proxy and its allow-list for `internet` sandboxes (#33).
+- Each server goes to every agent, chosen agents, or kalypso only, and can be switched off. At each start the supervisor builds the agent's config (`mcp::config_for`) and passes it as `KALYPSO_MCP`; the Claude runner hands it to the SDK as `mcpServers`.
+- Environment variables and headers can name a secret (`{"secret": "NAME"}`) instead of a value. The runner reads it from the secrets delivered to that sandbox when it starts, so values never sit in the server's config or the agent's prompt; a server whose secret isn't delivered is skipped with a note in the transcript.
+- Every tool call a server serves is checked against the namespace's rules (`kind: "mcp"`), like any other tool call.
+- Not yet: MCP for agents on the OpenAI-compatible runtime, and a health checker calling `tools/list`.
 
 ### 4.8 Integrated browser
 - Each tab is a Tauri 2 **child webview** placed in the content area (`Window::add_child`, behind the `unstable` feature). Unlike the prototype's iframe, it can't be blocked by `X-Frame-Options`.

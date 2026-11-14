@@ -29,6 +29,8 @@ import type { PolicyEvent as PolicyEventRecord } from "./bindings/PolicyEvent";
 import type { PolicyPatch } from "./bindings/PolicyPatch";
 import type { GatewayInfo } from "./bindings/GatewayInfo";
 import type { Prompt } from "./bindings/Prompt";
+import type { McpServer } from "./bindings/McpServer";
+import type { McpInput } from "./bindings/McpInput";
 import type { ModelProvider } from "./bindings/ModelProvider";
 import type { ProviderInput } from "./bindings/ProviderInput";
 import type { Task as TaskRecord } from "./bindings/Task";
@@ -120,6 +122,9 @@ export const api = {
   providerRemove: (ns: string, id: string) => invoke<void>("provider_remove", { ns, id }),
   providerModels: (ns: string, id: string) => invoke<string[]>("provider_models", { ns, id }),
   masterNewChat: (ns: string) => invoke<AgentRecord | null>("master_new_chat", { ns }),
+  mcpList: (ns: string) => invoke<McpServer[]>("mcp_list", { ns }),
+  mcpSave: (ns: string, server: McpInput) => invoke<McpServer>("mcp_save", { ns, server }),
+  mcpDelete: (ns: string, id: string) => invoke<void>("mcp_delete", { ns, id }),
   taskList: (ns: string) => invoke<TaskRecord[]>("task_list", { ns }),
   taskCreate: (ns: string, task: NewTask) => invoke<TaskRecord>("task_create", { ns, task }),
   taskUpdate: (ns: string, id: string, patch: TaskPatch) => invoke<TaskRecord>("task_update", { ns, id, patch }),
