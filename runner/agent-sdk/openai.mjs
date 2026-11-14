@@ -73,7 +73,7 @@ function post(urlPath, payload, timeoutMs = 600_000) {
         res.on("end", () => {
           let parsed = data;
           try { parsed = JSON.parse(data); } catch { /* not JSON: keep the text */ }
-          resolve({ status: res.statusCode, body: parsed });
+          resolve({ status: res.statusCode, body: parsed, headers: res.headers });
         });
       },
     );
@@ -201,7 +201,42 @@ function modelError(status, body) {
   if (status === 401) return `The gateway has no working key for ${PROVIDER}: ${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_API_KEY (gateway scope) in the Vault page.`;
   if (status === 400 && /BASE_URL/.test(msg)) return `${msg}. Add ${PROVIDER.toUpperCase().replace(/-/g, "_")}_BASE_URL (gateway scope) in the Vault page, for example http://localhost:11434/v1 for Ollama on this machine.`;
   if (status === 402) return `Budget: ${msg}`;
+  if (status === 429) return `${PROVIDER} kept rate limiting after ${MAX_ATTEMPTS} tries: ${msg}`;
   return `${PROVIDER} answered ${status}: ${msg}`;
+}
+
+// Rate limits and overloaded servers pass: wait as long as the provider asks, then try again.
+const RETRY = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
+const MAX_ATTEMPTS = 8;
+const MAX_WAIT_MS = 120_000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** How long the provider asked us to wait, in ms: retry-after, its rate-limit reset headers, or "try again in 10.8s". */
+function waitFor(res, attempt) {
+  const h = res.headers ?? {};
+  const after = Number(h["retry-after"]);
+  if (Number.isFinite(after) && after >= 0) return after * 1000;
+  const msg = typeof res.body === "object" ? JSON.stringify(res.body) : String(res.body ?? "");
+  const m = msg.match(/try again in\s+(?:(\d+)m)?\s*([\d.]+)\s*(ms|s)\b/i);
+  if (m) return (Number(m[1] || 0) * 60 + (m[3] === "ms" ? Number(m[2]) / 1000 : Number(m[2]))) * 1000;
+  for (const k of ["x-ratelimit-reset-tokens", "x-ratelimit-reset-requests", "x-ratelimit-reset"]) {
+    const v = String(h[k] ?? "").match(/^(?:(\d+)m)?([\d.]+)(ms|s)?$/);
+    if (v) return (Number(v[1] || 0) * 60 + (v[3] === "ms" ? Number(v[2]) / 1000 : Number(v[2]))) * 1000;
+  }
+  return Math.min(2000 * 2 ** (attempt - 1), 60_000);
+}
+
+/** One model call, retried through rate limits and passing server errors, saying so in the transcript. */
+async function complete(payload) {
+  for (let attempt = 1; ; attempt++) {
+    const res = await post(`/${PROVIDER}/chat/completions`, payload);
+    if (res.status === 200 || !RETRY.has(res.status) || attempt >= MAX_ATTEMPTS) return res;
+    // A little extra, and a little jitter, so parallel agents don't all come back at once.
+    const wait = Math.min(MAX_WAIT_MS, Math.ceil(waitFor(res, attempt) + 500 + Math.random() * 1000));
+    const why = res.status === 429 ? `${PROVIDER} is rate limiting` : `${PROVIDER} answered ${res.status}`;
+    emit({ t: "status", text: `${why}; trying again in ${Math.round(wait / 1000)} s (attempt ${attempt + 1} of ${MAX_ATTEMPTS})` });
+    await sleep(wait);
+  }
 }
 
 async function work(task) {
@@ -212,7 +247,7 @@ async function work(task) {
     turns++;
     let res;
     try {
-      res = await post(`/${PROVIDER}/chat/completions`, { model: MODEL, messages, tools: toolSpecs, tool_choice: "auto", ...effortParams() });
+      res = await complete({ model: MODEL, messages, tools: toolSpecs, tool_choice: "auto", ...effortParams() });
     } catch (e) {
       emit({ t: "error", text: `Couldn't reach the model through KALYPSO: ${e.message}` });
       return;

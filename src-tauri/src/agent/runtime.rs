@@ -240,7 +240,7 @@ fn sdk_event(e: Event) -> Event {
         Some("result") => "result",
         Some("policy") => "policy",
         Some("error") => "error",
-        Some("ready") => "status",
+        Some("ready") | Some("status") => "status",
         _ => return e,
     };
     Event { kind, text }
@@ -312,6 +312,7 @@ mod sdk_tests {
         let ev = |l: &str| sdk_event(Event::output(l));
         assert_eq!(ev(r#"{"t":"tool","text":"Bash  ls"}"#), Event { kind: "tool", text: "Bash  ls".into() });
         assert_eq!(ev(r#"{"t":"ready","text":"claude-haiku-5-5"}"#).kind, "status");
+        assert_eq!(ev(r#"{"t":"status","text":"groq is rate limiting; trying again in 12 s"}"#).kind, "status");
         assert_eq!(ev("plain words"), Event::output("plain words"));
         assert_eq!(ev(r#"{"t":"nope"}"#).kind, "output");
         assert_eq!(ClaudeSdkRuntime.encode("hi\nthere"), b"{\"text\":\"hi\\nthere\",\"type\":\"message\"}\n".to_vec());
