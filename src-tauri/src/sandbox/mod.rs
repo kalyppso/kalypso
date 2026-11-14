@@ -352,7 +352,7 @@ pub const SECRETS_DIR: &str = "/run/kalypso/secrets";
 pub async fn deliver_secrets(db: &Db, vault: &Vault, rt: &Runtime, ns: &str, id: &str) -> Result<usize> {
     let rec = get(db, ns, id)?;
     let p = provider_for(rt, &rec)?;
-    let mut secrets = vault.for_delivery(db, ns)?;
+    let mut secrets = vault.for_delivery(db, ns, id)?;
     // Model keys stay with the gateway; the sandbox gets a key that only works through it.
     secrets.push(("KALYPSO_GATEWAY_KEY".to_string(), crate::gateway::mint_for_sandbox(db, ns, id, &rec.name)?));
     let (code, out) = p.exec(ns, id, &["sh", "-c", &format!("rm -f {SECRETS_DIR}/*")], false).await?;

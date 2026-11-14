@@ -165,12 +165,17 @@ impl Vault {
         String::from_utf8(plain).map_err(|_| KalypsoError::Vault("secret is not valid UTF-8".into()))
     }
 
-    /// Decrypt the secrets every sandbox in the namespace receives (scope `namespace`).
-    /// Callers audit the delivery; this does not count as a user reveal.
-    pub fn for_delivery(&self, db: &Db, ns: &str) -> Result<Vec<(String, String)>> {
+    /// Decrypt the secrets a sandbox receives: the namespace's (scope `namespace`), plus the
+    /// agent-scoped ones granted to agents that run in it. Callers audit the delivery; this
+    /// does not count as a user reveal.
+    pub fn for_delivery(&self, db: &Db, ns: &str, sandbox_id: &str) -> Result<Vec<(String, String)>> {
         let rows: Vec<(String, Vec<u8>, Vec<u8>)> = db.with(|c| {
-            let mut st = c.prepare("SELECT key, ciphertext, nonce FROM secrets WHERE ns = ?1 AND scope = 'namespace' ORDER BY key")?;
-            let rows = st.query_map([ns], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            let mut st = c.prepare(
+                "SELECT key, ciphertext, nonce FROM secrets WHERE ns = ?1 AND (scope = 'namespace' OR (scope = 'agent' AND id IN
+                   (SELECT g.secret_id FROM agent_secrets g JOIN agents a ON a.id = g.agent_id WHERE a.sandbox_id = ?2)))
+                 ORDER BY key",
+            )?;
+            let rows = st.query_map([ns, sandbox_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         })?;
         if rows.is_empty() {
@@ -356,7 +361,7 @@ mod tests {
         v.set(&db, "work", "SHARED", "s", "namespace").unwrap();
         v.set(&db, "work", "PRIVATE", "p", "agent").unwrap();
         v.set(&db, "lab", "OTHER_NS", "o", "namespace").unwrap();
-        assert_eq!(v.for_delivery(&db, "work").unwrap(), vec![("SHARED".to_string(), "s".to_string())]);
+        assert_eq!(v.for_delivery(&db, "work", "sb-none").unwrap(), vec![("SHARED".to_string(), "s".to_string())]);
     }
 
     #[test]

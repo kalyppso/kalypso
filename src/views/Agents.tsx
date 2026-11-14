@@ -275,7 +275,9 @@ function NewAgent({ onClose }: { onClose: () => void }) {
 function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void }) {
   const { state, dispatch } = useStore();
   const toast = useToast();
-  const { sandboxes } = useNamespaced();
+  const { sandboxes, secrets } = useNamespaced();
+  // What reaches its sandbox: the namespace's secrets and those granted to it.
+  const itsSecrets = secrets.filter((x) => x.scope === "namespace" || (a.secrets ?? []).includes(x.id)).map((x) => x.key);
   const sb = sandboxes.find((s) => s.id === a.sandboxId);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -352,6 +354,9 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
             ]}
           />
           <button className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => setEditing(true)}><Pencil size={12} /> Edit settings</button>
+          <Section title="Secrets">
+            <Chips items={itsSecrets} mono />
+          </Section>
           <RepoSection agent={a} />
           <Section title={runner ? "First task" : "Command"}>
             {runner ? <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{a.command || <span className="faint">None. Send it a message to give it work.</span>}</p> : <code className="mono small">{a.command || "None set"}</code>}
@@ -379,6 +384,8 @@ function EditAgent({ agent: a, onClose }: { agent: Agent; onClose: () => void })
   const [restart, setRestart] = useState(a.restart ?? "on-failure");
   const [maxRestarts, setMaxRestarts] = useState(String(a.maxRestarts ?? 3));
   const [maxTurns, setMaxTurns] = useState(String(a.maxTurns ?? 0));
+  const [granted, setGranted] = useState<string[]>(a.secrets ?? []);
+  const grantable = useNamespaced().secrets.filter((x) => x.scope === "agent");
   const [saving, setSaving] = useState(false);
 
   // Models from every connected provider, grouped; the current one stays listed even if its provider isn't.
@@ -403,13 +410,15 @@ function EditAgent({ agent: a, onClose }: { agent: Agent; onClose: () => void })
     if (restart !== a.restart) patch.restart = restart;
     if ((+maxRestarts || 0) !== a.maxRestarts) patch.max_restarts = Math.max(0, +maxRestarts || 0);
     if ((+maxTurns || 0) !== a.maxTurns) patch.max_turns = Math.max(0, +maxTurns || 0);
+    if ([...granted].sort().join() !== [...(a.secrets ?? [])].sort().join()) patch.secrets = granted;
     if (Object.keys(patch).length === 0) return onClose();
     setSaving(true);
     try {
       await api.agentUpdate(state.ns, a.id, patch);
       await syncNamespace(state.ns, dispatch);
       // Name and role show at once; the rest is how it runs, so it takes a restart.
-      const needsRestart = Object.keys(patch).some((k) => k !== "name" && k !== "role");
+      // Secrets reach a running sandbox at once.
+      const needsRestart = Object.keys(patch).some((k) => k !== "name" && k !== "role" && k !== "secrets");
       const active = ["running", "starting", "restarting", "paused"].includes(a.status);
       if (needsRestart && active && confirm(`Restart ${n} now so the changes apply? Otherwise they apply from its next start.`)) {
         await api.agentStop(state.ns, a.id);
@@ -484,6 +493,22 @@ function EditAgent({ agent: a, onClose }: { agent: Agent; onClose: () => void })
         <label className="field">{runner ? "Turns per task" : "Turns per run"}
           <input className="input mono" type="number" min={0} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} />
         </label>
+      </div>
+      <div className="field" role="group" aria-labelledby="agent-secrets">
+        <span id="agent-secrets">Secrets</span>
+        {grantable.length === 0 ? (
+          <span className="faint small">No secrets for chosen agents yet. In the Vault, add one with "Only agents you choose". Secrets for every agent reach it anyway.</span>
+        ) : (
+          <div className="grant-list">
+            {grantable.map((x) => (
+              <label key={x.id} className="grant-item">
+                <input type="checkbox" checked={granted.includes(x.id)} onChange={(e) => setGranted(e.target.checked ? [...granted, x.id] : granted.filter((g) => g !== x.id))} />
+                <span className="mono">{x.key}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <span className="faint small">Delivered to its sandbox as files in /run/kalypso/secrets, at once if it's running. Agents sharing that sandbox can read them too.</span>
       </div>
       <ModalActions onCancel={onClose} onConfirm={save} confirm={saving ? "Saving…" : "Save"} />
     </Modal>

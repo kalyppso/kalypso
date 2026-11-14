@@ -45,4 +45,8 @@ master: boolean,
  * How hard the model thinks: "low", "medium", "high", "xhigh" or "max"; empty for the
  * model's own default. Fixed for a run, because changing it mid-conversation breaks the cache.
  */
-effort: string, };
+effort: string, 
+/**
+ * Agent-scoped secrets granted to it (secret ids), delivered to its sandbox.
+ */
+secrets: Array<string>, };
