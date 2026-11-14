@@ -6,6 +6,8 @@ import { CodeReveal, EmptyState, Field, Modal, ModalActions, PageHead, PreviewNo
 import { BrandIcon } from "./Auth";
 import { lookupSkills, parseRepo, type SkillLookup } from "../github";
 import "../styles/integrations.css";
+import { isLive } from "../backend";
+import { McpServers } from "../components/McpServers";
 
 export function Registry() {
   const { state, dispatch } = useStore();
@@ -33,14 +35,14 @@ export function Registry() {
 
       {tab === "skills"
         ? <PreviewNote issue={24}>Skills you add are kept on this machine, but agents don't get them yet. That arrives with the skills registry in</PreviewNote>
-        : <PreviewNote issue={25}>Turning a server on or off is kept on this machine; agents get MCP servers with the registry in</PreviewNote>}
+        : !isLive() && <PreviewNote issue={25}>Turning a server on or off is kept on this machine; agents get MCP servers with the registry in</PreviewNote>}
 
       <div className="ptabs" role="tablist">
         <button role="tab" aria-selected={tab === "skills"} className={`ptab ${tab === "skills" ? "active" : ""}`} onClick={() => setTab("skills")}>
           <Sparkles size={13} /> Skills <span className="ptab-count">{state.skills.length}</span>
         </button>
         <button role="tab" aria-selected={tab === "mcps"} className={`ptab ${tab === "mcps" ? "active" : ""}`} onClick={() => setTab("mcps")}>
-          <Plug size={13} /> MCP servers <span className="ptab-count">{state.mcps.length}</span>
+          <Plug size={13} /> MCP servers {!isLive() && <span className="ptab-count">{state.mcps.length}</span>}
         </button>
       </div>
 
@@ -71,6 +73,8 @@ export function Registry() {
             </EmptyState>
           )}
         </div>
+      ) : isLive() ? (
+        <McpServers />
       ) : (
         <>
           <div className="card flush" style={{ marginBottom: 20 }}>

@@ -10,6 +10,7 @@ pub mod forward;
 pub mod gateway;
 pub mod github;
 pub mod ipc;
+pub mod mcp;
 pub mod ns;
 pub mod policy;
 pub mod prompts;
@@ -127,6 +128,9 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ipc::provider_remove,
         ipc::provider_models,
         ipc::agent_attach,
+        ipc::mcp_list,
+        ipc::mcp_save,
+        ipc::mcp_delete,
         ipc::task_list,
         ipc::task_create,
         ipc::task_update,

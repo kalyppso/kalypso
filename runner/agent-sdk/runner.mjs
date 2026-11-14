@@ -198,8 +198,35 @@ const append = [
   .filter(Boolean)
   .join("\n");
 
+// MCP servers KALYPSO gives this agent (Toolkit, #25). Values like {"secret": "NAME"} come from
+// the secrets KALYPSO delivered to this sandbox; a server whose secret isn't here is skipped.
+const SECRETS = path.dirname(KEY_FILE);
+function mcpServers() {
+  let cfg = {};
+  try { cfg = JSON.parse(process.env.KALYPSO_MCP || "{}"); } catch { return undefined; }
+  const out = {};
+  for (const [name, server] of Object.entries(cfg)) {
+    const field = server.type === "stdio" ? "env" : "headers";
+    const values = {};
+    let missing = null;
+    for (const [k, v] of Object.entries(server[field] ?? {})) {
+      if (v && typeof v === "object" && v.secret) {
+        try { values[k] = fs.readFileSync(path.join(SECRETS, v.secret), "utf8").trim(); } catch { missing = v.secret; }
+      } else values[k] = String(v);
+    }
+    if (missing) {
+      emit({ t: "status", text: `MCP server ${name} skipped: it needs the secret ${missing}, which this agent doesn't have` });
+      continue;
+    }
+    // stdio servers start with the agent's environment plus their own variables.
+    out[name] = server.type === "stdio" ? { type: "stdio", command: server.command, args: server.args ?? [], env: { ...process.env, ...values } } : { type: server.type, url: server.url, headers: values };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 const options = {
   model: process.env.KALYPSO_MODEL || undefined,
+  mcpServers: mcpServers(),
   // Reasoning effort from the agent's settings; unset keeps the model's default. Fixed for the
   // run: changing it mid-conversation would invalidate the prompt cache.
   effort: process.env.KALYPSO_EFFORT || undefined,
