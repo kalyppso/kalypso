@@ -8,6 +8,7 @@ import type { Agent } from "../types";
 import { RepoPicker, type RepoChoice } from "../components/RepoPicker";
 import { providerModels, useModelChoices, useProviders } from "../components/Providers";
 import { Pecten } from "../components/Pecten";
+import { Logo } from "../components/Logo";
 import type { AgentPatch } from "../bindings/AgentPatch";
 import { openSettings } from "./Settings";
 import type { PullRequest } from "../bindings/PullRequest";
@@ -102,7 +103,7 @@ function AgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => void })
       }
       conversation={
         <>
-          <Conversation events={convo.events} working={false} empty={<>No runs yet. Start {a.name} and what it does shows up here.</>} />
+          <Conversation events={convo.events} working={false} who={{ name: a.name, mark: a.master ? <Logo size={26} fine /> : <Pecten size={26} /> }} empty={<>No runs yet. Start {a.name} and what it does shows up here.</>} />
           <Composer onSend={convo.send} placeholder={`Message ${a.name}`} />
         </>
       }
@@ -327,6 +328,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       conversation={
         <>
           <Conversation
+            who={{ name: a.name, mark: a.master ? <Logo size={26} fine /> : <Pecten size={26} active={gate.working} pulse={received} /> }}
             events={convo.events}
             runs={convo.runs}
             loading={convo.loading}

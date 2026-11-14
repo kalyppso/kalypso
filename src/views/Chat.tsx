@@ -278,7 +278,7 @@ function MasterThread({ master, events, runs, loading, past, toLatest, send: sam
   return (
     <section className="chat-main" aria-label="Conversation with kalypso">
       {head}
-      <Conversation events={events} runs={runs} loading={loading} working={working} pending={pending} onRetry={past ? undefined : retry} />
+      <Conversation events={events} runs={runs} loading={loading} working={working} pending={pending} onRetry={past ? undefined : retry} who={{ name: "kalypso", mark: <Logo size={26} fine /> }} />
       {past ? (
         <div className="cv-composer blocked"><div className="cv-composer-foot"><span className="cv-composer-hint">This is an earlier chat. <button className="link" onClick={toLatest}>Go to the current one</button> to keep talking.</span></div></div>
       ) : (
@@ -402,6 +402,7 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
         <button className="btn ghost sm" onClick={() => dispatch({ type: "view", view: "agents", focus: a.id })}><SlidersHorizontal size={12} /> Details</button>
       </header>
       <Conversation events={convo.events} runs={convo.runs} loading={convo.loading} working={gate.working} onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}
+        who={{ name: a.name, mark: <Pecten size={26} active={gate.working} pulse={received} /> }}
         empty={<div className="chat-crew-empty"><Pecten size={96} active={gate.working} pulse={received} /><span>{gate.working ? `${a.name} is working on it.` : `${a.name} hasn't done anything yet. Send it a message to give it work.`}</span></div>} />
       <Composer onSend={convo.send} placeholder={`Message ${a.name} directly`} blocked={gate.blocked} />
     </section>
