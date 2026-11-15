@@ -400,6 +400,7 @@ function ConnectModel({ master }: { master: Agent | undefined }) {
 /** One agent's own conversation, opened from the list. */
 function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }) {
   const { state, dispatch } = useStore();
+  const toast = useToast();
   const convo = useAgentConversation(state.ns, a);
   const gate = useAgentGate(a, () => syncNamespace(state.ns, dispatch));
   const orb = useOrbState(convo.events, gate.working, convo.loading);
@@ -429,6 +430,13 @@ function MemberThread({ agent: a, onBack }: { agent: Agent; onBack: () => void }
           <div className="chat-head-sub clip"><span className="mono">{a.model || a.runtime}</span>{a.role ? ` · ${a.role}` : ""}</div>
         </div>
         <span className="spacer" />
+        <button
+          className="btn ghost sm"
+          title="Clear its history: the next message starts a fresh conversation. Earlier runs stay readable."
+          onClick={() => api.agentNewConversation(state.ns, a.id).then(() => syncNamespace(state.ns, dispatch)).then(() => toast(`New conversation with ${a.name}. It starts again with your next message.`)).catch((e) => toast(errorMessage(e), "err"))}
+        >
+          <Plus size={12} /> New conversation
+        </button>
         <button className="btn ghost sm" onClick={() => dispatch({ type: "view", view: "agents", focus: a.id })}><SlidersHorizontal size={12} /> Details</button>
       </header>
       <Conversation events={convo.events} runs={convo.runs} loading={convo.loading} working={gate.working} onShowEarlier={convo.hasEarlier ? convo.showEarlier : undefined}

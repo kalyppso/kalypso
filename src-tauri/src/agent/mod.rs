@@ -486,6 +486,30 @@ pub fn update(db: &Db, ns: &str, id: &str, p: AgentPatch) -> Result<AgentRecord>
     get(db, ns, id)
 }
 
+/// Start the agent's conversation afresh: it stops, and the session its runner resumes from is
+/// removed, so the next message starts with a clean history. Earlier runs stay readable.
+pub async fn new_conversation(
+    db: &Db,
+    rt: &crate::sandbox::Runtime,
+    sup: &supervisor::Supervisor,
+    ns: &str,
+    id: &str,
+) -> Result<AgentRecord> {
+    let a = get(db, ns, id)?;
+    sup.stop(ns, id, "new conversation").await?;
+    if let Some(sb) = &a.sandbox_id {
+        if crate::sandbox::get(db, ns, sb)?.status == "running" {
+            let dir = format!("/work/.kalypso/agents/{id}");
+            let files = [format!("{dir}/session"), format!("{dir}/openai-messages.json")];
+            let mut cmd = vec!["rm", "-f"];
+            cmd.extend(files.iter().map(String::as_str));
+            crate::sandbox::exec(rt, ns, sb, &cmd, false).await?;
+        }
+    }
+    db.audit(Some(ns), "user", "agent.new_conversation", &a.name)?;
+    get(db, ns, id)
+}
+
 /// Remove an agent and its runs. The caller stops it first.
 pub fn delete(db: &Db, ns: &str, id: &str) -> Result<()> {
     let a = get(db, ns, id)?;

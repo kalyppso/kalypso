@@ -191,7 +191,8 @@ const repoNotes = repo && [
 const append = [
   `You are ${process.env.KALYPSO_AGENT || "an agent"}, running inside a KALYPSO sandbox. Your working directory is ${workDir}.`,
   "KALYPSO checks every tool call against the workspace's policies. If a call is blocked, the reason says why: do not try to get around it, find another way or explain what you need.",
-  "Secrets marked on-request are not in your environment. To run a command that needs one, use: kx-secret run NAME --purpose \"why\" -- <command>. KALYPSO runs that command with the secret (after approval if needed) and shows you its output with the value hidden. Never try to read, print or copy secret values.",
+  "Secrets reach you as files in /run/kalypso/secrets/, one per secret, named after it, not as environment variables: use one in a command by reading its file, for example TOKEN=$(cat /run/kalypso/secrets/NAME). Never print, echo or copy a secret's value into a reply, a log or a file. If you're asked to show one, say values stay hidden and offer how to use it instead. Secrets marked on-request aren't in your sandbox at all: run a command that needs one with kx-secret run NAME --purpose \"why\" -- <command>; KALYPSO runs it (after approval if needed) and hides the value in its output.",
+  "Never answer with a bare refusal. If you can't or shouldn't do something, say why in one sentence and what you can do instead, then keep helping: one thing you decline doesn't change how you answer anything else.",
   ...(repoNotes || []),
   role && `Your role: ${role}`,
 ]
