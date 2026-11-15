@@ -836,3 +836,10 @@ pub fn prompt_assign(s: State<'_, AppState>, ns: String, id: String, agent_id: S
     ensure_ns(&s, &ns)?;
     crate::prompts::assign(&s.db, &ns, &id, &agent_id, on)
 }
+
+/// Start an agent's conversation afresh (a stuck or long history); earlier runs stay readable.
+#[tauri::command]
+pub async fn agent_new_conversation(s: State<'_, AppState>, ns: String, id: String) -> Result<AgentRecord> {
+    ensure_ns(&s, &ns)?;
+    agent::new_conversation(&s.db, &s.rt, &s.agents, &ns, &id).await
+}

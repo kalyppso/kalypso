@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, Bot, ChevronRight, Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, MessageSquarePlus, Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { api, errorMessage, isLive, syncNamespace, toAgent } from "../backend";
 import { uid, useNamespaced, useStore, useToast, useCompose, useFocus } from "../store";
 import { Composer, Conversation, fileToBase64, useAgentConversation, useAgentGate, useOrbState } from "../components/Conversation";
@@ -315,6 +315,7 @@ function LiveAgentDetail({ agent: a, onBack }: { agent: Agent; onBack: () => voi
       actions={
         <>
           <button className="btn" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
+          <button className="btn" disabled={busy} title="Clear its history: the next message starts a fresh conversation. Earlier runs stay readable." onClick={() => act(`New conversation with ${a.name}. It starts again with your next message.`, () => api.agentNewConversation(state.ns, a.id))}><MessageSquarePlus size={13} /> New conversation</button>
           {a.status === "running" && <button className="btn" disabled={busy} onClick={() => act(`${a.name} paused`, () => api.agentPause(state.ns, a.id))}><Pause size={13} /> Pause</button>}
           {a.status === "paused" && <button className="btn" disabled={busy} onClick={() => act(`${a.name} resumed`, () => api.agentResume(state.ns, a.id))}><Play size={13} /> Resume</button>}
           {active ? (
