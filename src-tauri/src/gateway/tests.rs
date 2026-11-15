@@ -716,3 +716,60 @@ async fn only_the_master_agent_manages_agents() {
     let audit = db.audit_list(Some("work"), Some("master.agent"), 10).unwrap();
     assert!(audit.iter().any(|a| a.actor == "kalypso" && a.action == "master.agent.stop" && a.target == "scout"));
 }
+
+#[test]
+fn secret_values_are_replaced_however_they_appear() {
+    let secrets = vec![
+        ("DEPLOY_TOKEN".to_string(), "dpl_9f8e7d6c5b4a".to_string()),
+        ("DB_URL".to_string(), "postgres://app:p\"ss\nword@db/app".to_string()),
+        ("PIN".to_string(), "1234".to_string()),
+    ];
+    // As raw text, and inside a JSON string with its quote and newline escaped.
+    let body = serde_json::json!({
+        "messages": [
+            { "role": "user", "content": "run it" },
+            { "role": "tool", "content": "token: dpl_9f8e7d6c5b4a\nurl: postgres://app:p\"ss\nword@db/app\npin 1234" }
+        ]
+    })
+    .to_string();
+    let (clean, hidden) = super::redact_secrets(body.as_bytes(), &secrets);
+    let clean = String::from_utf8(clean).unwrap();
+    assert!(!clean.contains("dpl_9f8e7d6c5b4a"), "{clean}");
+    assert!(!clean.contains("p\\\"ss\\nword"), "{clean}");
+    assert!(clean.contains("[secret DEPLOY_TOKEN hidden by KALYPSO]") && clean.contains("[secret DB_URL hidden by KALYPSO]"));
+    assert!(clean.contains("pin 1234"), "values too short to match safely are left alone");
+    assert_eq!(hidden, ["DEPLOY_TOKEN", "DB_URL"]);
+    serde_json::from_str::<serde_json::Value>(&clean).expect("still valid JSON");
+    let (same, none) = super::redact_secrets(b"{\"nothing\":\"here\"}", &secrets);
+    assert_eq!((same.as_slice(), none.len()), (&b"{\"nothing\":\"here\"}"[..], 0));
+}
+
+#[tokio::test]
+async fn delivered_secrets_never_reach_the_model_provider() {
+    let mut e = env().await;
+    e.vault.set(&e.db, "work", "DEPLOY_TOKEN", "dpl_live_5e4d3c2b1a", "namespace").unwrap();
+    e.vault.set(&e.db, "work", "STRIPE_KEY", "sk_live_only_for_billing", "agent").unwrap();
+    let minted = mint(&e.db, "work", None, "agent box").unwrap();
+    // An agent read both secrets with a tool, and the output is in its next model request.
+    let body = serde_json::json!({
+        "model": "claude-opus-5-5",
+        "max_tokens": 16,
+        "messages": [{ "role": "user", "content": "cat says dpl_live_5e4d3c2b1a and sk_live_only_for_billing" }]
+    });
+    let res = reqwest::Client::new()
+        .post(format!("{}/anthropic/v1/messages", e.gw))
+        .header("x-api-key", &minted.token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    e.events.recv().await.unwrap();
+    let sent = e.seen.lock().unwrap().body.to_string();
+    assert!(!sent.contains("dpl_live_5e4d3c2b1a") && !sent.contains("sk_live_only_for_billing"), "{sent}");
+    assert!(sent.contains("[secret DEPLOY_TOKEN hidden by KALYPSO]") && sent.contains("[secret STRIPE_KEY hidden by KALYPSO]"), "{sent}");
+    let audit =
+        e.db.with(|c| Ok(c.query_row("SELECT target FROM audit_log WHERE action = 'secret.redacted'", [], |r| r.get::<_, String>(0))?))
+            .unwrap();
+    assert!(audit.contains("DEPLOY_TOKEN") && audit.contains("STRIPE_KEY"), "{audit}");
+}

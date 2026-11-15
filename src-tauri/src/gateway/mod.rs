@@ -351,6 +351,55 @@ pub struct Gateway {
     pub(crate) agents: OnceLock<Arc<crate::agent::supervisor::Supervisor>>,
 }
 
+/// Secrets shorter than this aren't looked for: too likely to match ordinary text.
+const MIN_SECRET: usize = 6;
+
+/// Replace every secret value in a model request with a note naming it. Values are looked for
+/// as they are and as they appear inside a JSON string (quotes, backslashes and newlines escaped).
+/// Returns the cleaned body and the names of the secrets that were found.
+pub(crate) fn redact_secrets(body: &[u8], secrets: &[(String, String)]) -> (Vec<u8>, Vec<String>) {
+    let mut out = body.to_vec();
+    let mut hidden = Vec::new();
+    for (name, value) in secrets.iter().filter(|(_, v)| v.trim().len() >= MIN_SECRET) {
+        let note = format!("[secret {name} hidden by KALYPSO]");
+        let escaped = serde_json::to_string(value).unwrap_or_default();
+        let escaped = escaped.trim_matches('"').to_string();
+        let mut found = false;
+        for needle in [value.as_str(), value.trim(), escaped.as_str()] {
+            if needle.len() < MIN_SECRET {
+                continue;
+            }
+            let replaced = replace_all(&out, needle.as_bytes(), note.as_bytes());
+            if replaced.len() != out.len() || replaced != out {
+                found = true;
+                out = replaced;
+            }
+        }
+        if found {
+            hidden.push(name.clone());
+        }
+    }
+    (out, hidden)
+}
+
+fn replace_all(hay: &[u8], needle: &[u8], with: &[u8]) -> Vec<u8> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return hay.to_vec();
+    }
+    let mut out = Vec::with_capacity(hay.len());
+    let mut i = 0;
+    while i < hay.len() {
+        if hay[i..].starts_with(needle) {
+            out.extend_from_slice(with);
+            i += needle.len();
+        } else {
+            out.push(hay[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// Whether a model request opens a conversation: nothing the model said is in it yet. Both the
 /// Anthropic and the OpenAI formats carry the history in `messages`; a request without one is
 /// treated as a new conversation.
@@ -924,6 +973,22 @@ async fn proxy(State(gw): State<Arc<Gateway>>, req: Request) -> Response {
             StatusCode::FORBIDDEN,
             &format!("blocked: this request contains the value of the secret {name}, which is only for the command it was granted to"),
         );
+    }
+    // Secrets sandboxes can read (for every agent, or for chosen ones) never go to a model
+    // provider either: if an agent read one into its conversation, the value is replaced here.
+    match gw.vault.delivered_values(&gw.db, &ns) {
+        Ok(values) if !values.is_empty() => {
+            let (clean, hidden) = redact_secrets(&bytes, &values);
+            if !hidden.is_empty() {
+                let _ = gw.db.audit(Some(&ns), &source, "secret.redacted", &format!("{} in a request to {provider}", hidden.join(", ")));
+                bytes = clean.into();
+            }
+        }
+        Ok(_) => {}
+        // Can't check: fail closed rather than risk sending a secret out.
+        Err(e) => {
+            return fail(format, StatusCode::INTERNAL_SERVER_ERROR, &format!("KALYPSO could not check this request for secrets: {e}"))
+        }
     }
     let mut model = String::from("unknown");
     let mut stream = false;
